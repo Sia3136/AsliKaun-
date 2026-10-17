@@ -45,7 +45,11 @@ class TouchAutoencoderScorer:
     and must use the SAME mean/std the model was trained with)."""
 
     def __init__(self, weights_path: str, hidden_dim: int = 64, latent_dim: int = 16):
-        checkpoint = torch.load(weights_path, map_location="cpu")
+        # weights_only=False: this checkpoint carries numpy arrays
+        # (feat_mean/feat_std) alongside the state dict, not just
+        # tensors — safe here since it's our own training script's
+        # trusted output, not an untrusted third-party file.
+        checkpoint = torch.load(weights_path, map_location="cpu", weights_only=False)
         self.model = LSTMStrokeAutoencoder(hidden_dim=hidden_dim, latent_dim=latent_dim)
         self.model.load_state_dict(checkpoint["model_state"])
         self.model.eval()

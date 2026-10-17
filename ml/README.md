@@ -68,6 +68,47 @@ Trained on `ml/kaggle/train_gps_encoder.py` (self-contained Kaggle notebook scri
 
 **Honest result: the deep model did not beat the classical baseline.** Per-rider mean EER is essentially tied with overlapping confidence intervals. Per the Phase 2 ground rule set from the start ("keep whichever wins, say so either way"), **GPS stays on IsolationForest** — don't claim a deep-learning win here. This matches the documented finding behind the "Trajectory-User Linking is easier than you think" line of research cited earlier: simple per-rider statistical profiles are often competitive with learned trajectory embeddings. Likely causes, not investigated further: a small training run (400 couriers, 30 epochs) and a 4-feature-per-leg sequence representation that may not carry meaningfully more signal than the 23-feature hand-crafted summary the classical model already uses.
 
+## Phase 2: touch stroke autoencoder (LSTM, trained on Kaggle)
+
+Trained on `ml/kaggle/train_touch_autoencoder.py` — an LSTM sequence autoencoder over per-stroke feature sequences, reconstruction-error anomaly scoring, 40 epochs x 150 steps, pooled across 81 H-MOG users **excluding** the 18-user evaluation cohort (pre-extracted locally via `ml/scripts/prepare_touch_training_data.py`, no leakage). Evaluated on the identical cohort/harness as the classical baseline: `ml/scripts/evaluate_touch_autoencoder.py`.
+
+| Model | Pooled EER | Pooled AUC | FRR@FAR=1% | Per-rider mean EER |
+| --- | --- | --- | --- | --- |
+| IsolationForest (classical) | **0.408** | **0.624** | 0.81 | 0.369 [0.308, 0.433] |
+| LSTM stroke autoencoder | 0.481 | 0.505 (= coin flip) | 0.83 | 0.508 [0.458, 0.571] |
+
+**Clear negative result, with a diagnosable cause, not just "didn't help."** The classical model is fit per-rider — its raw score directly measures deviation from *that specific person's* distribution. The autoencoder is trained once, pooled, with frozen weights shared across all 81 training users — its reconstruction error measures deviation from *population-general* touch patterns, not from any individual's. Since every test stroke (genuine or impostor) comes from a real, normal person, the frozen pooled model reconstructs both about equally well on average; conformal calibration can only partially correct for this, because there's little rider-specific signal in the raw score to begin with. The diagnosis pointed directly at the fix: see iteration 2 below.
+
+## Phase 2, touch iteration 2: triplet encoder (same architecture pattern as GPS)
+
+Same training data (`touch_training_sequences.pkl`, no new upload needed), same GRU architecture family as the GPS encoder, but trained with triplet loss instead of reconstruction loss (`ml/kaggle/train_touch_triplet_encoder.py`) — person-discriminative embedding space instead of population-general reconstruction. Evaluated with `ml/scripts/evaluate_touch_triplet_encoder.py`.
+
+| Model | Pooled EER | Pooled AUC | FRR@FAR=1% | Per-rider mean EER |
+| --- | --- | --- | --- | --- |
+| IsolationForest (classical) | 0.408 | 0.624 | 0.81 | 0.369 [0.308, 0.433] |
+| LSTM autoencoder (iteration 1) | 0.481 | 0.505 | 0.83 | 0.508 [0.458, 0.571] |
+| **GRU triplet encoder (iteration 2)** | **0.352** | **0.722** | 0.81 | 0.325 [0.229, 0.421] |
+
+**This one wins, genuinely.** EER drops from 0.408 to 0.352, AUC rises from 0.624 to 0.722 — confirms the autoencoder's diagnosis was correct: the training objective (person-discriminative triplet loss vs. population-general reconstruction) was the actual problem, not model capacity. **Touch now uses the triplet encoder, not IsolationForest.**
+
+## Phase 2 summary
+
+| Signal | Classical EER | Best deep-model EER | Winner |
+| --- | --- | --- | --- |
+| GPS | 0.397 | 0.433 (GRU triplet) | Classical (IsolationForest) |
+| Touch | 0.408 | **0.352** (GRU triplet, iteration 2) | **Deep model** |
+| Motion | 0.440 | not attempted in Phase 2 | Classical (IsolationForest), by default |
+
+One real win, one honest loss, one not attempted — reported as the actual result, not spun into a uniform success story. The GPS loss and the touch autoencoder's failure both point to the same lesson, now validated by the touch triplet win: **a person-discriminative training objective (triplet/contrastive loss, scored by distance-to-rider-centroid) is the right pattern for a deep model here — a reconstruction-based model isn't**, and GPS's triplet attempt may simply have been under-trained (30 epochs, 400 couriers) rather than architecturally wrong — worth a longer retrain if more GPU time is available, using the same recipe that just worked for touch.
+
+## Production inference wiring (`ml/inference/`) — and a real schema gap found while building it
+
+`ml/inference/rider_model_bundle.py`'s `RiderModelBundle` is the single entry point backend should call: `RiderModelBundle.fit(enroll, calib)` once per rider (batch job / on enough history), then `.score(session)` per incoming session — wires together the winning model per signal (IsolationForest for operational/motion/GPS, the triplet encoder for touch), conformal calibration, Fisher fusion, the two-axis combiner, and the reason vector, with a missing-signal policy that skips a signal cleanly rather than ever imputing a value. Plumbing-tested end to end (`ml/scripts/test_inference_wiring.py`) — not a new accuracy validation, just confirms the wiring runs.
+
+**Real finding, not theoretical:** the frozen session schema (agreed hour 0-1) doesn't carry enough detail for the touch model to work as trained, and the plumbing test *demonstrates* this, not just argues it. The schema's `touch_events` is one entry per completed gesture (`{type, x, y, pressure, area, duration_ms, t}` — a single point). The touch triplet encoder was trained on H-MOG's raw per-sample stream (many points per gesture) and gets its EER win specifically from velocity/curvature/pressure-slope features computed along that path. With only one point per gesture, those features are all 0.0 — and in the plumbing test, touch's p-value pinned at **1.0 for both the honest and the handoff session**, meaning it contributed zero discriminative signal in practice, not just in theory.
+
+**Action needed before backend wires real traffic through this:** either (a) extend `touch_events` so each entry carries a `path: [{x, y, pressure, t}, ...]` of raw samples during the gesture — what the mobile SDK would actually log — or (b) accept that touch effectively degrades to a near-useless signal in production until that extension happens. Similarly, GPS: the frozen schema's flat `gps` point list can't reproduce ODIDMob's per-wave summary fields (rider level, max load, weather), so `gps_features_from_schema` uses a different (GeoLife-style speed/turn-rate) feature set than the one actually evaluated — the measured 0.397 EER does not directly transfer to this path; re-evaluate once real production GPS data exists. Motion works as-is (the schema's flat `accel` list is sufficient once there are enough samples — H-MOG needs 20+, which real sessions should comfortably produce even though the synthetic simulator doesn't).
+
 ## Known issues to fix next
 
 1. **Mahalanobis is unreliable for high-dimensional signals (touch, motion) at this enrollment-set size.** Confirmed by the touch result above (AUC 0.454). Use IsolationForest for those; Mahalanobis stays viable for GPS (23 features) and operational (3 features), where dimensionality is much lower relative to enrollment size.
@@ -95,6 +136,9 @@ python ml/scripts/test_scorers.py
 python ml/scripts/test_combiner.py
 python ml/scripts/test_redteam.py
 python ml/scripts/test_reason_vector.py   # set ANTHROPIC_API_KEY for real generated explanations
+
+# Production inference wiring (plumbing test, not an accuracy check)
+python ml/scripts/test_inference_wiring.py
 ```
 
 ## Layout
@@ -122,6 +166,13 @@ ml/
   redteam/scenarios.py                  8 scenario generators (4 attacker types, copycat, 2 honest traps, cold-start)
   redteam/detectors.py                  EWMA fast-baseline, frozen-anchor drift, split-rental clustering
   llm/reason_vector.py                  Claude-generated rider-facing explanation for escalated sessions
+  inference/schema_adapters.py          frozen-schema session -> each model's expected input (see schema gap note above)
+  inference/rider_model_bundle.py       THE production entry point: RiderModelBundle.fit() / .score()
+  models/gps_triplet_encoder.py         GRU + triplet loss GPS encoder (lost to classical, kept for reference/retry)
+  models/touch_autoencoder.py           LSTM reconstruction autoencoder for touch (lost badly, kept for reference)
+  models/touch_triplet_encoder.py       GRU + triplet loss touch encoder (WINNER — used in production wiring)
+  kaggle/                               self-contained Kaggle training scripts + prepared training data
+  weights/                              trained model checkpoints (gps_encoder.pt, touch_triplet_encoder.pt, touch_autoencoder.pt)
   scripts/run_phase1_evaluation.py      real EER/AUC across GPS/touch/motion, both classical models
   scripts/evaluate_fusion.py            the fusion check (synthetic, see above)
   scripts/validate_gps_on_geolife.py    legacy GeoLife validation
