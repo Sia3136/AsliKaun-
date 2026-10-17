@@ -26,8 +26,17 @@ def make_profile(rider_id: str, seed: int) -> dict:
         "hour_spread": rng.uniform(1.5, 4.0),
         "accept_latency_mean_ms": rng.uniform(800, 4000),
         "accept_latency_std_ms": rng.uniform(100, 500),
-        "accel_signature": rng.normal(0, 1, size=3),   # riding-style vector (stand-in for real IMU stats)
-        "accel_noise": rng.uniform(0.3, 0.8),
+        # accel_signature / accel_noise spread calibrated against real H-MOG
+        # inter- and intra-person accelerometer variance (see
+        # ml/scripts/calibrate_sim_from_hmog.py, run on 24 real users):
+        # between-person std ~0.84/axis, within-person std ~0.73-1.37/axis.
+        # Note within-person noise is comparable to (and can exceed)
+        # between-person spread in real data — raw mean-accel-vector is a
+        # genuinely modest signal alone, which is WHY the architecture
+        # combines motion with operational/touch/GPS rather than relying
+        # on any one signal (see ml/README.md's H-MOG validation results).
+        "accel_signature": rng.normal(0, 0.843, size=3),
+        "accel_noise": rng.uniform(0.735, 1.365),
         "touch_pressure_mean": rng.uniform(0.3, 0.8),
         "touch_pressure_std": rng.uniform(0.05, 0.15),
         "tap_interval_ms_mean": rng.uniform(150, 400),

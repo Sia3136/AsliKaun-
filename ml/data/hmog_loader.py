@@ -22,13 +22,16 @@ def list_users() -> list[str]:
 
 def ensure_extracted(user_id: str) -> Path:
     """Extracts data/hmog/<user_id>.zip into data/hmog/extracted/<user_id>/
-    the first time it's needed; reuses it after that."""
+    the first time it's needed; reuses it after that. The zip's own
+    top-level folder is already named after the user, so extracting into
+    EXTRACT_ROOT directly lands sessions at EXTRACT_ROOT/<user_id>/<user_id>_session_N —
+    no extra nesting needed."""
     user_dir = EXTRACT_ROOT / user_id
     if not user_dir.exists():
         EXTRACT_ROOT.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(HMOG_ROOT / f"{user_id}.zip") as zf:
             zf.extractall(EXTRACT_ROOT)
-    return user_dir / user_id  # zip contains a top-level folder named after the user
+    return user_dir
 
 
 def session_dirs(user_id: str) -> list[Path]:
