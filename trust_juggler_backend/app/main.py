@@ -36,6 +36,12 @@ class DeclareChange(BaseModel):
     zone: str | None = None
     reason: str = Field(default="rider_declared_change", max_length=200)
 
+class ResolveReview(BaseModel):
+    resolution: str = Field(
+        pattern="^(cleared|confirmed_handoff|needs_follow_up)$"
+    )
+    reviewer_note: str | None = Field(default=None, max_length=1000)
+
 
 # ---------- SQLite ----------
 
@@ -75,6 +81,17 @@ def init_db() -> None:
             timestamp TEXT NOT NULL,
             event_type TEXT NOT NULL,
             details_json TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS review_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL UNIQUE,
+            driver_id TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at TEXT NOT NULL,
+            resolved_at TEXT,
+            resolution TEXT,
+            reviewer_note TEXT
         );
         """)
 
@@ -182,6 +199,7 @@ def health() -> dict:
     return {"status": "ok", "service": "trust-juggler-api"}
 
 
+
 @app.post("/v1/sessions/ingest")
 def ingest_session(body: SessionIngest) -> dict:
     current_context = {
@@ -194,17 +212,27 @@ def ingest_session(body: SessionIngest) -> dict:
 
     with connect() as con:
         driver = con.execute(
-            "SELECT * FROM drivers WHERE driver_id = ?", (body.driver_id,)
+            "SELECT * FROM drivers WHERE driver_id = ?",
+            (body.driver_id,),
         ).fetchone()
 
         if driver is None:
-            # First session establishes the starting baseline; no identity verdict.
+            # First session establishes a baseline; no identity verdict.
             con.execute(
-                """INSERT INTO drivers(driver_id, anchor_json, fast_json, latest_json,
-                   latest_result_json, updated_at) VALUES(?,?,?,?,?,?)""",
-                (body.driver_id, json.dumps(current_behavior), json.dumps(current_behavior),
-                 json.dumps(current_context), "{}", now_iso()),
+                """INSERT INTO drivers(
+                    driver_id, anchor_json, fast_json, latest_json,
+                    latest_result_json, updated_at
+                ) VALUES(?,?,?,?,?,?)""",
+                (
+                    body.driver_id,
+                    json.dumps(current_behavior),
+                    json.dumps(current_behavior),
+                    json.dumps(current_context),
+                    "{}",
+                    now_iso(),
+                ),
             )
+
             result = {
                 "driver_id": body.driver_id,
                 "context_score": None,
@@ -213,60 +241,112 @@ def ingest_session(body: SessionIngest) -> dict:
                 "behavior_axis": "insufficient_evidence",
                 "quadrant": "baseline_established",
                 "decision": "baseline_established",
-                "reasons": ["First session stored as baseline; no risk verdict yet"],
+                "reasons": [
+                    "First session stored as baseline; no risk verdict yet"
+                ],
                 "model_status": "mock_behavior_scorer",
                 "timestamp": body.timestamp.isoformat(),
             }
+
             con.execute(
-                """INSERT INTO sessions(driver_id,timestamp,payload_json,context_score,
-                   behavior_score,context_axis,behavior_axis,quadrant,decision,reasons_json)
-                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                (body.driver_id, body.timestamp.isoformat(), json.dumps(payload_dict), None, None,
-                 "insufficient_evidence", "insufficient_evidence", "baseline_established",
-                 "baseline_established", json.dumps(result["reasons"])),
+                """INSERT INTO sessions(
+                    driver_id, timestamp, payload_json, context_score,
+                    behavior_score, context_axis, behavior_axis, quadrant,
+                    decision, reasons_json
+                ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    body.driver_id,
+                    body.timestamp.isoformat(),
+                    json.dumps(payload_dict),
+                    None,
+                    None,
+                    "insufficient_evidence",
+                    "insufficient_evidence",
+                    "baseline_established",
+                    "baseline_established",
+                    json.dumps(result["reasons"]),
+                ),
             )
+
             con.execute(
-                "UPDATE drivers SET latest_result_json=?, updated_at=? WHERE driver_id=?",
+                """UPDATE drivers
+                   SET latest_result_json=?, updated_at=?
+                   WHERE driver_id=?""",
                 (json.dumps(result), now_iso(), body.driver_id),
             )
-            write_event(con, body.driver_id, "baseline_established", {"context": current_context})
+
+            write_event(
+                con,
+                body.driver_id,
+                "baseline_established",
+                {"context": current_context},
+            )
+
             return result
 
         previous_context = decode_json(driver["latest_json"], {})
         anchor_behavior = decode_json(driver["anchor_json"], {})
         fast_behavior = decode_json(driver["fast_json"], {})
 
-        context_score, context_axis, context_reasons = compare_context(current_context, previous_context)
-        fast_score, fast_axis, fast_reasons = mock_behavior_score(current_behavior, fast_behavior)
-        anchor_score, anchor_axis, anchor_reasons = mock_behavior_score(current_behavior, anchor_behavior)
+        context_score, context_axis, context_reasons = compare_context(
+            current_context, previous_context
+        )
 
-        # Dual timescale: fast baseline adapts to ordinary gradual changes; frozen anchor
-        # remains unchanged and can expose slow drift. Use the more conservative continuity.
-        available_scores = [s for s in (fast_score, anchor_score) if s is not None]
-        behavior_score = min(available_scores) if available_scores else None
-        if fast_axis == "insufficient_evidence" and anchor_axis == "insufficient_evidence":
+        fast_score, fast_axis, fast_reasons = mock_behavior_score(
+            current_behavior, fast_behavior
+        )
+
+        anchor_score, anchor_axis, anchor_reasons = mock_behavior_score(
+            current_behavior, anchor_behavior
+        )
+
+        # Use the more conservative of the fast and frozen-anchor scores.
+        available_scores = [
+            score
+            for score in (fast_score, anchor_score)
+            if score is not None
+        ]
+        behavior_score = (
+            min(available_scores) if available_scores else None
+        )
+
+        if (
+            fast_axis == "insufficient_evidence"
+            and anchor_axis == "insufficient_evidence"
+        ):
             behavior_axis = "insufficient_evidence"
         elif "changed" in (fast_axis, anchor_axis):
             behavior_axis = "changed"
         else:
             behavior_axis = "stable"
-        decision, quadrant = decide(context_axis, behavior_axis)
-        reasons = context_reasons + [f"Fast baseline: {r}" for r in fast_reasons] + [f"Frozen anchor: {r}" for r in anchor_reasons]
 
-        # A declared or apparently legitimate context change with stable behavior gets
-        # a context re-baseline. Keep the frozen anchor; update only the fast baseline.
+        decision, quadrant = decide(context_axis, behavior_axis)
+
+        reasons = (
+            context_reasons
+            + [f"Fast baseline: {r}" for r in fast_reasons]
+            + [f"Frozen anchor: {r}" for r in anchor_reasons]
+        )
+
+        # Update only the adaptive baseline for safe decisions.
+        # The frozen identity anchor remains unchanged.
         update_fast = decision in ("continue", "rebaseline")
+
         if update_fast:
-            # Slowly adapt the fast baseline, while anchor_behavior stays frozen.
             new_fast = {}
+
             for key, value in current_behavior.items():
                 old = fast_behavior.get(key)
+
                 if value is None:
                     new_fast[key] = old
                 elif old is None:
                     new_fast[key] = value
                 else:
-                    new_fast[key] = 0.8 * float(old) + 0.2 * float(value)
+                    new_fast[key] = (
+                        0.8 * float(old) + 0.2 * float(value)
+                    )
+
             fast_behavior = new_fast
 
         result = {
@@ -279,28 +359,75 @@ def ingest_session(body: SessionIngest) -> dict:
             "decision": decision,
             "reasons": reasons,
             "model_status": "mock_behavior_scorer",
-            "baseline_status": "fast_baseline_updated" if update_fast else "fast_baseline_frozen",
+            "baseline_status": (
+                "fast_baseline_updated"
+                if update_fast
+                else "fast_baseline_frozen"
+            ),
             "fast_behavior_score": fast_score,
             "anchor_behavior_score": anchor_score,
             "timestamp": body.timestamp.isoformat(),
         }
 
-        con.execute(
-            """INSERT INTO sessions(driver_id,timestamp,payload_json,context_score,
-               behavior_score,context_axis,behavior_axis,quadrant,decision,reasons_json)
-               VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (body.driver_id, body.timestamp.isoformat(), json.dumps(payload_dict), context_score,
-             behavior_score, context_axis, behavior_axis, quadrant, decision, json.dumps(reasons)),
+        # Insert the session and retain its database ID.
+        session_cursor = con.execute(
+            """INSERT INTO sessions(
+                driver_id, timestamp, payload_json, context_score,
+                behavior_score, context_axis, behavior_axis, quadrant,
+                decision, reasons_json
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (
+                body.driver_id,
+                body.timestamp.isoformat(),
+                json.dumps(payload_dict),
+                context_score,
+                behavior_score,
+                context_axis,
+                behavior_axis,
+                quadrant,
+                decision,
+                json.dumps(reasons),
+            ),
         )
+
+        session_id = session_cursor.lastrowid
+
+        # Automatically queue sessions that need a human review.
+        if decision in (
+            "challenge_at_safe_pause",
+            "step_up_check_at_safe_pause",
+        ):
+            con.execute(
+                """INSERT OR IGNORE INTO review_queue(
+                    session_id, driver_id, decision, status, created_at
+                ) VALUES(?, ?, ?, 'open', ?)""",
+                (
+                    session_id,
+                    body.driver_id,
+                    decision,
+                    now_iso(),
+                ),
+            )
+
+        # Preserve the existing driver update.
         con.execute(
-            """UPDATE drivers SET fast_json=?, latest_json=?, latest_result_json=?, updated_at=?
+            """UPDATE drivers
+               SET fast_json=?, latest_json=?, latest_result_json=?,
+                   updated_at=?
                WHERE driver_id=?""",
-            (json.dumps(fast_behavior), json.dumps(current_context), json.dumps(result),
-             now_iso(), body.driver_id),
+            (
+                json.dumps(fast_behavior),
+                json.dumps(current_context),
+                json.dumps(result),
+                now_iso(),
+                body.driver_id,
+            ),
         )
+
         write_event(con, body.driver_id, "session_scored", result)
 
     return result
+
 
 
 @app.get("/v1/drivers/{driver_id}/score")
@@ -395,3 +522,92 @@ def driver_events(driver_id: str) -> dict:
             {"timestamp": r["timestamp"], "event_type": r["event_type"],
              "details": decode_json(r["details_json"], {})} for r in rows
         ]}
+
+@app.get("/v1/review-queue")
+def get_review_queue(status: str = "open", limit: int = 100) -> dict:
+    if status not in ("open", "resolved", "all"):
+        raise HTTPException(
+            status_code=400,
+            detail="status must be open, resolved, or all",
+        )
+
+    limit = max(1, min(limit, 500))
+
+    with connect() as con:
+        if status == "all":
+            rows = con.execute(
+                """SELECT * FROM review_queue
+                   ORDER BY created_at DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                """SELECT * FROM review_queue
+                   WHERE status = ?
+                   ORDER BY created_at DESC LIMIT ?""",
+                (status, limit),
+            ).fetchall()
+
+    return {
+        "count": len(rows),
+        "reviews": [dict(row) for row in rows],
+    }
+
+
+@app.post("/v1/review-queue/{session_id}/resolve")
+def resolve_review(session_id: int, body: ResolveReview) -> dict:
+    with connect() as con:
+        review = con.execute(
+            "SELECT * FROM review_queue WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+
+        if review is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Review item not found",
+            )
+
+        if review["status"] == "resolved":
+            raise HTTPException(
+                status_code=409,
+                detail="Review item is already resolved",
+            )
+
+        resolved_at = now_iso()
+
+        con.execute(
+            """UPDATE review_queue
+               SET status = 'resolved',
+                   resolved_at = ?,
+                   resolution = ?,
+                   reviewer_note = ?
+               WHERE session_id = ?""",
+            (
+                resolved_at,
+                body.resolution,
+                body.reviewer_note,
+                session_id,
+            ),
+        )
+
+        write_event(
+            con,
+            review["driver_id"],
+            "review_resolved",
+            {
+                "session_id": session_id,
+                "original_decision": review["decision"],
+                "resolution": body.resolution,
+                "reviewer_note": body.reviewer_note,
+                "resolved_at": resolved_at,
+            },
+        )
+
+    return {
+        "session_id": session_id,
+        "driver_id": review["driver_id"],
+        "status": "resolved",
+        "resolution": body.resolution,
+        "resolved_at": resolved_at,
+    }
