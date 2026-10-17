@@ -9,14 +9,18 @@ import secrets
 import sqlite3
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 try:
-    from trust_juggler_backend.app.ml_bridge import evaluate_session_ml
+    from backend.app.ml_bridge import evaluate_session_ml
 except ImportError:
     try:
         from app.ml_bridge import evaluate_session_ml
@@ -28,6 +32,15 @@ app = FastAPI(
     title="Trust Juggler API",
     description="Hackathon prototype: two-axis context and behavioral continuity.",
     version="0.2.0",
+)
+
+# Enable CORS for local development and dashboard access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Set TRUST_JUGGLER_TOKEN_SECRET to a long random value before deployment.
@@ -805,3 +818,17 @@ def resolve_review(
         "reviewer_id": admin["username"],
         "resolved_at": resolved_at,
     }
+
+
+# ---------- Frontend Dashboard Static Mount ----------
+_FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+if _FRONTEND_DIR.exists():
+    app.mount("/dashboard", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="dashboard")
+
+
+@app.get("/", include_in_schema=False)
+def root_redirect() -> Any:
+    if _FRONTEND_DIR.exists():
+        return RedirectResponse(url="/dashboard/")
+    return {"message": "Trust Juggler API is running. Visit /docs for OpenAPI specs."}
+

@@ -2,26 +2,23 @@
 
 This is a hackathon prototype scaffold for the Trust Juggler two-axis model:
 - **Context continuity:** device, IP subnet, zone.
-- **Behavioral continuity:** derived motion, touch, and operational features.
-- **Decision quadrant:** continue / re-baseline / challenge at a safe pause / step-up check.
+- **Behavioral continuity:** multi-modal derived motion, touch, and operational biometrics via `ml_bridge`.
+- **Decision quadrant:** `stable` (continue) / `legit_change` (re-baseline) / `handoff_signature` (challenge at safe pause) / `ambiguous` (step-up check).
 - **Dual baselines:** a slowly adapting fast baseline and a frozen identity anchor.
-
-The behavioral scorer is deliberately a **mock heuristic**, not a trained identity model.
-Do not present its scores as validated accuracy or as proof that a person is the account holder.
-Missing signals return `insufficient_evidence` rather than an accusation.
+- **Reason Vector:** Plain-language, rider-facing explanations powered by Claude (or fallback template).
+- **Admin Review Queue & Auth:** Token-based admin authentication and human review resolution workflow.
 
 ## 1. Setup (Windows PowerShell)
 
 ```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+# From the repository root
+python -m pip install -r requirements.txt
+python -m uvicorn backend.app.main:app --reload --port 8000
 ```
 
-Open `http://127.0.0.1:8000/docs` for interactive API testing.
-SQLite database `trust_juggler.db` is created automatically.
+- API Docs: `http://127.0.0.1:8000/docs`
+- Interactive Dashboard: `http://127.0.0.1:8000/dashboard/`
+- SQLite database `trust_juggler.db` is initialized automatically.
 
 ## 2. First request — establish a baseline
 
