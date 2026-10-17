@@ -15,7 +15,7 @@ const PILLARS: ApproachPillar[] = [
     tag: 'CONTEXT',
     title: 'Contextual Continuity',
     desc: 'Understand shifts in device posture, session context, mobility, and network signals to verify whether current activity matches expected operating context.',
-    img: 'p-mesh',
+    img: 'pillar-context',
     chip: 'Hardware Posture · Mobility Sensor Fusion',
   },
   {
@@ -23,7 +23,7 @@ const PILLARS: ApproachPillar[] = [
     tag: 'BEHAVIOR',
     title: 'Behavioral Continuity',
     desc: 'Analyze changes in activity rhythms over time to identify potential discontinuities that a static credential check alone completely misses.',
-    img: 'p-models',
+    img: 'pillar-behavior',
     chip: 'Touch Profiles · Keystroke & Interaction Cadence',
   },
   {
@@ -31,7 +31,7 @@ const PILLARS: ApproachPillar[] = [
     tag: 'EXPLAINABLE',
     title: 'Explainable Risk Intelligence',
     desc: 'Combine available telemetry into a defensible risk score with explicit contributing factors, empowering platforms to act with full auditability.',
-    img: 'p-edge',
+    img: 'pillar-explainable',
     chip: 'Weighted Anomaly Attribution · Audit Trail',
   },
   {
@@ -39,7 +39,7 @@ const PILLARS: ApproachPillar[] = [
     tag: 'PROPORTIONATE',
     title: 'Context-Aware Verification',
     desc: 'Support proportionate step-up verification only when warranted, completely avoiding disruption to honest drivers during active trips.',
-    img: 'p-trust',
+    img: 'pillar-verification',
     chip: 'Zero-Friction Sentinel · Silent Baseline Check',
   },
   {
@@ -47,7 +47,7 @@ const PILLARS: ApproachPillar[] = [
     tag: 'BASELINES',
     title: 'Adaptive Trust Baselines',
     desc: 'Continuously calibrate behavioral baselines as driver routines evolve over weeks, isolating legitimate schedule shifts from abrupt driver swaps.',
-    img: 'p-versions',
+    img: 'pillar-baselines',
     chip: 'Dual-Timescale · Seasonal & Routine Evolution',
   },
   {
@@ -55,7 +55,7 @@ const PILLARS: ApproachPillar[] = [
     tag: 'HANDOFFS',
     title: 'Account Handoff Detection',
     desc: 'Detect intricate account-sharing where usage shifts between individuals and later returns, uncovering complex multi-driver sharing rings.',
-    img: 'p-checkpoints',
+    img: 'pillar-handoff',
     chip: 'Cross-Driver Signatures · Fleet Ring Isolation',
   },
 ];
@@ -137,8 +137,8 @@ export const TheApproach: React.FC = () => {
             <article key={p.num} className="pc glass">
               <img
                 className="im"
-                src={`/assets/${p.img}.webp`}
-                alt=""
+                src={`/assets/${p.img}.jpg`}
+                alt={p.title}
                 onError={(e) => {
                   (e.currentTarget as HTMLElement).style.display = 'none';
                 }}

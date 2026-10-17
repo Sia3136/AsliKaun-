@@ -15,8 +15,8 @@ export const CallToAction: React.FC = () => {
             Discover how TrustMesh connects behavioral patterns, contextual intelligence, and explainable risk assessments to identify potential account handoffs.
           </p>
           <div className="btns">
-            <a className="btn solid" href="#hero">
-              Explore the Demo ↗
+            <a className="btn solid" href="/auth?mode=login">
+              Sign in to the demo ↗
             </a>
             <a className="btn ghost" href="#platform">
               Discover the Platform

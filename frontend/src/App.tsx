@@ -8,8 +8,10 @@ import { TheApproach } from './components/TheApproach';
 import { ArchitectureStack } from './components/ArchitectureStack';
 import { CallToAction } from './components/CallToAction';
 import { Footer } from './components/Footer';
+import { AuthPage } from './components/AuthPage';
 
 export default function App() {
+  const isAuthPage = window.location.pathname.replace(/\/$/, '') === '/auth';
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('tm_theme');
@@ -26,6 +28,10 @@ export default function App() {
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
+
+  if (isAuthPage) {
+    return <AuthPage initialMode={new URLSearchParams(window.location.search).get('mode') === 'signup' ? 'signup' : 'login'} />;
+  }
 
   return (
     <>

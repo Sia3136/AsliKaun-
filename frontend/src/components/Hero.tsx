@@ -28,8 +28,8 @@ export const Hero: React.FC = () => {
         </p>
 
         <div className="btns">
-          <a className="btn solid" href="#platform">
-            Explore Platform ↗
+          <a className="btn solid" href="/auth?mode=signup">
+            Get started ↗
           </a>
           <a className="btn ghost" href="#pipeline">
             See How It Works

@@ -21,8 +21,11 @@ export const Navbar: React.FC<NavbarProps> = ({ theme, onToggleTheme }) => {
       </div>
 
       <div className="nav-actions">
-        <a className="btn solid nav-btn" href="/dashboard.html">
-          Explore Demo ↗
+        <a className="btn ghost nav-btn" href="/auth?mode=login">
+          Sign in
+        </a>
+        <a className="btn solid nav-btn" href="/auth?mode=signup">
+          Get started ↗
         </a>
         <button
           className="theme-toggle"
