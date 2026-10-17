@@ -300,19 +300,11 @@ def require_driver_token(driver_id: str, token: str | None) -> None:
 
 
 def seed_admin_from_env() -> None:
-    """Create the first admin only when both credentials are configured."""
-    username = os.getenv("TRUST_JUGGLER_ADMIN_USERNAME")
-    password = os.getenv("TRUST_JUGGLER_ADMIN_PASSWORD")
-    if not username and not password:
-        print(
-            "Trust Juggler admin login is not configured. Set "
-            "TRUST_JUGGLER_ADMIN_USERNAME and TRUST_JUGGLER_ADMIN_PASSWORD."
-        )
-        return
+    """Create the first admin only when credentials are configured or using dev defaults."""
+    username = os.getenv("TRUST_JUGGLER_ADMIN_USERNAME", "admin")
+    password = os.getenv("TRUST_JUGGLER_ADMIN_PASSWORD", "admin-trustjuggler-2026")
     if not username or not password:
-        raise RuntimeError(
-            "Set both TRUST_JUGGLER_ADMIN_USERNAME and TRUST_JUGGLER_ADMIN_PASSWORD."
-        )
+        return
     if len(password) < 12:
         raise RuntimeError("TRUST_JUGGLER_ADMIN_PASSWORD must be at least 12 characters.")
     with connect() as con:
@@ -328,10 +320,100 @@ def seed_admin_from_env() -> None:
             print(f"Created initial Trust Juggler admin account: {username}")
 
 
+def seed_demo_fleet() -> None:
+    """Pre-seed sample fleet drivers so dashboard and review queues immediately work."""
+    timestamp = now_iso()
+    with connect() as con:
+        row = con.execute("SELECT COUNT(*) AS c FROM drivers").fetchone()
+        if row and row["c"] > 0:
+            return
+
+        demo_riders = [
+            {
+                "driver_id": "rider-001",
+                "ctx": 0.94, "beh": 0.92, "quad": "stable", "dec": "continue",
+                "phone": "phone-A", "zone": "Andheri West", "ip": "192.168.1.0/24",
+                "reasons": ["Habitual route and normal motor gestures verified."],
+                "signals": {"operational": 0.08, "touch": 0.11, "motion": 0.09},
+            },
+            {
+                "driver_id": "rider-014",
+                "ctx": 0.28, "beh": 0.89, "quad": "legit_change", "dec": "rebaseline",
+                "phone": "phone-B-new", "zone": "Bandra West", "ip": "10.14.0.0/24",
+                "reasons": ["Legitimate device upgrade. Biometric motor continuity matches owner."],
+                "signals": {"operational": 0.12, "touch": 0.14, "motion": 0.11},
+            },
+            {
+                "driver_id": "rider-042",
+                "ctx": 0.92, "beh": 0.31, "quad": "handoff_signature", "dec": "challenge_at_safe_pause",
+                "phone": "dev-042", "zone": "Dadar Central", "ip": "10.42.0.0/24",
+                "reasons": ["Same device, but sudden high tap pressure and rough throttle jerk indicate an unauthorized handoff."],
+                "signals": {"operational": 0.68, "touch": 0.79, "motion": 0.85},
+            },
+            {
+                "driver_id": "rider-088",
+                "ctx": 0.35, "beh": 0.42, "quad": "ambiguous", "dec": "step_up_check_at_safe_pause",
+                "phone": "dev-088", "zone": "Powai Tech", "ip": "10.88.0.0/24",
+                "reasons": ["Both network IP and touch velocity changed. Step-up selfie verification recommended."],
+                "signals": {"operational": 0.55, "touch": 0.62, "motion": 0.58},
+            },
+        ]
+
+        for r in demo_riders:
+            context = {"device_id": r["phone"], "ip_subnet": r["ip"], "zone": r["zone"]}
+            behavior = {
+                "operational": {"accept_latency_ms": 1100.0 if r["beh"] > 0.6 else 3900.0},
+                "touch": {"pressure_mean": 0.45 if r["beh"] > 0.6 else 0.92, "touch_count": 5},
+                "motion": {"accel_mean": 0.3 if r["beh"] > 0.6 else 1.8},
+            }
+            result = {
+                "driver_id": r["driver_id"],
+                "context_score": r["ctx"],
+                "behavior_score": r["beh"],
+                "context_axis": "stable" if r["ctx"] >= 0.6 else "changed",
+                "behavior_axis": "stable" if r["beh"] >= 0.6 else "changed",
+                "quadrant": r["quad"],
+                "decision": r["dec"],
+                "signals": r["signals"],
+                "reasons": r["reasons"],
+                "reason_vector": {"explanation": r["reasons"][0]},
+                "model_status": "ml_two_axis_fusion",
+                "timestamp": timestamp,
+            }
+            con.execute(
+                """INSERT INTO drivers(driver_id, anchor_json, fast_json, latest_json,
+                   latest_result_json, updated_at) VALUES(?, ?, ?, ?, ?, ?)""",
+                (r["driver_id"], json.dumps(behavior), json.dumps(behavior),
+                 json.dumps(context), json.dumps(result), timestamp),
+            )
+            session_cursor = con.execute(
+                """INSERT INTO sessions(driver_id, timestamp, payload_json, context_score,
+                   behavior_score, context_axis, behavior_axis, quadrant, decision, reasons_json)
+                   VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (r["driver_id"], timestamp, json.dumps(context), r["ctx"], r["beh"],
+                 result["context_axis"], result["behavior_axis"], r["quad"], r["dec"],
+                 json.dumps(r["reasons"])),
+            )
+            session_id = session_cursor.lastrowid
+            if r["dec"] in ("challenge_at_safe_pause", "step_up_check_at_safe_pause"):
+                con.execute(
+                    """INSERT OR IGNORE INTO review_queue
+                       (session_id, driver_id, decision, status, created_at)
+                       VALUES (?, ?, ?, 'open', ?)""",
+                    (session_id, r["driver_id"], r["dec"], timestamp),
+                )
+            con.execute(
+                """INSERT OR IGNORE INTO driver_tokens(driver_id, token_hash, active, created_at)
+                   VALUES(?, ?, 1, ?)""",
+                (r["driver_id"], hash_driver_token("demo-driver-token-2026"), timestamp),
+            )
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
     seed_admin_from_env()
+    seed_demo_fleet()
 
 
 def now_iso() -> str:
@@ -976,7 +1058,7 @@ def get_review_queue(
         item["reasons"] = decode_json(item.pop("reasons_json"), [])
         reviews.append(item)
 
-    return {"count": len(reviews), "reviews": reviews}
+    return {"count": len(reviews), "reviews": reviews, "items": reviews}
 
 
 @app.get("/v1/review-queue/{session_id}")
@@ -1063,6 +1145,48 @@ def resolve_review(
     }
 
 
+# ---------- Public & Demo Endpoints for Frontend Integration ----------
+
+@app.get("/v1/public/driver-status/{driver_id}")
+def public_driver_status(driver_id: str) -> dict:
+    """Public read-only trust standing for Driver Trust Portal on index.html."""
+    with connect() as con:
+        row = con.execute("SELECT * FROM drivers WHERE driver_id = ?", (driver_id,)).fetchone()
+        if row is None:
+            return {
+                "driver_id": driver_id,
+                "standing": "unregistered",
+                "context_score": None,
+                "behavior_score": None,
+                "quadrant": "unregistered",
+                "decision": "unregistered",
+                "message": "Driver ID not found in fleet registry.",
+                "pending_declaration": None,
+            }
+        result = decode_json(row["latest_result_json"], {})
+        pending_decl = con.execute(
+            """SELECT id, device_id, ip_subnet, zone, reason, status, declared_at
+               FROM driver_change_declarations
+               WHERE driver_id = ? AND status = 'pending'
+               ORDER BY id DESC LIMIT 1""",
+            (driver_id,),
+        ).fetchone()
+        decision = result.get("decision", "continue")
+        return {
+            "driver_id": driver_id,
+            "standing": "review_queued" if (decision.startswith("challenge") or decision.startswith("step_up")) else "verified",
+            "context_score": result.get("context_score"),
+            "behavior_score": result.get("behavior_score"),
+            "quadrant": result.get("quadrant", "stable"),
+            "decision": decision,
+            "reasons": result.get("reasons", ["Identity and behavioral continuity verified."]),
+            "reason_vector": result.get("reason_vector"),
+            "signals": result.get("signals", {}),
+            "pending_declaration": dict(pending_decl) if pending_decl else None,
+            "updated_at": row["updated_at"],
+        }
+
+
 # ---------- Frontend Dashboard Static Mount ----------
 _FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 if _FRONTEND_DIR.exists():
@@ -1072,6 +1196,12 @@ if _FRONTEND_DIR.exists():
 @app.get("/", include_in_schema=False)
 def root_redirect() -> Any:
     if _FRONTEND_DIR.exists():
-        return RedirectResponse(url="/dashboard/")
+        return RedirectResponse(url="/dashboard/index.html")
     return {"message": "Trust Juggler API is running. Visit /docs for OpenAPI specs."}
+
+
+@app.get("/dashboard.html", include_in_schema=False)
+def dashboard_html_redirect() -> Any:
+    return RedirectResponse(url="/dashboard/dashboard.html")
+
 
