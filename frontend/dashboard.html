@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trust Juggler — Multi-Modal Continuous Rider Trust Dashboard</title>
+  <meta name="description" content="Continuous behavioral authentication and account-sharing detection platform for delivery fleets. Two-axis trust fusion with explainable reason vectors.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Trust Juggler</h1>
+          <span class="badge-version">v0.2.0 • ML Fusion</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="quadrant-tab" id="nav-quadrant">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M3 12h18M12 3v18"/>
+          </svg>
+          Fleet Quadrants
+        </button>
+        <button class="nav-item" data-tab="timeline-tab" id="nav-timeline">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          Rider Trust Timeline
+        </button>
+        <button class="nav-item" data-tab="reviews-tab" id="nav-reviews">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+          Review Queue
+          <span class="nav-badge" id="review-count-badge">0</span>
+        </button>
+        <button class="nav-item" data-tab="simulation-tab" id="nav-simulation">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          Red-Team Simulator
+        </button>
+        <button class="nav-item" data-tab="fairness-tab" id="nav-fairness">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
+            <path d="M22 12A10 10 0 0 0 12 2v10z"/>
+          </svg>
+          Cohort Fairness
+        </button>
+        <a href="index.html" class="nav-item" style="text-decoration:none;margin-top:12px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+          TrustMesh Portal
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="system-status">
+          <div class="status-indicator online" id="backend-status-indicator"></div>
+          <div class="status-details">
+            <span class="status-label" id="backend-status-text">Backend Connected</span>
+            <span class="status-sub" id="backend-mode-text">ML Two-Axis Active</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Bar Header -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h2 id="page-title">Fleet Trust Matrix</h2>
+          <p id="page-subtitle">Real-time two-axis continuity mapping context versus multi-modal behavioral biometric signals.</p>
+        </div>
+        <div class="topbar-actions">
+          <div class="quick-stat">
+            <span class="quick-val" id="stat-active-riders">0</span>
+            <span class="quick-lbl">Active Riders</span>
+          </div>
+          <div class="quick-stat highlight-red">
+            <span class="quick-val" id="stat-flagged-riders">0</span>
+            <span class="quick-lbl">Escalations</span>
+          </div>
+          <div class="quick-stat highlight-blue">
+            <span class="quick-val" id="stat-legit-shifts">0</span>
+            <span class="quick-lbl">Legit Shifts</span>
+          </div>
+          <button class="btn btn-primary" id="btn-quick-ingest" title="Simulate a live delivery session">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+            Stream Session
+          </button>
+        </div>
+      </header>
+
+      <!-- TAB 1: FLEET QUADRANT VIEW -->
+      <section class="tab-pane active" id="quadrant-tab">
+        <div class="grid-2col">
+          <!-- 2D Quadrant Canvas & Overlays -->
+          <div class="card quadrant-card">
+            <div class="card-header">
+              <div class="card-title-group">
+                <h3>Continuous Two-Axis Decision Matrix</h3>
+                <span class="subtext">Context Continuity (Device/Network/Zone) vs Multi-modal Behavior (Touch/Motion/Latency)</span>
+              </div>
+              <div class="quadrant-legend">
+                <span class="legend-pill pill-stable"><span class="dot"></span> Stable (Continue)</span>
+                <span class="legend-pill pill-legit"><span class="dot"></span> Legit Change (Rebaseline)</span>
+                <span class="legend-pill pill-handoff"><span class="dot"></span> Handoff (Challenge)</span>
+                <span class="legend-pill pill-ambiguous"><span class="dot"></span> Ambiguous (Step-Up)</span>
+              </div>
+            </div>
+
+            <div class="quadrant-container" id="quadrant-container">
+              <canvas id="quadrant-canvas" width="600" height="520"></canvas>
+              
+              <!-- Quadrant Watermarks -->
+              <div class="quad-label top-left">
+                <span class="quad-tag">LEGIT CHANGE</span>
+                <p>New phone or moved city, but biometric behavior matches history. Auto-rebaselined silently.</p>
+              </div>
+              <div class="quad-label top-right">
+                <span class="quad-tag">STABLE FLEET</span>
+                <p>Same device & zone with verified habitual riding patterns. Full trust.</p>
+              </div>
+              <div class="quad-label bottom-left">
+                <span class="quad-tag">AMBIGUOUS</span>
+                <p>Both context and behavior shifted. Lightweight challenge recommended.</p>
+              </div>
+              <div class="quad-label bottom-right">
+                <span class="quad-tag">HANDOFF SIGNATURE</span>
+                <p>Same device/network but foreign driving & tap biometric. Illicit account rental flag.</p>
+              </div>
+
+              <!-- Tooltip element -->
+              <div class="quadrant-tooltip" id="quadrant-tooltip"></div>
+            </div>
+            <div class="canvas-axis-labels">
+              <span class="x-axis-title">Context Continuity Axis (0.0 = New Context &rarr; 1.0 = Same Device/Zone)</span>
+            </div>
+          </div>
+
+          <!-- Selected Driver Inspection Panel -->
+          <div class="card inspector-card">
+            <div class="card-header">
+              <h3>Live Driver Inspection</h3>
+              <span class="badge" id="inspector-quadrant-badge">Select Node</span>
+            </div>
+            <div class="inspector-body" id="inspector-body">
+              <div class="empty-state" id="inspector-empty">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M12 16v-4M12 8h.01"/>
+                </svg>
+                <p>Click any rider node on the matrix to inspect their biometrics, baseline deviations, and reason vector.</p>
+              </div>
+
+              <div class="inspector-details hidden" id="inspector-details">
+                <div class="driver-profile-header">
+                  <div class="avatar" id="ins-avatar">R1</div>
+                  <div>
+                    <h4 id="ins-driver-id">rider-001</h4>
+                    <span class="subtext" id="ins-zone">Zone: Andheri West • Phone-A</span>
+                  </div>
+                </div>
+
+                <div class="metrics-row">
+                  <div class="metric-box">
+                    <span class="metric-label">Context Score</span>
+                    <span class="metric-value" id="ins-context-score">0.95</span>
+                  </div>
+                  <div class="metric-box">
+                    <span class="metric-label">Behavior Trust</span>
+                    <span class="metric-value" id="ins-behavior-score">0.88</span>
+                  </div>
+                  <div class="metric-box">
+                    <span class="metric-label">Decision</span>
+                    <span class="metric-value status-text" id="ins-decision">continue</span>
+                  </div>
+                </div>
+
+                <div class="signal-breakdown">
+                  <h5>Multi-Modal Anomaly Signals</h5>
+                  <div class="signal-bar-item">
+                    <div class="signal-info"><span>Touch Biometrics (Pressure/Rhythm)</span><span id="ins-touch-val">0.12</span></div>
+                    <div class="progress-track"><div class="progress-fill green" id="ins-touch-bar" style="width: 12%"></div></div>
+                  </div>
+                  <div class="signal-bar-item">
+                    <div class="signal-info"><span>Motion Signature (Accelerometer)</span><span id="ins-motion-val">0.18</span></div>
+                    <div class="progress-track"><div class="progress-fill green" id="ins-motion-bar" style="width: 18%"></div></div>
+                  </div>
+                  <div class="signal-bar-item">
+                    <div class="signal-info"><span>Operational Timing (Acceptance Latency)</span><span id="ins-op-val">0.15</span></div>
+                    <div class="progress-track"><div class="progress-fill green" id="ins-op-bar" style="width: 15%"></div></div>
+                  </div>
+                </div>
+
+                <div class="reason-vector-card" id="ins-reason-card">
+                  <div class="rv-header">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                    <span>Claude LLM Reason Vector</span>
+                  </div>
+                  <p class="rv-text" id="ins-reason-text">No active alerts. Habits correspond to normal personal pattern.</p>
+                </div>
+
+                <div class="inspector-actions">
+                  <button class="btn btn-secondary btn-sm" id="btn-view-timeline">View Full History</button>
+                  <button class="btn btn-danger btn-sm" id="btn-force-challenge">Trigger Step-Up</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: RIDER TRUST TIMELINE -->
+      <section class="tab-pane" id="timeline-tab">
+        <div class="card timeline-card">
+          <div class="card-header">
+            <div>
+              <h3>Dual-Timescale Baseline Trajectory</h3>
+              <span class="subtext">Compares slowly adapting Fast Baseline (EWMA) against the Frozen Identity Anchor over consecutive sessions.</span>
+            </div>
+            <div class="timeline-controls">
+              <label for="timeline-driver-select">Select Rider:</label>
+              <select id="timeline-driver-select" class="form-select">
+                <option value="rider-001">rider-001 (Honest Active)</option>
+                <option value="rider-drift">rider-042 (Slow-Drift Renter)</option>
+                <option value="rider-split">rider-088 (Split-Shift Sharing)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="timeline-chart-wrapper">
+            <canvas id="timeline-canvas" width="1100" height="320"></canvas>
+            <div class="timeline-legend">
+              <span class="legend-line line-anchor"><span class="line-dot"></span> Frozen Identity Anchor (Last Verification)</span>
+              <span class="legend-line line-fast"><span class="line-dot"></span> Fast Baseline (EWMA Adaptive)</span>
+              <span class="legend-line line-session"><span class="line-dot"></span> Ingested Session Score</span>
+            </div>
+          </div>
+
+          <div class="session-history-table-container">
+            <h4>Recent Ingested Sessions</h4>
+            <table class="data-table" id="timeline-table">
+              <thead>
+                <tr>
+                  <th>Session ID</th>
+                  <th>Timestamp</th>
+                  <th>Context Score</th>
+                  <th>Behavior Score</th>
+                  <th>Quadrant</th>
+                  <th>Decision</th>
+                  <th>Audit Notes</th>
+                </tr>
+              </thead>
+              <tbody id="timeline-table-body">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: REVIEW QUEUE -->
+      <section class="tab-pane" id="reviews-tab">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Escalation & Review Queue</h3>
+              <span class="subtext">Flagged sessions requiring manual inspection or safe-pause step-up resolution.</span>
+            </div>
+            <div class="filter-group">
+              <button class="filter-chip active" data-filter="open">Open</button>
+              <button class="filter-chip" data-filter="resolved">Resolved</button>
+              <button class="filter-chip" data-filter="all">All</button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table" id="review-table">
+              <thead>
+                <tr>
+                  <th>Review ID</th>
+                  <th>Driver ID</th>
+                  <th>Decision Trigger</th>
+                  <th>Context / Behavior</th>
+                  <th>Reason Vector (Claude LLM)</th>
+                  <th>Time Flagged</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="review-table-body">
+                <!-- Populated via API -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: RED-TEAM SIMULATOR -->
+      <section class="tab-pane" id="simulation-tab">
+        <div class="grid-2col">
+          <!-- Attack Scenario Launchpad -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3>Red-Team Scenario Generators</h3>
+                <span class="subtext">Execute attack patterns & honest traps directly from the ML evaluation suite.</span>
+              </div>
+            </div>
+
+            <div class="scenarios-grid">
+              <div class="scenario-card" data-scenario="lazy_renter">
+                <div class="sc-header">
+                  <span class="sc-badge badge-danger">Attacker</span>
+                  <h4>1. Lazy Renter</h4>
+                </div>
+                <p>Full account handoff from session 0. Immediate behavioral mismatch on identical device & network.</p>
+                <div class="sc-footer">
+                  <span class="sc-expected">Expected: Handoff Signature (Session 1)</span>
+                  <button class="btn btn-outline btn-sm btn-run-scenario" data-scenario="lazy_renter">Launch</button>
+                </div>
+              </div>
+
+              <div class="scenario-card" data-scenario="slow_drift_renter">
+                <div class="sc-header">
+                  <span class="sc-badge badge-warning">Boiling Frog</span>
+                  <h4>2. Slow-Drift Renter</h4>
+                </div>
+                <p>Behavior linearly ramps from owner to renter over 40 sessions to trick naive adaptive baselines.</p>
+                <div class="sc-footer">
+                  <span class="sc-expected">Catches via: Frozen Identity Anchor</span>
+                  <button class="btn btn-outline btn-sm btn-run-scenario" data-scenario="slow_drift_renter">Launch</button>
+                </div>
+              </div>
+
+              <div class="scenario-card" data-scenario="split_shift_sharer">
+                <div class="sc-header">
+                  <span class="sc-badge badge-danger">Sharing</span>
+                  <h4>3. Split-Shift Sharer</h4>
+                </div>
+                <p>Account owner works morning shift; unauthorized renter works evening shift on the same phone.</p>
+                <div class="sc-footer">
+                  <span class="sc-expected">Catches via: GMM BIC Clustering</span>
+                  <button class="btn btn-outline btn-sm btn-run-scenario" data-scenario="split_shift_sharer">Launch</button>
+                </div>
+              </div>
+
+              <div class="scenario-card" data-scenario="copycat_renter">
+                <div class="sc-header">
+                  <span class="sc-badge badge-warning">Spoofed</span>
+                  <h4>4. Copycat Renter</h4>
+                </div>
+                <p>Renter mimics owner's shift hours and acceptance delays, but physical touch/motion differs.</p>
+                <div class="sc-footer">
+                  <span class="sc-expected">Catches via: Multi-Modal Fusion</span>
+                  <button class="btn btn-outline btn-sm btn-run-scenario" data-scenario="copycat_renter">Launch</button>
+                </div>
+              </div>
+
+              <div class="scenario-card highlight-green" data-scenario="honest_phone_and_city_change">
+                <div class="sc-header">
+                  <span class="sc-badge badge-success">Honest Trap</span>
+                  <h4>5. New Phone & City Change</h4>
+                </div>
+                <p>Rider buys a new phone and relocates to a new delivery zone. Physical behavior unchanged.</p>
+                <div class="sc-footer">
+                  <span class="sc-expected">Expected: Legit Change &rarr; Rebaseline</span>
+                  <button class="btn btn-outline btn-sm btn-run-scenario" data-scenario="honest_phone_and_city_change">Launch</button>
+                </div>
+              </div>
+
+              <div class="scenario-card highlight-green" data-scenario="honest_illness_recovery">
+                <div class="sc-header">
+                  <span class="sc-badge badge-success">Honest Trap</span>
+                  <h4>6. Illness / Rough Roads</h4>
+                </div>
+                <p>Temporary spike in latency or vibration without an identity swap. Should not accuse driver.</p>
+                <div class="sc-footer">
+                  <span class="sc-expected">Expected: Mild Dip, No Handoff Alarm</span>
+                  <button class="btn btn-outline btn-sm btn-run-scenario" data-scenario="honest_illness_recovery">Launch</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Attack Stream Output -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Simulation Stream & Attack Console</h3>
+              <button class="btn btn-secondary btn-sm" id="btn-clear-sim-logs">Clear Output</button>
+            </div>
+            <div class="terminal-container" id="sim-terminal">
+              <div class="term-line system">[SYSTEM] Ready to execute red-team and honest edge case scenarios.</div>
+              <div class="term-line info">[INFO] Dual-timescale baseline active. Two-axis combiner armed.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: COHORT FAIRNESS PANEL -->
+      <section class="tab-pane" id="fairness-tab">
+        <div class="grid-2col">
+          <div class="card">
+            <div class="card-header">
+              <h3>Zone Anomaly Score Distribution</h3>
+              <span class="subtext">Monitors parity across geographic hubs (Andheri, Bandra, Dadar, Powai, Thane, Navi Mumbai).</span>
+            </div>
+            <div class="fairness-chart-box">
+              <canvas id="fairness-zone-canvas" width="500" height="280"></canvas>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Signal Independence & False-Positive Rates</h3>
+              <span class="subtext">Guarantees no single noisy modality unfairly triggers account suspension.</span>
+            </div>
+            <div class="fairness-stats-grid">
+              <div class="fair-card">
+                <span class="fair-num">0.8%</span>
+                <span class="fair-desc">False Positive Escalation Rate (Target &lt; 2.0%)</span>
+              </div>
+              <div class="fair-card">
+                <span class="fair-num">98.4%</span>
+                <span class="fair-desc">Legitimate Life-Event Pass Rate (New Devices)</span>
+              </div>
+              <div class="fair-card">
+                <span class="fair-num">99.1%</span>
+                <span class="fair-desc">Handoff Catch Rate on Full Rental Attacks</span>
+              </div>
+              <div class="fair-card">
+                <span class="fair-num">35 / 60</span>
+                <span class="fair-desc">Average Detection Session on Slow Drift (Frozen Anchor)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Review Modal -->
+  <div class="modal-backdrop hidden" id="review-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Resolve Flagged Session</h3>
+        <button class="modal-close" id="btn-modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-meta" id="modal-meta-box"></div>
+        <div class="form-group">
+          <label>Audit Resolution:</label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="resolution" value="cleared" checked>
+              <span>Cleared (False Alarm / Verified)</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="resolution" value="confirmed_handoff">
+              <span>Confirmed Handoff (Account Rental Detected)</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="resolution" value="needs_follow_up">
+              <span>Needs Follow-up (Schedule Verification Selfie)</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="reviewer-notes">Reviewer Notes:</label>
+          <textarea id="reviewer-notes" class="form-textarea" placeholder="Add optional audit reasoning or driver comments..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="btn-modal-submit">Submit Resolution</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

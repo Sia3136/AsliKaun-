@@ -85,5 +85,7 @@ print("\nPASS (context-axis distinction is clean): same context-change magnitude
       if ok else
       "\nFAIL: context-axis distinction did not hold — see per-scenario distributions above")
 if m3 != "handoff_signature":
-    print(f"NOTE: handoff majority landed in '{m3}', not 'handoff_signature' — behavior scorer separation "
-          f"(especially motion) is still the known-weak link flagged in ml/README.md, not a combiner bug")
+    print(f"NOTE: handoff majority landed in '{m3}' ({c3[m3]}/{N_TRIALS} trials), not 'handoff_signature' — "
+          f"consistent with the measured population EER of 0.158 (ml/scripts/evaluate_fusion.py): one specific "
+          f"owner/renter pair can land anywhere in that distribution, so a single pair missing on majority vote "
+          f"isn't a combiner bug, it's exactly the per-signal weakness documented in ml/README.md's Phase 1 results")

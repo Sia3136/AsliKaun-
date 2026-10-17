@@ -12,8 +12,8 @@
 | **Classical baselines** (`ml/models/isolation_baseline.py`, `mahalanobis_baseline.py`) | Done, evaluated — see Phase 1 results below |
 | **Conformal calibration + Fisher fusion** (`ml/calibration/`) | Done, tested — replaces the old `mean(anomaly_scores)` fusion with proper p-values and Fisher's method |
 | **Rider-disjoint evaluation harness** (`ml/evaluation/`) | Done — chronological enroll/calibrate/test/impostor split, EER/AUC/FRR@FAR with bootstrap CIs |
-| Two-axis combiner (`ml/combiner/two_axis.py`) | Still uses the old mean-fusion internally for the synthetic red-team demo; **not yet upgraded** to the new conformal+Fisher fusion — see Known issues |
-| Red-team simulator (`ml/redteam/`) | Done — 8 scenarios: lazy/slow-drift/split-shift/copycat renters, honest phone+city change, honest illness, long-absence, cold-start |
+| Two-axis combiner (`ml/combiner/two_axis.py`) | **Done — rewired to the new conformal+Fisher fusion** via `ml/combiner/signal_models.py`. Required recalibrating the behavior-axis threshold (0.6 -> 0.29, see below) and the red-team EWMA/frozen-anchor detector thresholds (noisier p-value scale) |
+| Red-team simulator (`ml/redteam/`) | Done, re-verified against the new fusion — 8 scenarios: lazy/slow-drift/split-shift/copycat renters, honest phone+city change, honest illness, long-absence, cold-start |
 | Reason-vector LLM call (`ml/llm/reason_vector.py`) | Done — Claude call only for escalated sessions, labeled template fallback otherwise |
 
 ## Phase 1 results: real EER/AUC, not "separates? yes/no"
@@ -45,12 +45,24 @@ Can't be tested on real data directly — no public dataset has operational+moti
 
 **This is a real, measured result, not an assumption:** fusing 3 individually-weak signals drops EER from 0.222 (best single) to 0.158, AUC rises from 0.84 to 0.92. Fisher's method and noisy-OR land almost identically here. Caveat: synthetic data tests the fusion *math*, not real multi-signal behavior — the per-signal real-data numbers above are the ones that test whether each signal carries real information. Both checks were necessary; neither alone would be honest. Even fused, `FRR@FAR=1%` of 0.575 is still not production-usable — this is exactly the gap Phase 2 (deep models) targets.
 
+## Combiner rewiring: what changed and why
+
+Wiring the combiner to real conformal p-values (instead of the old `1 - mean(anomaly_scores)`) surfaced a second real bug, on top of the fusion-math upgrade itself:
+
+**The behavior-axis threshold had to be recalibrated, not just the fusion formula.** `classify()`'s `behavior_alpha` used to default to 0.6, inherited from the old scale where behavior_continuity was an average of three roughly-0.5-centered scores. A Fisher-fused p-value is uniformly distributed on [0,1] for genuinely normal behavior **by construction** — so a 0.6 cutoff, or even a textbook significance level like 0.05, both fail here for different reasons:
+- 0.6 as a "stable" cutoff would flag ~60% of honest sessions (since P(uniform < 0.6) = 0.6).
+- 0.05 (tried first) is the opposite failure: it caught essentially 0% of handoffs, because our per-signal EER is only ~0.22-0.44, so impostor fused p-values aren't concentrated near 0 the way a strict significance test assumes.
+
+The fix: measured the actual EER-balancing threshold directly (`ml/scripts/evaluate_fusion.py`'s `eer()` call) — **0.29**, not derived from any convention. That's now `classify()`'s default. Same story for the red-team EWMA/frozen-anchor detectors in `test_redteam.py`: their thresholds (0.3 gap, 3.0 cumulative drift) were tuned for the old, tighter-spread scale and had to roughly double (0.6, 6.0) for the new, noisier p-value scale — confirmed by re-running the boiling-frog demonstration, which briefly broke (the fast baseline started "catching" the slow drift it's supposed to miss) until retuned.
+
+**Takeaway for the pitch:** don't treat any of these thresholds as fixed constants. They're measured against the current signal set and will shift again once Phase 2 models change the underlying p-value distributions — recalibrate whenever the models change, the same way this round did.
+
 ## Known issues to fix next
 
-1. **The two-axis combiner (`ml/combiner/two_axis.py`) hasn't been upgraded to the new conformal+Fisher fusion yet.** It still uses the old `mean(anomaly_scores)` approach for the synthetic red-team demo. The fusion check above proves the new approach is better — wiring it into the combiner is the next integration step before Phase 2 deep models, so the red-team results reflect the real fusion method.
-2. **Mahalanobis is unreliable for high-dimensional signals (touch, motion) at this enrollment-set size.** Confirmed by the touch result above (AUC 0.454). Use IsolationForest for those; Mahalanobis stays viable for GPS (23 features) and operational (3 features), where dimensionality is much lower relative to enrollment size.
-3. **Per-signal EER (~0.40-0.46) is the real bottleneck**, not the architecture. Fusion closes some of the gap (down to 0.158) but not enough for a strict security threshold. This is the direct justification for Phase 2: train sequence models (touch LSTM/1D-CNN autoencoder, GPS GRU+triplet encoder) and compare each against its classical baseline on this same harness — keep whichever wins.
-4. **Single-session decisions are noisy** (documented from the earlier synthetic combiner tests) — a real deployment needs multi-session aggregation (EWMA/frozen-anchor, already built in `ml/redteam/detectors.py`) rather than a single-session verdict. This compounds with issue #3: weak per-signal EER makes single-session noise worse.
+1. **Mahalanobis is unreliable for high-dimensional signals (touch, motion) at this enrollment-set size.** Confirmed by the touch result above (AUC 0.454). Use IsolationForest for those; Mahalanobis stays viable for GPS (23 features) and operational (3 features), where dimensionality is much lower relative to enrollment size.
+2. **Per-signal EER (~0.40-0.46) is the real bottleneck**, not the architecture. Fusion closes some of the gap (down to 0.158) but not enough for a strict security threshold. This is the direct justification for Phase 2: train sequence models (touch LSTM/1D-CNN autoencoder, GPS GRU+triplet encoder) and compare each against its classical baseline on this same harness — keep whichever wins.
+3. **Single-session decisions are noisy** (documented from the earlier synthetic combiner tests) — a real deployment needs multi-session aggregation (EWMA/frozen-anchor, already built in `ml/redteam/detectors.py`) rather than a single-session verdict. This compounds with issue #2: weak per-signal EER makes single-session noise worse.
+4. **Per-rider threshold calibration isn't wired yet** — `behavior_alpha=0.29` is one global value measured from the pooled synthetic cohort, not calibrated per rider from their own history (which is what the product actually promises: "at most X% false challenges for THIS rider"). That's the next calibration step once Phase 2 models are in.
 5. ODIDMob route "directness" is a simplification (straight-line first-to-last-stop vs. total path length for the WHOLE multi-stop wave, not per-leg) — fine for a first pass, would need per-leg geometry mapping for a more precise version.
 
 ## Run everything
@@ -94,7 +106,8 @@ ml/
   evaluation/metrics.py                 EER, AUC, FRR@FAR, bootstrap CI
   evaluation/harness.py                 signal-agnostic rider-disjoint evaluation loop
   scorers/*.py                          OLD mean-vector scorers, still used by the synthetic combiner/red-team tests
-  combiner/two_axis.py                  context continuity x behavior continuity -> quadrant -> decision (needs fusion upgrade, see Known issues #1)
+  combiner/two_axis.py                  context continuity x behavior continuity -> quadrant -> decision (now on Fisher-fused p-values)
+  combiner/signal_models.py             fits per-rider IsolationBaseline+ConformalScorer per signal, feeds the combiner
   redteam/scenarios.py                  8 scenario generators (4 attacker types, copycat, 2 honest traps, cold-start)
   redteam/detectors.py                  EWMA fast-baseline, frozen-anchor drift, split-rental clustering
   llm/reason_vector.py                  Claude-generated rider-facing explanation for escalated sessions

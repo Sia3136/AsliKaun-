@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -143,6 +143,26 @@ def init_db() -> None:
             active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS driver_tokens (
+            driver_id TEXT PRIMARY KEY,
+            token_hash TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            rotated_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS driver_change_declarations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            driver_id TEXT NOT NULL,
+            device_id TEXT,
+            ip_subnet TEXT,
+            zone TEXT,
+            reason TEXT NOT NULL,
+            declared_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            checked_at TEXT,
+            matched_session_id INTEGER,
+            outcome_note TEXT
+        );
         """)
         # Migrate databases created by earlier prototype versions.
         review_columns = {
@@ -252,6 +272,31 @@ def require_admin(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return {"username": username}
+
+
+def hash_driver_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def require_driver_token(driver_id: str, token: str | None) -> None:
+    """Verify a provisioned driver token for this specific driver ID."""
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Driver token required in the X-Driver-Token header",
+            headers={"WWW-Authenticate": "DriverToken"},
+        )
+    with connect() as con:
+        row = con.execute(
+            "SELECT token_hash, active FROM driver_tokens WHERE driver_id = ?",
+            (driver_id,),
+        ).fetchone()
+    if (
+        row is None
+        or not row["active"]
+        or not hmac.compare_digest(hash_driver_token(token), row["token_hash"])
+    ):
+        raise HTTPException(status_code=401, detail="Invalid or inactive driver token")
 
 
 def seed_admin_from_env() -> None:
@@ -475,6 +520,50 @@ def ingest_session(body: SessionIngest) -> dict:
             write_event(con, body.driver_id, "baseline_established", {"context": current_context})
             return result
 
+        # A pending declaration is supporting context only. It never bypasses scoring.
+        pending_declaration = con.execute(
+            """SELECT * FROM driver_change_declarations
+               WHERE driver_id = ? AND status = 'pending'
+               ORDER BY id DESC LIMIT 1""",
+            (body.driver_id,),
+        ).fetchone()
+
+        declaration_reason: list[str] = []
+        if pending_declaration is not None:
+            declared_context = {
+                "device_id": pending_declaration["device_id"],
+                "ip_subnet": pending_declaration["ip_subnet"],
+                "zone": pending_declaration["zone"],
+            }
+            declared_fields = {
+                key: value for key, value in declared_context.items() if value is not None
+            }
+            declaration_matches = bool(declared_fields) and all(
+                current_context.get(key) == value
+                for key, value in declared_fields.items()
+            )
+            declaration_status = "matched" if declaration_matches else "not_matched"
+            outcome_note = (
+                "Declared context matched the observed session; declaration is not proof of identity."
+                if declaration_matches
+                else "Declared context did not fully match the observed session."
+            )
+            con.execute(
+                """UPDATE driver_change_declarations
+                   SET status = ?, checked_at = ?, matched_session_id = ?, outcome_note = ?
+                   WHERE id = ? AND status = 'pending'""",
+                (
+                    declaration_status,
+                    now_iso(),
+                    None,  # Filled after the session row is inserted below.
+                    outcome_note,
+                    pending_declaration["id"],
+                ),
+            )
+            declaration_reason.append(
+                f"Driver declaration {declaration_status}: {outcome_note}"
+            )
+
         previous_context = decode_json(driver["latest_json"], {})
         anchor_behavior = decode_json(driver["anchor_json"], {})
         fast_behavior = decode_json(driver["fast_json"], {})
@@ -492,7 +581,7 @@ def ingest_session(body: SessionIngest) -> dict:
             behavior_axis = ml_eval["behavior_axis"]
             quadrant = ml_eval["quadrant"]
             decision = ml_eval["decision"]
-            reasons = ml_eval["reasons"]
+            reasons = ml_eval["reasons"] + declaration_reason
             signals = ml_eval["signals"]
             reason_vector = ml_eval.get("reason_vector")
             current_behavior = ml_eval["current_behavior"]
@@ -510,7 +599,12 @@ def ingest_session(body: SessionIngest) -> dict:
             else:
                 behavior_axis = "stable"
             decision, quadrant = decide(context_axis, behavior_axis)
-            reasons = context_reasons + [f"Fast baseline: {r}" for r in fast_reasons] + [f"Frozen anchor: {r}" for r in anchor_reasons]
+            reasons = (
+                context_reasons
+                + [f"Fast baseline: {r}" for r in fast_reasons]
+                + [f"Frozen anchor: {r}" for r in anchor_reasons]
+                + declaration_reason
+            )
             signals = {}
             reason_vector = None
             model_status = "mock_behavior_scorer"
@@ -566,6 +660,25 @@ def ingest_session(body: SessionIngest) -> dict:
              behavior_score, context_axis, behavior_axis, quadrant, decision, json.dumps(reasons)),
         )
         session_id = session_cursor.lastrowid
+
+        if pending_declaration is not None:
+            con.execute(
+                """UPDATE driver_change_declarations
+                   SET matched_session_id = ?
+                   WHERE id = ?""",
+                (session_id, pending_declaration["id"]),
+            )
+            write_event(
+                con,
+                body.driver_id,
+                "context_change_declaration_checked",
+                {
+                    "declaration_id": pending_declaration["id"],
+                    "session_id": session_id,
+                    "status": declaration_status,
+                    "outcome_note": outcome_note,
+                },
+            )
 
         # Queue only decisions that require a human review.
         if decision in ("challenge_at_safe_pause", "step_up_check_at_safe_pause"):
@@ -638,33 +751,163 @@ def fleet_scores(admin: dict[str, str] = Depends(require_admin)) -> dict:
 
 
 @app.post("/v1/drivers/{driver_id}/declare-change")
-def declare_change(driver_id: str, body: DeclareChange) -> dict:
+def declare_change(
+    driver_id: str,
+    body: DeclareChange,
+    x_driver_token: str | None = Header(default=None, alias="X-Driver-Token"),
+) -> dict:
+    """Record a driver's declared context change for comparison with the next session."""
+    require_driver_token(driver_id, x_driver_token)
+
+    declared_context = {
+        key: value
+        for key, value in {
+            "device_id": body.device_id,
+            "ip_subnet": body.ip_subnet,
+            "zone": body.zone,
+        }.items()
+        if value is not None
+    }
+    if not declared_context:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide at least one of device_id, ip_subnet, or zone.",
+        )
+
     with connect() as con:
-        row = con.execute("SELECT * FROM drivers WHERE driver_id=?", (driver_id,)).fetchone()
+        row = con.execute(
+            "SELECT driver_id FROM drivers WHERE driver_id = ?", (driver_id,)
+        ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="Driver not found")
 
-        latest_context = decode_json(row["latest_json"], {})
-        declared = body.model_dump()
-        # Only provided fields replace the current context; nulls are ignored.
-        for key in ("device_id", "ip_subnet", "zone"):
-            if declared.get(key) is not None:
-                latest_context[key] = declared[key]
-
+        # Supersede an older pending declaration so only the newest one is evaluated.
         con.execute(
-            "UPDATE drivers SET latest_json=?, updated_at=? WHERE driver_id=?",
-            (json.dumps(latest_context), now_iso(), driver_id),
+            """UPDATE driver_change_declarations
+               SET status = 'superseded', checked_at = ?,
+                   outcome_note = 'Superseded by a newer declaration.'
+               WHERE driver_id = ? AND status = 'pending'""",
+            (now_iso(), driver_id),
         )
-        write_event(con, driver_id, "context_change_declared", {
-            "reason": body.reason,
-            "new_context": latest_context,
-        })
-        return {
-            "driver_id": driver_id,
-            "status": "context_change_recorded",
-            "context": latest_context,
-            "note": "Next session will compare against the declared context; frozen identity anchor is unchanged.",
-        }
+        cursor = con.execute(
+            """INSERT INTO driver_change_declarations(
+                   driver_id, device_id, ip_subnet, zone, reason, declared_at, status
+               ) VALUES(?, ?, ?, ?, ?, ?, 'pending')""",
+            (
+                driver_id,
+                body.device_id,
+                body.ip_subnet,
+                body.zone,
+                body.reason,
+                now_iso(),
+            ),
+        )
+        declaration_id = cursor.lastrowid
+        write_event(
+            con,
+            driver_id,
+            "context_change_declared",
+            {
+                "declaration_id": declaration_id,
+                "reason": body.reason,
+                "declared_context": declared_context,
+                "status": "pending",
+            },
+        )
+
+    return {
+        "driver_id": driver_id,
+        "declaration_id": declaration_id,
+        "status": "pending",
+        "declared_context": declared_context,
+        "note": (
+            "Declaration recorded. The next observed session will be compared against it; "
+            "the declaration does not change the stored observed context or prove identity."
+        ),
+    }
+
+
+@app.post("/v1/admin/drivers/{driver_id}/driver-token")
+def issue_driver_token(
+    driver_id: str,
+    admin: dict[str, str] = Depends(require_admin),
+) -> dict:
+    """Create or rotate a driver token. The raw token is shown only once."""
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hash_driver_token(raw_token)
+    timestamp = now_iso()
+
+    with connect() as con:
+        driver = con.execute(
+            "SELECT driver_id FROM drivers WHERE driver_id = ?", (driver_id,)
+        ).fetchone()
+        if driver is None:
+            # Admin provisioning is the trust boundary: create the driver record before
+            # issuing a token, so unauthenticated clients cannot claim a new driver ID.
+            con.execute(
+                """INSERT INTO drivers(driver_id, anchor_json, fast_json, latest_json,
+                   latest_result_json, updated_at) VALUES(?, '{}', '{}', '{}', '{}', ?)""",
+                (driver_id, timestamp),
+            )
+
+        existing = con.execute(
+            "SELECT driver_id FROM driver_tokens WHERE driver_id = ?", (driver_id,)
+        ).fetchone()
+        if existing is None:
+            con.execute(
+                """INSERT INTO driver_tokens(
+                       driver_id, token_hash, active, created_at, rotated_at
+                   ) VALUES(?, ?, 1, ?, NULL)""",
+                (driver_id, token_hash, timestamp),
+            )
+            action = "driver_token_created"
+        else:
+            con.execute(
+                """UPDATE driver_tokens
+                   SET token_hash = ?, active = 1, rotated_at = ?
+                   WHERE driver_id = ?""",
+                (token_hash, timestamp, driver_id),
+            )
+            action = "driver_token_rotated"
+
+        write_event(
+            con,
+            driver_id,
+            action,
+            {"admin_username": admin["username"], "timestamp": timestamp},
+        )
+
+    return {
+        "driver_id": driver_id,
+        "driver_token": raw_token,
+        "header_name": "X-Driver-Token",
+        "note": "Copy this token now. It is stored as a hash and cannot be retrieved later.",
+    }
+
+
+@app.get("/v1/admin/drivers/{driver_id}/declarations")
+def list_driver_declarations(
+    driver_id: str,
+    limit: int = 100,
+    admin: dict[str, str] = Depends(require_admin),
+) -> dict:
+    """Admin-only history of driver context declarations and their outcomes."""
+    limit = max(1, min(limit, 500))
+    with connect() as con:
+        exists = con.execute(
+            "SELECT 1 FROM drivers WHERE driver_id = ?", (driver_id,)
+        ).fetchone()
+        if exists is None:
+            raise HTTPException(status_code=404, detail="Driver not found")
+        rows = con.execute(
+            """SELECT id AS declaration_id, driver_id, device_id, ip_subnet, zone,
+                      reason, declared_at, status, checked_at, matched_session_id,
+                      outcome_note
+               FROM driver_change_declarations
+               WHERE driver_id = ? ORDER BY id DESC LIMIT ?""",
+            (driver_id, limit),
+        ).fetchall()
+    return {"driver_id": driver_id, "count": len(rows), "declarations": [dict(r) for r in rows]}
 
 
 @app.get("/v1/drivers/{driver_id}/events")

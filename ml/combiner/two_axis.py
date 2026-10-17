@@ -82,23 +82,29 @@ QUADRANTS = {
 
 
 def classify(context_cont: float, behavior_cont: float,
-             context_threshold: float = 0.6, behavior_alpha: float = 0.05) -> dict:
+             context_threshold: float = 0.6, behavior_alpha: float = 0.29) -> dict:
     """context_threshold: context_continuity (a simple match-fraction,
     0/0.33/0.67/1) >= this counts as 'stable' — unchanged semantics.
 
     behavior_alpha: behavior_continuity is now a Fisher-fused conformal
     p-value (see behavior_continuity's docstring), which is uniformly
-    distributed on [0,1] for genuinely normal behavior BY CONSTRUCTION —
-    that's what makes it a valid p-value. So 'stable' must mean p is
-    NOT small, i.e. behavior_cont >= behavior_alpha, with alpha a
-    standard significance level (0.05 default), not a 0.6 cutoff.
-    Using the old 0.6 threshold here would flag ~60% of genuinely
-    honest sessions on the behavior axis alone, since P(uniform < 0.6)
-    = 0.6 — this was a real bug caught when the fusion math was
-    formalized, not a style choice. alpha itself is still a starting
-    point; the product's per-rider conformal calibration (not yet
-    wired) would let each rider's threshold be set from their own
-    history to hit a target false-challenge rate directly."""
+    distributed on [0,1] for genuinely normal behavior BY CONSTRUCTION.
+    'Stable' means behavior_cont >= behavior_alpha.
+
+    The textbook choice here would be a significance level like 0.05 —
+    that was tried first and was wrong FOR THIS SYSTEM: it caught
+    essentially 0% of handoffs, because our per-signal EER is ~0.22-0.44
+    (see ml/README.md's Phase 1 results), so impostor fused p-values
+    aren't concentrated near 0 the way alpha=0.05 assumes. 0.29 is not a
+    guess — it's the actual EER-balancing threshold measured empirically
+    in `ml/scripts/evaluate_fusion.py` (genuine p-value median ~0.54,
+    impostor median ~0.11; 0.29 is where false-accept and false-reject
+    rates cross). This is a global starting point; the product's
+    per-rider conformal calibration (not yet wired) would let each
+    rider's threshold be set from their own history to hit a target
+    false-challenge rate directly, which is the more correct long-term
+    answer — this value should be re-measured whenever the signal set
+    or models change, not treated as permanent."""
     ctx_state = "stable" if context_cont >= context_threshold else "changed"
     beh_state = "stable" if behavior_cont >= behavior_alpha else "changed"
     result = dict(QUADRANTS[(ctx_state, beh_state)])

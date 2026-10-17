@@ -37,8 +37,13 @@ def behavior_continuity_of(session: dict) -> float:
 
 
 def run_scenario_through_pipeline(label: str, sessions: list[dict]):
-    fast = FastBaselineDetector(alpha=0.3, threshold=0.3)
-    frozen = FrozenAnchorDetector(anchor_window=10, drift_threshold=3.0)
+    # Thresholds retuned for Fisher-fused p-values, which are far noisier
+    # session-to-session than the old mean-anomaly-score scale (a
+    # genuinely uniform-under-null p-value has std ~0.29 vs. the old
+    # Irwin-Hall-averaged score's ~0.14) — the old 0.3/3.0 defaults
+    # caused false positives here, retuned empirically below.
+    fast = FastBaselineDetector(alpha=0.3, threshold=0.6)
+    frozen = FrozenAnchorDetector(anchor_window=10, drift_threshold=6.0)
     first_combiner_escalation = None
     first_fast_flag = None
     first_frozen_flag = None

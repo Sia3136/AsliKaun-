@@ -1,500 +1,2327 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Trust Juggler — Multi-Modal Continuous Rider Trust Dashboard</title>
-  <meta name="description" content="Continuous behavioral authentication and account-sharing detection platform for delivery fleets. Two-axis trust fusion with explainable reason vectors.">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#d6e6f5">
+  <title>TrustMesh — Continuous Identity Intelligence</title>
+  <meta name="description" content="AI-Powered continuous identity intelligence platform for on-demand ecosystems. Detect account handoffs through contextual and behavioral continuity.">
+  <meta property="og:title" content="TrustMesh — Continuous Identity Intelligence">
+  <meta property="og:description" content="The account stays the same. But does the person? Trust the behavior. Detect the handoff.">
+  <meta property="og:type" content="website">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2306192f'/%3E%3Cpath d='M9 23V9h3.6l7.4 9.6V9H23v14h-3.6L12 13.4V23H9z' fill='%23edf6fd'/%3E%3C/svg%3E">
+
+  <!-- Google Fonts: Inter 400, 500, 600, 700 -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --ink: #06192f;
+      --ink-light: #162c47;
+      --muted: #5e7082;
+      --muted-light: #8496a8;
+      --ice: #d6e6f5;
+      --ice-surface: #e9f3fb;
+      --white: #ffffff;
+      --blue: #1169dc;
+      --blue-hover: #0c56b8;
+      --blue-soft: rgba(17, 105, 220, 0.08);
+      --blue-glow: rgba(17, 105, 220, 0.28);
+      --emerald: #059669;
+      --amber: #d97706;
+      --rose: #e11d48;
+      --glass-bg: rgba(246, 250, 255, 0.76);
+      --glass-border: rgba(255, 255, 255, 0.82);
+      --glass-shadow: 0 16px 36px rgba(15, 35, 60, 0.06), 0 2px 8px rgba(15, 35, 60, 0.04);
+      --hero-hue: 0deg;
+      --hero-sat: 1;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(circle at 44% 18%, #edf6fd 0%, #dbeaf6 32%, #d6e6f5 68%, #d2e3f3 100%);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--ink);
+      overflow-x: hidden;
+      overflow-y: auto;
+      line-height: 1.5;
+    }
+
+    /* Fixed film noise overlay */
+    .noise-overlay {
+      position: fixed;
+      inset: 0;
+      opacity: 0.12;
+      mix-blend-mode: soft-light;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.32'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    button {
+      font-family: inherit;
+      color: inherit;
+      border: none;
+      background: none;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       1. STICKY GLASS HEADER & NAVIGATION
+       ════════════════════════════════════════════════════════════════ */
+    .site-header {
+      position: sticky;
+      top: 0;
+      width: 100%;
+      z-index: 1000;
+      background: rgba(220, 234, 248, 0.72);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.45);
+      transition: background 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .header-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 10px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+    .brand-symbol {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(6, 25, 47, 0.15);
+    }
+    .brand-symbol svg {
+      width: 20px;
+      height: 20px;
+      fill: #edf6fd;
+    }
+
+    .nav-pill {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      box-shadow: 0 2px 14px rgba(6, 25, 47, 0.04), inset 0 0 10px rgba(255, 255, 255, 0.5);
+    }
+    .nav-pill a {
+      padding: 7px 16px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--muted);
+      border-radius: 18px;
+      transition: all 0.2s ease;
+    }
+    .nav-pill a:hover {
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.6);
+    }
+    .nav-pill a.active {
+      color: var(--ink);
+      background: #ffffff;
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(6, 25, 47, 0.06);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn-header-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 20px;
+      border-radius: 22px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      background: linear-gradient(135deg, #1169dc 0%, #0d54b3 100%);
+      box-shadow: 0 4px 16px rgba(17, 105, 220, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.35);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .btn-header-cta:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(17, 105, 220, 0.42);
+    }
+
+    .menu-toggle-btn {
+      display: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .menu-toggle-btn span {
+      width: 20px;
+      height: 2px;
+      background: var(--ink);
+      border-radius: 1px;
+      transition: all 0.2s ease;
+    }
+
+    /* Mobile Drawer */
+    .mobile-menu-drawer {
+      display: none;
+      position: fixed;
+      top: 68px;
+      left: 0;
+      right: 0;
+      background: rgba(220, 234, 248, 0.95);
+      backdrop-filter: blur(24px);
+      padding: 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.7);
+      flex-direction: column;
+      gap: 14px;
+      z-index: 999;
+      box-shadow: 0 20px 40px rgba(6, 25, 47, 0.1);
+    }
+    .mobile-menu-drawer.open {
+      display: flex;
+    }
+    .mobile-menu-drawer a {
+      font-size: 16px;
+      font-weight: 500;
+      padding: 10px 16px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.5);
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       2. HERO SECTION — INTERACTIVE CONTINUOUS IDENTITY SPOTLIGHT
+       ════════════════════════════════════════════════════════════════ */
+    .hero-section {
+      position: relative;
+      padding: 16px 24px 50px 24px;
+      max-width: 1480px;
+      margin: 0 auto;
+      overflow: visible;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.05fr;
+      gap: 40px;
+      align-items: center;
+      min-height: auto;
+    }
+
+    .hero-copy-col {
+      z-index: 10;
+      padding-right: 20px;
+    }
+
+    .badge-overline {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.85);
+      box-shadow: 0 2px 10px rgba(6, 25, 47, 0.05);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 14px;
+    }
+    .badge-overline .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 8px var(--blue);
+      animation: pulseGlow 2s infinite ease-in-out;
+    }
+    @keyframes pulseGlow {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.4); opacity: 0.5; }
+    }
+
+    .hero-title {
+      font-size: clamp(38px, 4.4vw, 64px);
+      line-height: 1.06;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--ink);
+      margin: 0 0 16px 0;
+    }
+    .hero-title .emphasis {
+      color: var(--blue);
+      display: inline-block;
+    }
+
+    .hero-tagline {
+      font-size: clamp(19px, 1.8vw, 24px);
+      font-weight: 600;
+      color: var(--ink-light);
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .hero-tagline .chain-icon {
+      display: inline-flex;
+      align-items: center;
+    }
+    .hero-tagline .chain-icon svg {
+      width: 32px;
+      height: 16px;
+      fill: var(--blue);
+    }
+
+    .hero-desc {
+      font-size: 17px;
+      line-height: 1.62;
+      color: var(--muted);
+      margin: 0 0 32px 0;
+      max-width: 580px;
+    }
+
+    .hero-cta-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 40px;
+    }
+
+    .btn-primary-hero {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 15px 32px;
+      border-radius: 28px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      background: linear-gradient(135deg, #1169dc 0%, #094eb0 100%);
+      box-shadow: 0 8px 24px rgba(17, 105, 220, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-primary-hero:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px rgba(17, 105, 220, 0.48);
+    }
+
+    .btn-secondary-hero {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 15px 28px;
+      border-radius: 28px;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      box-shadow: 0 4px 16px rgba(6, 25, 47, 0.05);
+      backdrop-filter: blur(12px);
+      transition: all 0.25s ease;
+    }
+    .btn-secondary-hero:hover {
+      background: #ffffff;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(6, 25, 47, 0.08);
+    }
+
+    .hero-pillars-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .hero-pillar-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--ink);
+      box-shadow: 0 2px 8px rgba(6, 25, 47, 0.03);
+    }
+    .hero-pillar-pill svg {
+      width: 16px;
+      height: 16px;
+      stroke: var(--blue);
+      fill: none;
+      stroke-width: 2.2;
+    }
+
+    /* Hero Visual Stage Column */
+    .hero-visual-col {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: auto;
+    }
+
+    /* Central Interactive Stage Container */
+    .stage-wrapper {
+      position: relative;
+      width: 100%;
+      max-width: 680px;
+      aspect-ratio: 820 / 760;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Ghost Typography behind portrait */
+    .ghost-text {
+      position: absolute;
+      z-index: 2;
+      color: rgba(255, 255, 255, 0.42);
+      font-weight: 800;
+      letter-spacing: -0.05em;
+      line-height: 0.8;
+      user-select: none;
+      pointer-events: none;
+      font-size: clamp(80px, 10vw, 150px);
+    }
+    .ghost-text.top {
+      top: 18%;
+      left: 4%;
+    }
+    .ghost-text.bottom {
+      bottom: 12%;
+      right: 6%;
+    }
+
+    /* Hero portrait stack */
+    .hero-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      z-index: 7;
+    }
+    .hero-stack {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+    .hero-front, .hero-back {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      pointer-events: none;
+    }
+    .hero-front {
+      z-index: 1;
+      filter: drop-shadow(14px 20px 32px rgba(35, 57, 79, 0.16))
+              hue-rotate(var(--hero-hue, 0deg)) saturate(var(--hero-sat, 1));
+      transition: filter 0.4s ease;
+    }
+    .hero-back {
+      z-index: 2;
+      mask-repeat: no-repeat;
+      -webkit-mask-repeat: no-repeat;
+      mask-size: 100% 100%;
+      -webkit-mask-size: 100% 100%;
+      mask-mode: alpha;
+      border-radius: 32px;
+    }
+    .hero-mask-canvas {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      display: none;
+    }
+
+    /* Awake breathing */
+    .hero-container.awake {
+      animation: breathe 3.5s ease-in-out infinite;
+    }
+    @keyframes breathe {
+      50% { transform: translateY(-6px); }
+    }
+    .hero-container.awake .hero-front {
+      animation: breatheGlow 3.5s ease-in-out infinite;
+    }
+    @keyframes breatheGlow {
+      50% {
+        filter: drop-shadow(12px 18px 38px rgba(16, 105, 220, 0.32))
+                hue-rotate(var(--hero-hue, 0deg)) saturate(calc(var(--hero-sat, 1) * 1.08));
+      }
+    }
+
+    /* Interactive Mesh Activity Signal Streams */
+    .signal-card {
+      position: absolute;
+      z-index: 20;
+      background: rgba(246, 250, 255, 0.88);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid rgba(255, 255, 255, 0.95);
+      border-radius: 18px;
+      padding: 14px 18px;
+      box-shadow: 0 14px 34px rgba(17, 43, 74, 0.12), inset 0 0 12px rgba(255, 255, 255, 0.6);
+      font-size: 12.5px;
+      min-width: 210px;
+      pointer-events: auto;
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
+    }
+    .signal-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 18px 40px rgba(17, 43, 74, 0.16);
+    }
+    .signal-card.stream-a {
+      top: 6%;
+      left: -20px;
+    }
+    .signal-card.stream-b {
+      bottom: 12%;
+      right: -25px;
+    }
+
+    .signal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .signal-header .tag-verified {
+      color: var(--emerald);
+      background: rgba(5, 150, 105, 0.12);
+      padding: 2px 7px;
+      border-radius: 8px;
+      font-size: 10px;
+    }
+    .signal-header .tag-warning {
+      color: var(--amber);
+      background: rgba(217, 119, 6, 0.14);
+      padding: 2px 7px;
+      border-radius: 8px;
+      font-size: 10px;
+    }
+    .signal-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .signal-row b {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    /* Floating Spotlight Indicator */
+    .spotlight-hint-pill {
+      position: absolute;
+      bottom: -15px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 25;
+      background: rgba(6, 25, 47, 0.88);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 7px 16px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 6px 20px rgba(6, 25, 47, 0.25);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .spotlight-hint-pill .radar-icon {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #38bdf8;
+      box-shadow: 0 0 10px #38bdf8;
+      animation: pulseGlow 1.5s infinite;
+    }
+
+
+
+    /* ════════════════════════════════════════════════════════════════
+       3. SECTION COMMON STYLING
+       ════════════════════════════════════════════════════════════════ */
+    .content-section {
+      padding: 100px 24px;
+      max-width: 1320px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .section-header {
+      text-align: center;
+      max-width: 840px;
+      margin: 0 auto 60px auto;
+    }
+    .section-overline {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 12px;
+      display: block;
+    }
+    .section-heading {
+      font-size: clamp(30px, 3.2vw, 48px);
+      line-height: 1.15;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      color: var(--ink);
+      margin: 0 0 18px 0;
+    }
+    .section-subtext {
+      font-size: 17.5px;
+      line-height: 1.62;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* Glass Cards */
+    .glass-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      box-shadow: var(--glass-shadow);
+      padding: 34px;
+      transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+    }
+    .glass-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 22px 48px rgba(15, 35, 60, 0.1);
+      border-color: rgba(255, 255, 255, 0.98);
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       3. THE PROBLEM: THE IDENTITY GAP
+       ════════════════════════════════════════════════════════════════ */
+    .problem-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 28px;
+      margin-bottom: 40px;
+    }
+    .problem-card {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+    .problem-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #1169dc, #38bdf8);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .problem-card:hover::before {
+      opacity: 1;
+    }
+    .card-icon-box {
+      width: 52px;
+      height: 52px;
+      border-radius: 16px;
+      background: rgba(17, 105, 220, 0.08);
+      border: 1px solid rgba(17, 105, 220, 0.16);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+    .card-icon-box svg {
+      width: 26px;
+      height: 26px;
+      stroke: var(--blue);
+      fill: none;
+      stroke-width: 2;
+    }
+    .card-title {
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      color: var(--ink);
+      margin: 0 0 12px 0;
+    }
+    .card-desc {
+      font-size: 15.5px;
+      color: var(--muted);
+      line-height: 1.58;
+      margin: 0;
+    }
+
+    /* Timeline breakdown visual */
+    .gap-breakdown-banner {
+      background: linear-gradient(135deg, rgba(6, 25, 47, 0.92) 0%, rgba(13, 37, 68, 0.96) 100%);
+      color: #fff;
+      border-radius: 24px;
+      padding: 40px;
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 40px;
+      align-items: center;
+      box-shadow: 0 20px 48px rgba(6, 25, 47, 0.2);
+    }
+    .gap-banner-left h3 {
+      font-size: 24px;
+      font-weight: 700;
+      margin: 0 0 12px 0;
+      color: #ffffff;
+    }
+    .gap-banner-left p {
+      font-size: 15px;
+      color: #9cb1c9;
+      line-height: 1.6;
+      margin: 0;
+    }
+    .gap-timeline-stages {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+    }
+    .gap-timeline-stages::before {
+      content: "";
+      position: absolute;
+      top: 24px;
+      left: 40px;
+      right: 40px;
+      height: 2px;
+      background: rgba(255, 255, 255, 0.15);
+      z-index: 1;
+    }
+    .timeline-node {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .node-circle {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #122842;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .node-circle.verified {
+      background: #064e3b;
+      border-color: #10b981;
+      color: #34d399;
+    }
+    .node-circle.gap {
+      background: #78350f;
+      border-color: #f59e0b;
+      color: #fcd34d;
+      animation: pulseRing 2s infinite;
+    }
+    .node-circle.alert {
+      background: #1e3a8a;
+      border-color: #38bdf8;
+      color: #93c5fd;
+    }
+    .node-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #d1e2f5;
+      white-space: nowrap;
+    }
+    .node-sub {
+      font-size: 11px;
+      color: #7d96b3;
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       4. THE TRUSTMESH APPROACH
+       ════════════════════════════════════════════════════════════════ */
+    .approach-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 28px;
+    }
+    .approach-card {
+      position: relative;
+      display: flex;
+      gap: 22px;
+    }
+    .approach-number {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--blue);
+      line-height: 1;
+      flex-shrink: 0;
+      opacity: 0.85;
+    }
+    .approach-content h4 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--ink);
+      margin: 0 0 10px 0;
+    }
+    .approach-content p {
+      font-size: 15.5px;
+      color: var(--muted);
+      line-height: 1.6;
+      margin: 0;
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       5. WHAT MAKES TRUSTMESH DIFFERENT?
+       ════════════════════════════════════════════════════════════════ */
+    .diff-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+    .diff-card {
+      background: rgba(255, 255, 255, 0.68);
+      border: 1px solid rgba(255, 255, 255, 0.85);
+      border-radius: 20px;
+      padding: 28px;
+      box-shadow: 0 12px 30px rgba(15, 35, 60, 0.05);
+      transition: all 0.25s ease;
+    }
+    .diff-card:hover {
+      background: #ffffff;
+      transform: translateY(-3px);
+      box-shadow: 0 18px 40px rgba(15, 35, 60, 0.08);
+      border-color: rgba(17, 105, 220, 0.3);
+    }
+    .diff-tag {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--blue);
+      background: rgba(17, 105, 220, 0.08);
+      padding: 3px 9px;
+      border-radius: 6px;
+      display: inline-block;
+      margin-bottom: 14px;
+    }
+    .diff-card h4 {
+      font-size: 18.5px;
+      font-weight: 700;
+      color: var(--ink);
+      margin: 0 0 10px 0;
+    }
+    .diff-card p {
+      font-size: 14.5px;
+      color: var(--muted);
+      line-height: 1.58;
+      margin: 0;
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       6. HOW IT WORKS: THE PIPELINE
+       ════════════════════════════════════════════════════════════════ */
+    .pipeline-wrapper {
+      position: relative;
+    }
+    .pipeline-steps-nav {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    .pipeline-step-btn {
+      background: rgba(255, 255, 255, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.75);
+      border-radius: 18px;
+      padding: 20px 22px;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      position: relative;
+    }
+    .pipeline-step-btn:hover {
+      background: rgba(255, 255, 255, 0.85);
+    }
+    .pipeline-step-btn.active {
+      background: #ffffff;
+      border-color: var(--blue);
+      box-shadow: 0 10px 28px rgba(17, 105, 220, 0.12);
+    }
+    .pipeline-step-btn .step-id {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--blue);
+      letter-spacing: 0.05em;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .pipeline-step-btn .step-name {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .pipeline-interactive-display {
+      background: linear-gradient(135deg, rgba(6, 25, 47, 0.95) 0%, rgba(16, 40, 72, 0.98) 100%);
+      border-radius: 24px;
+      padding: 40px;
+      color: #fff;
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 40px;
+      align-items: center;
+      box-shadow: 0 20px 48px rgba(6, 25, 47, 0.18);
+    }
+    .pipeline-stage-info h3 {
+      font-size: 26px;
+      font-weight: 700;
+      color: #ffffff;
+      margin: 0 0 14px 0;
+    }
+    .pipeline-stage-info p {
+      font-size: 16px;
+      line-height: 1.65;
+      color: #9cb1c9;
+      margin: 0 0 24px 0;
+    }
+    .pipeline-telemetry-hud {
+      background: rgba(4, 15, 29, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      padding: 24px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+    }
+    .telemetry-header {
+      display: flex;
+      justify-content: space-between;
+      color: #38bdf8;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+      font-weight: 600;
+    }
+    .telemetry-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 8px 0;
+      color: #cbd5e1;
+    }
+    .telemetry-val {
+      font-weight: 600;
+    }
+    .telemetry-val.green { color: #34d399; }
+    .telemetry-val.blue { color: #60a5fa; }
+    .telemetry-val.amber { color: #fbbf24; }
+
+    /* ════════════════════════════════════════════════════════════════
+       7. ONE PLATFORM. TWO PERSPECTIVES.
+       ════════════════════════════════════════════════════════════════ */
+    .perspectives-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 36px;
+    }
+    .perspective-card {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 28px;
+      padding: 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: var(--glass-shadow);
+      position: relative;
+    }
+    .perspective-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 14px;
+      border-radius: 14px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+      width: fit-content;
+    }
+    .badge-admin {
+      background: rgba(17, 105, 220, 0.12);
+      color: var(--blue);
+      border: 1px solid rgba(17, 105, 220, 0.2);
+    }
+    .badge-driver {
+      background: rgba(5, 150, 105, 0.12);
+      color: var(--emerald);
+      border: 1px solid rgba(5, 150, 105, 0.2);
+    }
+
+    .perspective-card h3 {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--ink);
+      margin: 0 0 6px 0;
+    }
+    .perspective-role {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--blue);
+      margin-bottom: 16px;
+    }
+    .perspective-desc {
+      font-size: 15.5px;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+
+    .features-checklist {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 32px 0;
+      display: grid;
+      gap: 12px;
+    }
+    .features-checklist li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--ink);
+    }
+    .features-checklist li svg {
+      width: 18px;
+      height: 18px;
+      stroke: var(--blue);
+      stroke-width: 2.5;
+      fill: none;
+      flex-shrink: 0;
+    }
+
+    .perspective-action-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 14px 24px;
+      border-radius: 20px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+      background: var(--ink);
+      box-shadow: 0 6px 18px rgba(6, 25, 47, 0.15);
+      transition: all 0.2s ease;
+    }
+    .perspective-action-btn:hover {
+      background: var(--blue);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px rgba(17, 105, 220, 0.35);
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       8. RESPONSIBLE TRUST BY DESIGN
+       ════════════════════════════════════════════════════════════════ */
+    .principles-quote-banner {
+      background: rgba(255, 255, 255, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      border-radius: 24px;
+      padding: 32px 40px;
+      text-align: center;
+      margin-bottom: 40px;
+      box-shadow: 0 10px 30px rgba(15, 35, 60, 0.04);
+    }
+    .quote-text {
+      font-size: clamp(20px, 2.2vw, 26px);
+      font-weight: 700;
+      color: var(--ink);
+      margin: 0 0 8px 0;
+    }
+    .quote-sub {
+      font-size: 16px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .principles-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 20px;
+    }
+    .principle-card {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 8px 24px rgba(15, 35, 60, 0.04);
+      transition: transform 0.2s ease;
+    }
+    .principle-card:hover {
+      transform: translateY(-3px);
+    }
+    .principle-card h5 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--ink);
+      margin: 0;
+      line-height: 1.3;
+    }
+    .principle-card p {
+      font-size: 13.5px;
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       9. FINAL CALL TO ACTION
+       ════════════════════════════════════════════════════════════════ */
+    .cta-banner-wrapper {
+      background: linear-gradient(135deg, #06192f 0%, #0d284a 50%, #113866 100%);
+      border-radius: 32px;
+      padding: 70px 48px;
+      color: #fff;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 28px 60px rgba(6, 25, 47, 0.28);
+    }
+    .cta-banner-wrapper::before {
+      content: "";
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 50% 50%, rgba(17, 105, 220, 0.25), transparent 60%);
+      pointer-events: none;
+    }
+    .cta-overline {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #38bdf8;
+      margin-bottom: 16px;
+      display: block;
+    }
+    .cta-title {
+      font-size: clamp(32px, 3.8vw, 54px);
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      line-height: 1.15;
+      margin: 0 auto 18px auto;
+      max-width: 800px;
+    }
+    .cta-desc {
+      font-size: 18px;
+      color: #9cb1c9;
+      max-width: 680px;
+      margin: 0 auto 40px auto;
+      line-height: 1.6;
+    }
+    .cta-buttons-row {
+      display: flex;
+      justify-content: center;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+    .btn-cta-white {
+      padding: 16px 36px;
+      border-radius: 28px;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--ink);
+      background: #ffffff;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      transition: all 0.2s ease;
+    }
+    .btn-cta-white:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px rgba(255, 255, 255, 0.3);
+    }
+    .btn-cta-trans {
+      padding: 16px 32px;
+      border-radius: 28px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      backdrop-filter: blur(10px);
+      transition: all 0.2s ease;
+    }
+    .btn-cta-trans:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: translateY(-2px);
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       10. FOOTER
+       ════════════════════════════════════════════════════════════════ */
+    .site-footer {
+      border-top: 1px solid rgba(255, 255, 255, 0.6);
+      background: rgba(214, 230, 245, 0.6);
+      padding: 70px 24px 40px 24px;
+      margin-top: 60px;
+    }
+    .footer-container {
+      max-width: 1320px;
+      margin: 0 auto;
+    }
+    .footer-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 50px;
+      flex-wrap: wrap;
+      gap: 40px;
+    }
+    .footer-brand h4 {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0 0 6px 0;
+      color: var(--ink);
+    }
+    .footer-brand .tagline-sub {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--blue);
+      margin-bottom: 6px;
+    }
+    .footer-brand .motto {
+      font-size: 14px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .footer-nav-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 28px;
+      align-items: center;
+    }
+    .footer-nav-links a {
+      font-size: 14.5px;
+      font-weight: 500;
+      color: var(--muted);
+      transition: color 0.2s ease;
+    }
+    .footer-nav-links a:hover {
+      color: var(--blue);
+    }
+
+    .footer-bottom {
+      border-top: 1px solid rgba(6, 25, 47, 0.08);
+      padding-top: 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13.5px;
+      color: var(--muted);
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .footer-beacon {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .footer-beacon .beacon-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 8px var(--emerald);
+    }
+
+    /* Toast notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 10000;
+      background: rgba(6, 25, 47, 0.92);
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 500;
+      box-shadow: 0 10px 28px rgba(6, 25, 47, 0.25);
+      backdrop-filter: blur(12px);
+      opacity: 0;
+      transform: translateY(12px);
+      pointer-events: none;
+      transition: all 0.25s ease;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       RESPONSIVE BREAKPOINTS
+       ════════════════════════════════════════════════════════════════ */
+    @media (max-width: 1024px) {
+      .hero-grid {
+        grid-template-columns: 1fr;
+        gap: 60px;
+      }
+      .hero-copy-col {
+        padding-right: 0;
+        text-align: center;
+      }
+      .badge-overline {
+        margin-left: auto;
+        margin-right: auto;
+      }
+      .hero-tagline {
+        justify-content: center;
+      }
+      .hero-desc {
+        margin-left: auto;
+        margin-right: auto;
+      }
+      .hero-cta-group {
+        justify-content: center;
+      }
+      .hero-pillars-row {
+        justify-content: center;
+      }
+      .problem-cards-grid,
+      .approach-grid,
+      .diff-grid,
+      .perspectives-grid,
+      .pipeline-steps-nav {
+        grid-template-columns: 1fr;
+      }
+      .pipeline-interactive-display {
+        grid-template-columns: 1fr;
+      }
+      .gap-breakdown-banner {
+        grid-template-columns: 1fr;
+      }
+      .principles-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .nav-pill {
+        display: none;
+      }
+      .menu-toggle-btn {
+        display: flex;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .principles-grid {
+        grid-template-columns: 1fr;
+      }
+      .signal-card {
+        display: none;
+      }
+      .content-section {
+        padding: 60px 18px;
+      }
+      .cta-banner-wrapper {
+        padding: 48px 24px;
+      }
+    }
+  </style>
 </head>
 <body>
-  <div class="app-layout">
-    <!-- Sidebar Navigation -->
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+
+  <!-- Noise filter overlay -->
+  <div class="noise-overlay" aria-hidden="true"></div>
+
+  <!-- 1. STICKY GLASS HEADER -->
+  <header class="site-header" id="siteHeader">
+    <div class="header-container">
+      <a href="#hero" class="brand-logo" aria-label="TrustMesh Home">
+        <div class="brand-symbol">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
           </svg>
         </div>
-        <div class="brand-text">
-          <h1>Trust Juggler</h1>
-          <span class="badge-version">v0.2.0 • ML Fusion</span>
-        </div>
-      </div>
+        <span>TrustMesh</span>
+      </a>
 
-      <nav class="nav-menu">
-        <button class="nav-item active" data-tab="quadrant-tab" id="nav-quadrant">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <path d="M3 12h18M12 3v18"/>
-          </svg>
-          Fleet Quadrants
-        </button>
-        <button class="nav-item" data-tab="timeline-tab" id="nav-timeline">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-          </svg>
-          Rider Trust Timeline
-        </button>
-        <button class="nav-item" data-tab="reviews-tab" id="nav-reviews">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="16" y1="13" x2="8" y2="13"/>
-            <line x1="16" y1="17" x2="8" y2="17"/>
-          </svg>
-          Review Queue
-          <span class="nav-badge" id="review-count-badge">0</span>
-        </button>
-        <button class="nav-item" data-tab="simulation-tab" id="nav-simulation">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="5 3 19 12 5 21 5 3"/>
-          </svg>
-          Red-Team Simulator
-        </button>
-        <button class="nav-item" data-tab="fairness-tab" id="nav-fairness">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
-            <path d="M22 12A10 10 0 0 0 12 2v10z"/>
-          </svg>
-          Cohort Fairness
-        </button>
+      <nav class="nav-pill" aria-label="Primary navigation">
+        <a href="#problem" class="active">The Problem</a>
+        <a href="#approach">Approach</a>
+        <a href="#pipeline">How It Works</a>
+        <a href="#perspectives">Ecosystem</a>
       </nav>
 
-      <div class="sidebar-footer">
-        <div class="system-status">
-          <div class="status-indicator online" id="backend-status-indicator"></div>
-          <div class="status-details">
-            <span class="status-label" id="backend-status-text">Backend Connected</span>
-            <span class="status-sub" id="backend-mode-text">ML Two-Axis Active</span>
-          </div>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Main Content Area -->
-    <main class="main-content">
-      <!-- Top Bar Header -->
-      <header class="topbar">
-        <div class="topbar-left">
-          <h2 id="page-title">Fleet Trust Matrix</h2>
-          <p id="page-subtitle">Real-time two-axis continuity mapping context versus multi-modal behavioral biometric signals.</p>
-        </div>
-        <div class="topbar-actions">
-          <div class="quick-stat">
-            <span class="quick-val" id="stat-active-riders">0</span>
-            <span class="quick-lbl">Active Riders</span>
-          </div>
-          <div class="quick-stat highlight-red">
-            <span class="quick-val" id="stat-flagged-riders">0</span>
-            <span class="quick-lbl">Escalations</span>
-          </div>
-          <div class="quick-stat highlight-blue">
-            <span class="quick-val" id="stat-legit-shifts">0</span>
-            <span class="quick-lbl">Legit Shifts</span>
-          </div>
-          <button class="btn btn-primary" id="btn-quick-ingest" title="Simulate a live delivery session">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 5v14M5 12h14"/>
-            </svg>
-            Stream Session
-          </button>
-        </div>
-      </header>
-
-      <!-- TAB 1: FLEET QUADRANT VIEW -->
-      <section class="tab-pane active" id="quadrant-tab">
-        <div class="grid-2col">
-          <!-- 2D Quadrant Canvas & Overlays -->
-          <div class="card quadrant-card">
-            <div class="card-header">
-              <div class="card-title-group">
-                <h3>Continuous Two-Axis Decision Matrix</h3>
-                <span class="subtext">Context Continuity (Device/Network/Zone) vs Multi-modal Behavior (Touch/Motion/Latency)</span>
-              </div>
-              <div class="quadrant-legend">
-                <span class="legend-pill pill-stable"><span class="dot"></span> Stable (Continue)</span>
-                <span class="legend-pill pill-legit"><span class="dot"></span> Legit Change (Rebaseline)</span>
-                <span class="legend-pill pill-handoff"><span class="dot"></span> Handoff (Challenge)</span>
-                <span class="legend-pill pill-ambiguous"><span class="dot"></span> Ambiguous (Step-Up)</span>
-              </div>
-            </div>
-
-            <div class="quadrant-container" id="quadrant-container">
-              <canvas id="quadrant-canvas" width="600" height="520"></canvas>
-              
-              <!-- Quadrant Watermarks -->
-              <div class="quad-label top-left">
-                <span class="quad-tag">LEGIT CHANGE</span>
-                <p>New phone or moved city, but biometric behavior matches history. Auto-rebaselined silently.</p>
-              </div>
-              <div class="quad-label top-right">
-                <span class="quad-tag">STABLE FLEET</span>
-                <p>Same device & zone with verified habitual riding patterns. Full trust.</p>
-              </div>
-              <div class="quad-label bottom-left">
-                <span class="quad-tag">AMBIGUOUS</span>
-                <p>Both context and behavior shifted. Lightweight challenge recommended.</p>
-              </div>
-              <div class="quad-label bottom-right">
-                <span class="quad-tag">HANDOFF SIGNATURE</span>
-                <p>Same device/network but foreign driving & tap biometric. Illicit account rental flag.</p>
-              </div>
-
-              <!-- Tooltip element -->
-              <div class="quadrant-tooltip" id="quadrant-tooltip"></div>
-            </div>
-            <div class="canvas-axis-labels">
-              <span class="x-axis-title">Context Continuity Axis (0.0 = New Context &rarr; 1.0 = Same Device/Zone)</span>
-            </div>
-          </div>
-
-          <!-- Selected Driver Inspection Panel -->
-          <div class="card inspector-card">
-            <div class="card-header">
-              <h3>Live Driver Inspection</h3>
-              <span class="badge" id="inspector-quadrant-badge">Select Node</span>
-            </div>
-            <div class="inspector-body" id="inspector-body">
-              <div class="empty-state" id="inspector-empty">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <circle cx="12" cy="12" r="10"/>
-                  <path d="M12 16v-4M12 8h.01"/>
-                </svg>
-                <p>Click any rider node on the matrix to inspect their biometrics, baseline deviations, and reason vector.</p>
-              </div>
-
-              <div class="inspector-details hidden" id="inspector-details">
-                <div class="driver-profile-header">
-                  <div class="avatar" id="ins-avatar">R1</div>
-                  <div>
-                    <h4 id="ins-driver-id">rider-001</h4>
-                    <span class="subtext" id="ins-zone">Zone: Andheri West • Phone-A</span>
-                  </div>
-                </div>
-
-                <div class="metrics-row">
-                  <div class="metric-box">
-                    <span class="metric-label">Context Score</span>
-                    <span class="metric-value" id="ins-context-score">0.95</span>
-                  </div>
-                  <div class="metric-box">
-                    <span class="metric-label">Behavior Trust</span>
-                    <span class="metric-value" id="ins-behavior-score">0.88</span>
-                  </div>
-                  <div class="metric-box">
-                    <span class="metric-label">Decision</span>
-                    <span class="metric-value status-text" id="ins-decision">continue</span>
-                  </div>
-                </div>
-
-                <div class="signal-breakdown">
-                  <h5>Multi-Modal Anomaly Signals</h5>
-                  <div class="signal-bar-item">
-                    <div class="signal-info"><span>Touch Biometrics (Pressure/Rhythm)</span><span id="ins-touch-val">0.12</span></div>
-                    <div class="progress-track"><div class="progress-fill green" id="ins-touch-bar" style="width: 12%"></div></div>
-                  </div>
-                  <div class="signal-bar-item">
-                    <div class="signal-info"><span>Motion Signature (Accelerometer)</span><span id="ins-motion-val">0.18</span></div>
-                    <div class="progress-track"><div class="progress-fill green" id="ins-motion-bar" style="width: 18%"></div></div>
-                  </div>
-                  <div class="signal-bar-item">
-                    <div class="signal-info"><span>Operational Timing (Acceptance Latency)</span><span id="ins-op-val">0.15</span></div>
-                    <div class="progress-track"><div class="progress-fill green" id="ins-op-bar" style="width: 15%"></div></div>
-                  </div>
-                </div>
-
-                <div class="reason-vector-card" id="ins-reason-card">
-                  <div class="rv-header">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                    </svg>
-                    <span>Claude LLM Reason Vector</span>
-                  </div>
-                  <p class="rv-text" id="ins-reason-text">No active alerts. Habits correspond to normal personal pattern.</p>
-                </div>
-
-                <div class="inspector-actions">
-                  <button class="btn btn-secondary btn-sm" id="btn-view-timeline">View Full History</button>
-                  <button class="btn btn-danger btn-sm" id="btn-force-challenge">Trigger Step-Up</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- TAB 2: RIDER TRUST TIMELINE -->
-      <section class="tab-pane" id="timeline-tab">
-        <div class="card timeline-card">
-          <div class="card-header">
-            <div>
-              <h3>Dual-Timescale Baseline Trajectory</h3>
-              <span class="subtext">Compares slowly adapting Fast Baseline (EWMA) against the Frozen Identity Anchor over consecutive sessions.</span>
-            </div>
-            <div class="timeline-controls">
-              <label for="timeline-driver-select">Select Rider:</label>
-              <select id="timeline-driver-select" class="form-select">
-                <option value="rider-001">rider-001 (Honest Active)</option>
-                <option value="rider-drift">rider-042 (Slow-Drift Renter)</option>
-                <option value="rider-split">rider-088 (Split-Shift Sharing)</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="timeline-chart-wrapper">
-            <canvas id="timeline-canvas" width="1100" height="320"></canvas>
-            <div class="timeline-legend">
-              <span class="legend-line line-anchor"><span class="line-dot"></span> Frozen Identity Anchor (Last Verification)</span>
-              <span class="legend-line line-fast"><span class="line-dot"></span> Fast Baseline (EWMA Adaptive)</span>
-              <span class="legend-line line-session"><span class="line-dot"></span> Ingested Session Score</span>
-            </div>
-          </div>
-
-          <div class="session-history-table-container">
-            <h4>Recent Ingested Sessions</h4>
-            <table class="data-table" id="timeline-table">
-              <thead>
-                <tr>
-                  <th>Session ID</th>
-                  <th>Timestamp</th>
-                  <th>Context Score</th>
-                  <th>Behavior Score</th>
-                  <th>Quadrant</th>
-                  <th>Decision</th>
-                  <th>Audit Notes</th>
-                </tr>
-              </thead>
-              <tbody id="timeline-table-body">
-                <!-- Dynamically populated -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- TAB 3: REVIEW QUEUE -->
-      <section class="tab-pane" id="reviews-tab">
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <h3>Escalation & Review Queue</h3>
-              <span class="subtext">Flagged sessions requiring manual inspection or safe-pause step-up resolution.</span>
-            </div>
-            <div class="filter-group">
-              <button class="filter-chip active" data-filter="open">Open</button>
-              <button class="filter-chip" data-filter="resolved">Resolved</button>
-              <button class="filter-chip" data-filter="all">All</button>
-            </div>
-          </div>
-
-          <div class="table-responsive">
-            <table class="data-table" id="review-table">
-              <thead>
-                <tr>
-                  <th>Review ID</th>
-                  <th>Driver ID</th>
-                  <th>Decision Trigger</th>
-                  <th>Context / Behavior</th>
-                  <th>Reason Vector (Claude LLM)</th>
-                  <th>Time Flagged</th>
-                  <th>Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="review-table-body">
-                <!-- Populated via API -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- TAB 4: RED-TEAM SIMULATOR -->
-      <section class="tab-pane" id="simulation-tab">
-        <div class="grid-2col">
-          <!-- Attack Scenario Launchpad -->
-          <div class="card">
-            <div class="card-header">
-              <div>
-                <h3>Red-Team Scenario Generators</h3>
-                <span class="subtext">Execute attack patterns & honest traps directly from the ML evaluation suite.</span>
-              </div>
-            </div>
-
-            <div class="scenarios-grid">
-              <div class="scenario-card" data-scenario="lazy_renter">
-                <div class="sc-header">
-                  <span class="sc-badge badge-danger">Attacker</span>
-                  <h4>1. Lazy Renter</h4>
-                </div>
-                <p>Full account handoff from session 0. Immediate behavioral mismatch on identical device & network.</p>
-                <div class="sc-footer">
-                  <span class="sc-expected">Expected: Handoff Signature (Session 1)</span>
-                  <button class="btn btn-outline btn-sm btn-run-scenario" data-scenario="lazy_renter">Launch</button>
-                </div>
-              </div>
-
-              <div class="scenario-card" data-scenario="slow_drift_renter">
-                <div class="sc-header">
-                  <span class="sc-badge badge-warning">Boiling Frog</span>
-                  <h4>2. Slow-Drift Renter</h4>
-                </div>
-                <p>Behavior linearly ramps from owner to renter over 40 sessions to trick naive adaptive baselines.</p>
-                <div class="sc-footer">
-                  <span class="sc-expected">Catches via: Frozen Identity Anchor</span>
-                  <button class="btn btn-outline btn-sm btn-run-scenario" data-scenario="slow_drift_renter">Launch</button>
-                </div>
-              </div>
-
-              <div class="scenario-card" data-scenario="split_shift_sharer">
-                <div class="sc-header">
-                  <span class="sc-badge badge-danger">Sharing</span>
-                  <h4>3. Split-Shift Sharer</h4>
-                </div>
-                <p>Account owner works morning shift; unauthorized renter works evening shift on the same phone.</p>
-                <div class="sc-footer">
-                  <span class="sc-expected">Catches via: GMM BIC Clustering</span>
-                  <button class="btn btn-outline btn-sm btn-run-scenario" data-scenario="split_shift_sharer">Launch</button>
-                </div>
-              </div>
-
-              <div class="scenario-card" data-scenario="copycat_renter">
-                <div class="sc-header">
-                  <span class="sc-badge badge-warning">Spoofed</span>
-                  <h4>4. Copycat Renter</h4>
-                </div>
-                <p>Renter mimics owner's shift hours and acceptance delays, but physical touch/motion differs.</p>
-                <div class="sc-footer">
-                  <span class="sc-expected">Catches via: Multi-Modal Fusion</span>
-                  <button class="btn btn-outline btn-sm btn-run-scenario" data-scenario="copycat_renter">Launch</button>
-                </div>
-              </div>
-
-              <div class="scenario-card highlight-green" data-scenario="honest_phone_and_city_change">
-                <div class="sc-header">
-                  <span class="sc-badge badge-success">Honest Trap</span>
-                  <h4>5. New Phone & City Change</h4>
-                </div>
-                <p>Rider buys a new phone and relocates to a new delivery zone. Physical behavior unchanged.</p>
-                <div class="sc-footer">
-                  <span class="sc-expected">Expected: Legit Change &rarr; Rebaseline</span>
-                  <button class="btn btn-outline btn-sm btn-run-scenario" data-scenario="honest_phone_and_city_change">Launch</button>
-                </div>
-              </div>
-
-              <div class="scenario-card highlight-green" data-scenario="honest_illness_recovery">
-                <div class="sc-header">
-                  <span class="sc-badge badge-success">Honest Trap</span>
-                  <h4>6. Illness / Rough Roads</h4>
-                </div>
-                <p>Temporary spike in latency or vibration without an identity swap. Should not accuse driver.</p>
-                <div class="sc-footer">
-                  <span class="sc-expected">Expected: Mild Dip, No Handoff Alarm</span>
-                  <button class="btn btn-outline btn-sm btn-run-scenario" data-scenario="honest_illness_recovery">Launch</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Live Attack Stream Output -->
-          <div class="card">
-            <div class="card-header">
-              <h3>Simulation Stream & Attack Console</h3>
-              <button class="btn btn-secondary btn-sm" id="btn-clear-sim-logs">Clear Output</button>
-            </div>
-            <div class="terminal-container" id="sim-terminal">
-              <div class="term-line system">[SYSTEM] Ready to execute red-team and honest edge case scenarios.</div>
-              <div class="term-line info">[INFO] Dual-timescale baseline active. Two-axis combiner armed.</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- TAB 5: COHORT FAIRNESS PANEL -->
-      <section class="tab-pane" id="fairness-tab">
-        <div class="grid-2col">
-          <div class="card">
-            <div class="card-header">
-              <h3>Zone Anomaly Score Distribution</h3>
-              <span class="subtext">Monitors parity across geographic hubs (Andheri, Bandra, Dadar, Powai, Thane, Navi Mumbai).</span>
-            </div>
-            <div class="fairness-chart-box">
-              <canvas id="fairness-zone-canvas" width="500" height="280"></canvas>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-header">
-              <h3>Signal Independence & False-Positive Rates</h3>
-              <span class="subtext">Guarantees no single noisy modality unfairly triggers account suspension.</span>
-            </div>
-            <div class="fairness-stats-grid">
-              <div class="fair-card">
-                <span class="fair-num">0.8%</span>
-                <span class="fair-desc">False Positive Escalation Rate (Target &lt; 2.0%)</span>
-              </div>
-              <div class="fair-card">
-                <span class="fair-num">98.4%</span>
-                <span class="fair-desc">Legitimate Life-Event Pass Rate (New Devices)</span>
-              </div>
-              <div class="fair-card">
-                <span class="fair-num">99.1%</span>
-                <span class="fair-desc">Handoff Catch Rate on Full Rental Attacks</span>
-              </div>
-              <div class="fair-card">
-                <span class="fair-num">35 / 60</span>
-                <span class="fair-desc">Average Detection Session on Slow Drift (Frozen Anchor)</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-  </div>
-
-  <!-- Review Modal -->
-  <div class="modal-backdrop hidden" id="review-modal">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>Resolve Flagged Session</h3>
-        <button class="modal-close" id="btn-modal-close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="modal-meta" id="modal-meta-box"></div>
-        <div class="form-group">
-          <label>Audit Resolution:</label>
-          <div class="radio-group">
-            <label class="radio-label">
-              <input type="radio" name="resolution" value="cleared" checked>
-              <span>Cleared (False Alarm / Verified)</span>
-            </label>
-            <label class="radio-label">
-              <input type="radio" name="resolution" value="confirmed_handoff">
-              <span>Confirmed Handoff (Account Rental Detected)</span>
-            </label>
-            <label class="radio-label">
-              <input type="radio" name="resolution" value="needs_follow_up">
-              <span>Needs Follow-up (Schedule Verification Selfie)</span>
-            </label>
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="reviewer-notes">Reviewer Notes:</label>
-          <textarea id="reviewer-notes" class="form-textarea" placeholder="Add optional audit reasoning or driver comments..."></textarea>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="btn-modal-cancel">Cancel</button>
-        <button class="btn btn-primary" id="btn-modal-submit">Submit Resolution</button>
+      <div class="header-actions">
+        <a href="#cta" class="btn-header-cta">
+          <span>Explore Demo</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7M7 7h10v10"/></svg>
+        </a>
+        <button class="menu-toggle-btn" id="menuToggleBtn" aria-label="Toggle navigation menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
       </div>
     </div>
+  </header>
+
+  <!-- Mobile Drawer -->
+  <div class="mobile-menu-drawer" id="mobileDrawer">
+    <a href="#problem">The Problem</a>
+    <a href="#approach">Approach</a>
+    <a href="#pipeline">How It Works</a>
+    <a href="#perspectives">Ecosystem</a>
+    <a href="#cta" style="background:var(--blue);color:#fff;">Explore Demo ↗</a>
   </div>
 
-  <script src="app.js"></script>
+  <main>
+    <!-- ════════════════════════════════════════════════════════════════
+         2. HERO SECTION
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="hero-section" id="hero">
+      <div class="hero-grid">
+
+        <!-- Copy Column -->
+        <div class="hero-copy-col">
+          <div class="badge-overline">
+            <span class="pulse-dot"></span>
+            <span>AI-POWERED CONTINUOUS IDENTITY INTELLIGENCE</span>
+          </div>
+
+          <h1 class="hero-title">
+            The account stays the same.<br>
+            <span class="emphasis">But does the person?</span>
+          </h1>
+
+          <div class="hero-tagline">
+            <span class="chain-icon">
+              <svg viewBox="0 0 32 16" aria-hidden="true">
+                <path d="M6 3a4 4 0 0 0-4 4 4 4 0 0 0 4 4h7a4 4 0 0 0 4-4 4 4 0 0 0-4-4H6zm0 2h7a2 2 0 0 1 2 2 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 1 2-2zm13-2a4 4 0 0 0-4 4 4 4 0 0 0 4 4h7a4 4 0 0 0 4-4 4 4 0 0 0-4-4h-7zm0 2h7a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2 2 2 0 0 1 2-2z"/>
+              </svg>
+            </span>
+            <span>Trust the behavior. Detect the handoff.</span>
+          </div>
+
+          <p class="hero-desc">
+            In on-demand platforms, a verified login doesn't guarantee that the same person remains behind the account. TrustMesh analyzes contextual and behavioral continuity to identify potential account sharing and help platforms make smarter, more explainable trust decisions.
+          </p>
+
+          <div class="hero-cta-group">
+            <a href="#cta" class="btn-primary-hero">
+              <span>Explore the Platform</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7M7 7h10v10"/></svg>
+            </a>
+            <a href="#pipeline" class="btn-secondary-hero">
+              <span>See How It Works</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+            </a>
+          </div>
+
+          <div class="hero-pillars-row">
+            <div class="hero-pillar-pill">
+              <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <span>Behavioral Intelligence</span>
+            </div>
+            <div class="hero-pillar-pill">
+              <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <span>Context-Aware Risk</span>
+            </div>
+            <div class="hero-pillar-pill">
+              <svg viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <span>Explainable Decisions</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Central Hero Visual Stage (Original Interactive Spotlight Reveal) -->
+        <div class="hero-visual-col">
+          <div class="stage-wrapper">
+
+            <!-- Ghost Typography behind the face -->
+            <div class="ghost-text top" aria-hidden="true">TRUST</div>
+            <div class="ghost-text bottom" aria-hidden="true">MESH</div>
+
+
+
+            <!-- Signal Stream A: Baseline Telemetry (Left Floating Card) -->
+            <div class="signal-card stream-a" aria-label="Stream A Signals">
+              <div class="signal-header">
+                <span>Stream A: Baseline</span>
+                <span class="tag-verified">VERIFIED</span>
+              </div>
+              <div class="signal-row">
+                <span>Device Context</span>
+                <b>iPhone 15 Pro</b>
+              </div>
+              <div class="signal-row">
+                <span>Mobility Cadence</span>
+                <b>99.4% Match</b>
+              </div>
+              <div class="signal-row">
+                <span>Continuity</span>
+                <b>Continuous</b>
+              </div>
+            </div>
+
+            <!-- Central Portrait with Spotlight Mask Reveal -->
+            <div class="hero-container" id="heroContainer">
+              <div class="hero-stack" id="heroStack">
+                <img class="hero-front" id="heroFront" data-hero-front alt="Verified driver primary identity">
+                <img class="hero-back" id="heroBack" data-hero-back aria-hidden="true" alt="Discontinuity handoff identity reveal">
+                <canvas class="hero-mask-canvas" id="maskCanvas" aria-hidden="true"></canvas>
+              </div>
+            </div>
+
+            <!-- Signal Stream B: Discontinuity Detected (Right Floating Card) -->
+            <div class="signal-card stream-b" aria-label="Stream B Signals">
+              <div class="signal-header">
+                <span>Stream B: Discontinuity</span>
+                <span class="tag-warning">HANDOFF FLAG</span>
+              </div>
+              <div class="signal-row">
+                <span>Device Shift</span>
+                <b>Pixel 8 (Unenrolled)</b>
+              </div>
+              <div class="signal-row">
+                <span>Interaction Profile</span>
+                <b>68% Variance</b>
+              </div>
+              <div class="signal-row">
+                <span>Risk Assessment</span>
+                <b>ELEVATED</b>
+              </div>
+            </div>
+
+            <!-- Interactive Spotlight Mask Hint -->
+            <div class="spotlight-hint-pill">
+              <span class="radar-icon"></span>
+              <span>Hover face to reveal identity continuity mask</span>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         3. THE PROBLEM: THE IDENTITY GAP
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="content-section" id="problem">
+      <div class="section-header">
+        <span class="section-overline">THE IDENTITY GAP</span>
+        <h2 class="section-heading">Authentication verifies access.<br>TrustMesh investigates continuity.</h2>
+        <p class="section-subtext">
+          A person can pass an initial login check while an account may later be used by someone else. Static authentication alone cannot establish continuous identity throughout an entire session. At the same time, legitimate drivers change devices, travel to unfamiliar locations, and adapt their routines. The real challenge isn't detecting every change—it's distinguishing meaningful changes from normal ones.
+        </p>
+      </div>
+
+      <div class="problem-cards-grid">
+        <div class="glass-card problem-card">
+          <div class="card-icon-box">
+            <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          </div>
+          <h3 class="card-title">Static Verification</h3>
+          <p class="card-desc">
+            A valid credential or one-time biometric login establishes entry permission, but cannot prove who continues operating the vehicle or account 45 minutes later.
+          </p>
+        </div>
+
+        <div class="glass-card problem-card">
+          <div class="card-icon-box">
+            <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+          </div>
+          <h3 class="card-title">Behavioral Changes</h3>
+          <p class="card-desc">
+            Potential account handoffs create subtle discontinuities across device acceleration, route navigation cadence, and interaction telemetry that static checks completely miss.
+          </p>
+        </div>
+
+        <div class="glass-card problem-card">
+          <div class="card-icon-box">
+            <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          <h3 class="card-title">False Alarms</h3>
+          <p class="card-desc">
+            Legitimate changes—such as new phones, detours, or borrowing a spouse's car—should not automatically be treated as identity misuse or trigger punitive account blocks.
+          </p>
+        </div>
+      </div>
+
+      <!-- Session Timeline Breakdown Visual -->
+      <div class="gap-breakdown-banner">
+        <div class="gap-banner-left">
+          <h3>The Continuous Identity Vulnerability Window</h3>
+          <p>
+            Standard login protocols verify identity only at Minute 0. TrustMesh maintains non-intrusive contextual vigilance throughout the entire session timeline.
+          </p>
+        </div>
+        <div class="gap-timeline-stages">
+          <div class="timeline-node">
+            <div class="node-circle verified">00m</div>
+            <span class="node-label">Static Login</span>
+            <span class="node-sub">Biometric Pass</span>
+          </div>
+          <div class="timeline-node">
+            <div class="node-circle verified">15m</div>
+            <span class="node-label">Trip Starts</span>
+            <span class="node-sub">Baseline Telemetry</span>
+          </div>
+          <div class="timeline-node">
+            <div class="node-circle gap">38m</div>
+            <span class="node-label">Handoff Event</span>
+            <span class="node-sub">Device Shift Detected</span>
+          </div>
+          <div class="timeline-node">
+            <div class="node-circle alert">42m</div>
+            <span class="node-label">TrustMesh Action</span>
+            <span class="node-sub">Explainable Alert</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         4. THE TRUSTMESH APPROACH
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="content-section" id="approach">
+      <div class="section-header">
+        <span class="section-overline">INTRODUCING TRUSTMESH</span>
+        <h2 class="section-heading">Identity isn't a one-time event.<br>It's a pattern over time.</h2>
+        <p class="section-subtext">
+          TrustMesh brings multiple signals together to assess whether an account's current activity remains consistent with its established patterns.
+        </p>
+      </div>
+
+      <div class="approach-grid">
+        <div class="glass-card approach-card">
+          <span class="approach-number">01.</span>
+          <div class="approach-content">
+            <h4>Contextual Continuity</h4>
+            <p>
+              Understand changes in device and session context, mobility, and other available signals to determine whether current activity fits the expected operational context.
+            </p>
+          </div>
+        </div>
+
+        <div class="glass-card approach-card">
+          <span class="approach-number">02.</span>
+          <div class="approach-content">
+            <h4>Behavioral Continuity</h4>
+            <p>
+              Analyze changes in activity patterns over time to identify potential discontinuities that a login check alone may miss, comparing live telemetry to historical signatures.
+            </p>
+          </div>
+        </div>
+
+        <div class="glass-card approach-card">
+          <span class="approach-number">03.</span>
+          <div class="approach-content">
+            <h4>Explainable Risk Intelligence</h4>
+            <p>
+              Combine available signals into a transparent risk assessment with contributing factors, allowing platform administrators to understand exactly why a session requires attention.
+            </p>
+          </div>
+        </div>
+
+        <div class="glass-card approach-card">
+          <span class="approach-number">04.</span>
+          <div class="approach-content">
+            <h4>Context-Aware Verification</h4>
+            <p>
+              Support proportionate verification and manual review when warranted, with the goal of avoiding unnecessary interruptions to legitimate drivers during active service.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         5. WHAT MAKES TRUSTMESH DIFFERENT?
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="content-section" id="different">
+      <div class="section-header">
+        <span class="section-overline">BUILT BEYOND STATIC AUTHENTICATION</span>
+        <h2 class="section-heading">From isolated signals to a<br>connected picture of trust.</h2>
+        <p class="section-subtext">
+          Traditional fraud engines evaluate isolated anomalies. TrustMesh assesses continuous relational integrity.
+        </p>
+      </div>
+
+      <div class="diff-grid">
+        <div class="diff-card">
+          <span class="diff-tag">CORE ARCHITECTURE</span>
+          <h4>Dual-axis trust assessment</h4>
+          <p>
+            Evaluate contextual continuity and behavioral continuity separately, helping the system distinguish different types of deviations without confusing a new phone with a driver handoff.
+          </p>
+        </div>
+
+        <div class="diff-card">
+          <span class="diff-tag">TEMPORAL MODELING</span>
+          <h4>Dual-timescale baselines</h4>
+          <p>
+            Compare activity against longer-term habits and more recent patterns to better interpret gradual changes, seasonal shifts, and sudden handoff deviations.
+          </p>
+        </div>
+
+        <div class="diff-card">
+          <span class="diff-tag">IDENTITY DYNAMICS</span>
+          <h4>Account-handoff awareness</h4>
+          <p>
+            Analyze complex scenarios where account usage shifts between different individuals and later returns to the original account holder, isolating shared fleets.
+          </p>
+        </div>
+
+        <div class="diff-card">
+          <span class="diff-tag">TRANSPARENCY</span>
+          <h4>Explainable risk signals</h4>
+          <p>
+            Present the concrete factors contributing to an alert instead of relying on an unexplained black-box risk score, empowering rapid, defensible admin auditability.
+          </p>
+        </div>
+
+        <div class="diff-card">
+          <span class="diff-tag">FRICTION REDUCTION</span>
+          <h4>Legitimate-change awareness</h4>
+          <p>
+            Incorporate declared device changes, planned travel, and contextual notes when interpreting unusual activity to safeguard honest driver productivity.
+          </p>
+        </div>
+
+        <div class="diff-card">
+          <span class="diff-tag">ETHICAL GOVERNANCE</span>
+          <h4>Privacy-conscious design</h4>
+          <p>
+            Emphasize proportionate signal collection, strictly minimized data exposure, and clear opportunities for driver review, verification, and appeal.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         6. HOW IT WORKS: THE PIPELINE
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="content-section" id="pipeline">
+      <div class="section-header">
+        <span class="section-overline">THE TRUST INTELLIGENCE PIPELINE</span>
+        <h2 class="section-heading">Observe. Compare. Assess. Respond.</h2>
+        <p class="section-subtext">
+          A four-stage closed-loop architecture transforming continuous telemetry streams into actionable, explainable operational guidance.
+        </p>
+      </div>
+
+      <div class="pipeline-wrapper">
+        <div class="pipeline-steps-nav">
+          <button class="pipeline-step-btn active" data-step="0">
+            <span class="step-id">STAGE 01</span>
+            <span class="step-name">01 — Observe</span>
+          </button>
+          <button class="pipeline-step-btn" data-step="1">
+            <span class="step-id">STAGE 02</span>
+            <span class="step-name">02 — Compare</span>
+          </button>
+          <button class="pipeline-step-btn" data-step="2">
+            <span class="step-id">STAGE 03</span>
+            <span class="step-name">03 — Assess</span>
+          </button>
+          <button class="pipeline-step-btn" data-step="3">
+            <span class="step-id">STAGE 04</span>
+            <span class="step-name">04 — Respond</span>
+          </button>
+        </div>
+
+        <div class="pipeline-interactive-display">
+          <div class="pipeline-stage-info">
+            <h3 id="stageTitle">01 — Observe</h3>
+            <p id="stageDesc">
+              Process available, permissioned session, contextual, and activity signals in real-time without interrupting active trips or collecting unnecessary personal surveillance data.
+            </p>
+            <div style="display:flex;gap:12px;">
+              <span class="badge-overline" style="margin:0;background:rgba(255,255,255,0.1);color:#38bdf8;border-color:rgba(255,255,255,0.2);">
+                <span class="pulse-dot"></span>
+                <span id="stageBadge">TELEMETRY STREAM ACTIVE</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="pipeline-telemetry-hud" id="stageHud">
+            <div class="telemetry-header">
+              <span>LIVE SIGNAL INSPECTION</span>
+              <span id="hudStatus">LATENCY: 12ms</span>
+            </div>
+            <div class="telemetry-row">
+              <span>Device Fingerprint</span>
+              <span class="telemetry-val green" id="hudFp">iPhone 15,3 (Enrolled)</span>
+            </div>
+            <div class="telemetry-row">
+              <span>Mobility Vector</span>
+              <span class="telemetry-val blue" id="hudVector">Urban Arterial · 42 km/h</span>
+            </div>
+            <div class="telemetry-row">
+              <span>Interaction Cadence</span>
+              <span class="telemetry-val green" id="hudCadence">0.96 Baseline Match</span>
+            </div>
+            <div class="telemetry-row">
+              <span>Context Continuity</span>
+              <span class="telemetry-val green" id="hudContext">CONTINUOUS (99.1%)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         7. ONE PLATFORM. TWO PERSPECTIVES.
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="content-section" id="perspectives">
+      <div class="section-header">
+        <span class="section-overline">DESIGNED FOR THE ENTIRE TRUST ECOSYSTEM</span>
+        <h2 class="section-heading">One platform. Two perspectives.</h2>
+        <p class="section-subtext">
+          Purpose-built interfaces giving operations teams comprehensive oversight while empowering drivers with transparent trust verification.
+        </p>
+      </div>
+
+      <div class="perspectives-grid">
+        <!-- Sentinel (Admin) -->
+        <div class="perspective-card">
+          <div>
+            <span class="perspective-badge badge-admin">FOR ADMINISTRATORS</span>
+            <h3>TrustMesh Sentinel</h3>
+            <div class="perspective-role">Enterprise Operations & Trust Desk</div>
+            <p class="perspective-desc">
+              Monitor driver accounts across the entire fleet, investigate real-time alerts, inspect underlying risk factors, review verification outcomes, and simulate account-handoff scenarios.
+            </p>
+
+            <ul class="features-checklist">
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Fleet-wide risk overview & anomaly heatmap</span>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Driver investigation timelines with signal replays</span>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Prioritized alert and manual review queues</span>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Interactive account-handoff scenario simulator</span>
+              </li>
+            </ul>
+          </div>
+
+          <a href="dashboard.html" class="perspective-action-btn">
+            <span>Explore Admin Dashboard</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+        </div>
+
+        <!-- Driver Portal -->
+        <div class="perspective-card">
+          <div>
+            <span class="perspective-badge badge-driver">FOR DRIVERS</span>
+            <h3>Driver Trust Portal</h3>
+            <div class="perspective-role">Transparent Driver Mobile Web Experience</div>
+            <p class="perspective-desc">
+              A lightweight, mobile-friendly web portal for checking account trust status, declaring legitimate device or location changes in advance, and responding fairly to verification requests.
+            </p>
+
+            <ul class="features-checklist">
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Transparent account trust status & standing</span>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Declare a new device, vehicle, or route change</span>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Low-friction safety-first verification prompts</span>
+              </li>
+              <li>
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Clear activity history and one-touch appeal submission</span>
+              </li>
+            </ul>
+          </div>
+
+          <a href="#cta" class="perspective-action-btn">
+            <span>Explore Driver Portal</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         8. RESPONSIBLE TRUST BY DESIGN
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="content-section" id="principles">
+      <div class="section-header">
+        <span class="section-overline">INTELLIGENCE WITH ACCOUNTABILITY</span>
+        <h2 class="section-heading">Responsible trust by design.</h2>
+        <p class="section-subtext">
+          TrustMesh is engineered to support better decisions—not to automatically label every deviation as fraud.
+        </p>
+      </div>
+
+      <div class="principles-quote-banner">
+        <div class="quote-text">“An unusual pattern is a signal, not a verdict.”</div>
+        <p class="quote-sub">Every model prediction is contextualized, explainable, and accountable to human oversight.</p>
+      </div>
+
+      <div class="principles-grid">
+        <div class="principle-card">
+          <div class="card-icon-box" style="margin-bottom:0;">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </div>
+          <h5>Context before conclusions</h5>
+          <p>A new device or unfamiliar waypoint alone is not proof of account sharing.</p>
+        </div>
+
+        <div class="principle-card">
+          <div class="card-icon-box" style="margin-bottom:0;">
+            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          </div>
+          <h5>Explainability before escalation</h5>
+          <p>Operations teams receive interpretable factors and signal evidence before taking action.</p>
+        </div>
+
+        <div class="principle-card">
+          <div class="card-icon-box" style="margin-bottom:0;">
+            <svg viewBox="0 0 24 24"><path d="M3 6l9-4 9 4v6c0 5.55-3.84 10.74-9 12-5.16-1.26-9-6.45-9-12V6z"/></svg>
+          </div>
+          <h5>Fairness through evaluation</h5>
+          <p>Disparate impact, false-positive distributions, and model equity are measured continuously.</p>
+        </div>
+
+        <div class="principle-card">
+          <div class="card-icon-box" style="margin-bottom:0;">
+            <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          </div>
+          <h5>Safety before interruption</h5>
+          <p>Verification never distracts drivers during active passenger trips or driving maneuvers.</p>
+        </div>
+
+        <div class="principle-card">
+          <div class="card-icon-box" style="margin-bottom:0;">
+            <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          </div>
+          <h5>Privacy through restraint</h5>
+          <p>Collect only proportionate signals for legitimate trust purposes with strict data lifecycle controls.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         9. FINAL CALL TO ACTION
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="content-section" id="cta">
+      <div class="cta-banner-wrapper">
+        <span class="cta-overline">THE FUTURE OF CONTINUOUS TRUST</span>
+        <h2 class="cta-title">Every session tells a story.<br>Connect the signals.</h2>
+        <p class="cta-desc">
+          Discover how TrustMesh connects behavioral patterns, contextual intelligence, and explainable risk assessments to identify potential account handoffs.
+        </p>
+        <div class="cta-buttons-row">
+          <button class="btn-cta-white" onclick="say('Demo environment initialized')">
+            <span>Explore the Demo ↗</span>
+          </button>
+          <a href="#pipeline" class="btn-cta-trans">
+            <span>Discover the Platform</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ════════════════════════════════════════════════════════════════
+       10. FOOTER
+       ════════════════════════════════════════════════════════════════ -->
+  <footer class="site-footer">
+    <div class="footer-container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            <div class="brand-symbol" style="width:28px;height:28px;border-radius:8px;">
+              <svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:#edf6fd;" aria-hidden="true">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <h4>TrustMesh</h4>
+          </div>
+          <div class="tagline-sub">Continuous Identity Intelligence</div>
+          <p class="motto">Trust the behavior. Detect the handoff.</p>
+        </div>
+
+        <nav class="footer-nav-links" aria-label="Footer links">
+          <a href="#hero">Platform</a>
+          <a href="#pipeline">How It Works</a>
+          <a href="dashboard.html">Admin Dashboard</a>
+          <a href="#perspectives">Driver Portal</a>
+          <a href="#principles">Privacy</a>
+          <a href="#cta">Contact</a>
+        </nav>
+      </div>
+
+      <div class="footer-bottom">
+        <div>&copy; 2026 TrustMesh Technologies Inc. All rights reserved.</div>
+        <div class="footer-beacon">
+          <span class="beacon-dot"></span>
+          <span>Live Signal Mesh: Operational</span>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Toast notification -->
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- ════════════════════════════════════════════════════════════════
+       CLIENT JAVASCRIPT: SPOTLIGHT REVEAL, MASK ENGINE & INTERACTIONS
+       ════════════════════════════════════════════════════════════════ -->
+  <script>
+    /* ════════════════════════════════════════════════════════════════
+       1. ASSET PATHS (ALIGNED RESTORED IDENTITY HEADSHOTS)
+       ════════════════════════════════════════════════════════════════ */
+    const HERO_FRONT = "/src/assets/images/hero-front.png";
+    const HERO_BACK = "/src/assets/images/hero-back.png";
+
+    function setupSafeImage(imgElement, requestedSrc) {
+      if (!imgElement || !requestedSrc) return;
+      imgElement.src = requestedSrc;
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       2. INTERACTIVE SPOTLIGHT REVEAL ENGINE
+       ════════════════════════════════════════════════════════════════ */
+    (function initSpotlight() {
+      const stack = document.getElementById('heroStack');
+      const front = document.getElementById('heroFront');
+      const back = document.getElementById('heroBack');
+      const canvas = document.getElementById('maskCanvas');
+      const ctx = canvas.getContext('2d');
+      const SPOTLIGHT_R = 190;
+
+      const mouse = { x: -9999, y: -9999 };
+      const smooth = { x: -9999, y: -9999 };
+
+      setupSafeImage(front, HERO_FRONT);
+      setupSafeImage(back, HERO_BACK);
+
+      function resizeCanvas() {
+        if (!stack) return;
+        canvas.width = stack.offsetWidth || 680;
+        canvas.height = stack.offsetHeight || 630;
+      }
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas, { passive: true });
+
+      function updatePointer(clientX, clientY) {
+        const r = stack.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return;
+        const sx = stack.offsetWidth / r.width;
+        const sy = stack.offsetHeight / r.height;
+        mouse.x = (clientX - r.left) * sx;
+        mouse.y = (clientY - r.top) * sy;
+      }
+
+      stack.addEventListener('pointerenter', e => {
+        updatePointer(e.clientX, e.clientY);
+        if (smooth.x < -1000) {
+          smooth.x = mouse.x;
+          smooth.y = mouse.y;
+        }
+      });
+
+      stack.addEventListener('pointermove', e => {
+        updatePointer(e.clientX, e.clientY);
+      });
+
+      stack.addEventListener('pointerleave', () => {
+        mouse.x = -9999;
+        mouse.y = -9999;
+      });
+
+      // Touch drag support
+      stack.addEventListener('touchstart', e => {
+        if (e.touches && e.touches[0]) {
+          updatePointer(e.touches[0].clientX, e.touches[0].clientY);
+          smooth.x = mouse.x;
+          smooth.y = mouse.y;
+        }
+      }, { passive: true });
+
+      stack.addEventListener('touchmove', e => {
+        if (e.touches && e.touches[0]) {
+          updatePointer(e.touches[0].clientX, e.touches[0].clientY);
+        }
+      }, { passive: true });
+
+      stack.addEventListener('touchend', () => {
+        mouse.x = -9999;
+        mouse.y = -9999;
+      });
+
+      function render(x, y) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (x < -1000 || y < -1000) {
+          back.style.maskImage = 'none';
+          back.style.webkitMaskImage = 'none';
+          back.style.opacity = '0';
+          return;
+        }
+        back.style.opacity = '1';
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, SPOTLIGHT_R);
+        grad.addColorStop(0, 'rgba(255,255,255,1)');
+        grad.addColorStop(0.55, 'rgba(255,255,255,1)');
+        grad.addColorStop(0.85, 'rgba(255,255,255,0.4)');
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, SPOTLIGHT_R, 0, Math.PI * 2);
+        ctx.fill();
+
+        const url = canvas.toDataURL();
+        back.style.maskImage = `url(${url})`;
+        back.style.webkitMaskImage = `url(${url})`;
+      }
+
+      function loop() {
+        smooth.x += (mouse.x - smooth.x) * 0.12;
+        smooth.y += (mouse.y - smooth.y) * 0.12;
+        render(smooth.x, smooth.y);
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+    })();
+
+    /* ════════════════════════════════════════════════════════════════
+       3. INTERACTIVE AVATAR SELECTION & PULSE TOGGLE
+       ════════════════════════════════════════════════════════════════ */
+    const heroContainer = document.getElementById('heroContainer');
+    const heroStack = document.getElementById('heroStack');
+
+
+    if (heroStack) {
+      heroStack.addEventListener('dblclick', () => {
+        const isAwake = heroContainer.classList.toggle('awake');
+        say(isAwake ? 'Identity Vigilance Pulse: Active' : 'Identity Pulse: Normal');
+      });
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       4. INTERACTIVE HOW-IT-WORKS PIPELINE SWITCHER
+       ════════════════════════════════════════════════════════════════ */
+    const pipelineData = [
+      {
+        title: "01 — Observe",
+        desc: "Process available, permissioned session, contextual, and activity signals in real-time without interrupting active trips or collecting unnecessary personal surveillance data.",
+        badge: "TELEMETRY STREAM ACTIVE",
+        fp: "iPhone 15,3 (Enrolled)",
+        vector: "Urban Arterial · 42 km/h",
+        cadence: "0.96 Baseline Match",
+        context: "CONTINUOUS (99.1%)",
+        status: "LATENCY: 12ms"
+      },
+      {
+        title: "02 — Compare",
+        desc: "Evaluate current signals against established dual-timescale behavioral and contextual baselines to separate typical daily shifts from genuine handoffs.",
+        badge: "DUAL-TIMESCALE ENGINE",
+        fp: "Hardware Hash Matched",
+        vector: "Route Deviation: 3.2% (Normal)",
+        cadence: "Typing & Grip Signature: 0.94",
+        context: "CONFIDENCE: HIGH",
+        status: "EVALUATION: PASS"
+      },
+      {
+        title: "03 — Assess",
+        desc: "Generate an explainable risk assessment detailing every contributing signal factor so safety administrators understand precisely why an alert requires human attention.",
+        badge: "RISK SYNTHESIS ENGINE",
+        fp: "Potential Handoff Identified",
+        vector: "Speed Cadence: Discontinuous",
+        cadence: "Interaction Shift: 68% Variance",
+        context: "ALERT: DISCONTINUITY",
+        status: "RISK INDEX: 68%"
+      },
+      {
+        title: "04 — Respond",
+        desc: "Recommend proportionate monitoring, low-friction verification prompts, or manual review based on the assessment, ensuring drivers are never distracted during active rides.",
+        badge: "PROPORTIONATE DISPATCH",
+        fp: "Verification Queued",
+        vector: "Safety Interlock: Active Trip",
+        cadence: "Prompt Deferred Until Safe Stop",
+        context: "ACTION: POST-TRIP REVIEW",
+        status: "DISPATCHED"
+      }
+    ];
+
+    const stepButtons = document.querySelectorAll('.pipeline-step-btn');
+    const stageTitle = document.getElementById('stageTitle');
+    const stageDesc = document.getElementById('stageDesc');
+    const stageBadge = document.getElementById('stageBadge');
+    const hudStatus = document.getElementById('hudStatus');
+    const hudFp = document.getElementById('hudFp');
+    const hudVector = document.getElementById('hudVector');
+    const hudCadence = document.getElementById('hudCadence');
+    const hudContext = document.getElementById('hudContext');
+
+    stepButtons.forEach((btn, idx) => {
+      btn.addEventListener('click', () => {
+        stepButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const d = pipelineData[idx];
+        stageTitle.textContent = d.title;
+        stageDesc.textContent = d.desc;
+        stageBadge.textContent = d.badge;
+        hudStatus.textContent = d.status;
+        hudFp.textContent = d.fp;
+        hudVector.textContent = d.vector;
+        hudCadence.textContent = d.cadence;
+        hudContext.textContent = d.context;
+        say(`Pipeline Stage 0${idx + 1}: ${d.title.split('—')[1] || d.title}`);
+      });
+    });
+
+    /* ════════════════════════════════════════════════════════════════
+       5. ACTIVE SCROLL SPY FOR NAVIGATION
+       ════════════════════════════════════════════════════════════════ */
+    const sections = document.querySelectorAll('section[id]');
+    const navLinks = document.querySelectorAll('.nav-pill a');
+
+    window.addEventListener('scroll', () => {
+      let current = '';
+      const scrollY = window.pageYOffset;
+      sections.forEach(sec => {
+        const top = sec.offsetTop - 140;
+        const height = sec.offsetHeight;
+        if (scrollY >= top && scrollY < top + height) {
+          current = sec.getAttribute('id');
+        }
+      });
+
+      navLinks.forEach(link => {
+        link.classList.remove('active');
+        if (link.getAttribute('href') === `#${current}`) {
+          link.classList.add('active');
+        }
+      });
+    }, { passive: true });
+
+    /* ════════════════════════════════════════════════════════════════
+       6. MOBILE DRAWER TOGGLE
+       ════════════════════════════════════════════════════════════════ */
+    const menuToggleBtn = document.getElementById('menuToggleBtn');
+    const mobileDrawer = document.getElementById('mobileDrawer');
+
+    menuToggleBtn.addEventListener('click', () => {
+      mobileDrawer.classList.toggle('open');
+    });
+
+    mobileDrawer.querySelectorAll('a').forEach(a => {
+      a.addEventListener('click', () => {
+        mobileDrawer.classList.remove('open');
+      });
+    });
+
+    /* ════════════════════════════════════════════════════════════════
+       7. TOAST FEEDBACK SYSTEM
+       ════════════════════════════════════════════════════════════════ */
+    const toast = document.getElementById('toast');
+    let toastTimer = null;
+
+    function say(msg) {
+      if (!toast) return;
+      if (toastTimer) clearTimeout(toastTimer);
+      toast.textContent = msg;
+      toast.classList.add('show');
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('show');
+      }, 1900);
+    }
+  </script>
 </body>
 </html>
