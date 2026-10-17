@@ -23,13 +23,18 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-# Optional imports from ml workstream
+# Optional imports from ml workstream.
+# NOTE: deliberately NOT importing two_axis.behavior_continuity (Fisher
+# p-value fusion) here — it expects real conformal p-values from
+# per-rider-fitted models (ml/inference/rider_model_bundle.py), not the
+# ad-hoc relative-difference anomaly scores compute_signal_anomalies()
+# produces below. Feeding the latter into Fisher's method would silently
+# misuse a statistical tool that assumes a specific input distribution.
 try:
     from ml.combiner.two_axis import (
         ContextBaseline,
         classify as ml_classify,
         context_continuity as ml_context_continuity,
-        behavior_continuity as ml_behavior_continuity,
     )
     ML_COMBINER_AVAILABLE = True
 except ImportError:
@@ -40,6 +45,17 @@ try:
     ML_LLM_AVAILABLE = True
 except ImportError:
     ML_LLM_AVAILABLE = False
+
+# ml/combiner/two_axis.py's quadrant names match this backend's own exactly;
+# only the decision strings differ (this backend's vocabulary is what
+# main.py's review-queue routing depends on, e.g.
+# `decision in ("challenge_at_safe_pause", "step_up_check_at_safe_pause")`).
+_QUADRANT_TO_BACKEND_DECISION = {
+    "stable": "continue",
+    "legit_change": "rebaseline",
+    "handoff_signature": "challenge_at_safe_pause",
+    "ambiguous": "step_up_check_at_safe_pause",
+}
 
 
 def extract_operational_features(payload: Any) -> dict[str, float | None]:
@@ -251,28 +267,49 @@ def evaluate_session_ml(
         behavior_axis = "insufficient_evidence"
 
     # 4. Two-Axis Decision Matrix
-    # Mapping backend decision labels with Two-Axis Combiner quadrants
+    # Single source of truth: ml/combiner/two_axis.py's classify(), not a
+    # hand-duplicated copy of its if/elif logic (the two had already drifted —
+    # this file's decision STRINGS differ from two_axis.py's, e.g.
+    # "challenge_at_safe_pause" vs. two_axis.py's "escalate_challenge" — so we
+    # take classify()'s QUADRANT as authoritative and translate it to this
+    # backend's own decision vocabulary, which main.py's review-queue routing
+    # already depends on in several places; the quadrant NAMES already match
+    # exactly between both systems, only the decision strings differ).
+    #
+    # behavior_alpha=0.6 here, NOT the 0.29 measured in ml/README.md for real
+    # conformal p-values from trained per-rider models: that calibration is
+    # specific to a true p-value's uniform-under-null distribution.
+    # `behavior_score` here comes from compute_signal_anomalies() — a mean of
+    # ad-hoc relative differences against two flat fast/anchor snapshots, a
+    # structurally different, uncalibrated score. 0.6 matches the scale this
+    # heuristic actually produces; swapping in 0.29 without re-deriving it for
+    # this specific formula would silently make the heuristic far too
+    # permissive (it flags almost nothing as changed), not more correct.
     if behavior_axis == "insufficient_evidence":
         quadrant = "baseline_established"
         decision = "continue"
         reasons = ["Session recorded; initializing multi-modal behavioral baseline"]
+    elif ML_COMBINER_AVAILABLE:
+        combiner_result = ml_classify(context_score, behavior_score, context_threshold=0.6, behavior_alpha=0.6)
+        quadrant = combiner_result["quadrant"]
+        decision = _QUADRANT_TO_BACKEND_DECISION[quadrant]
+        reasons = [combiner_result["meaning"]]
+    elif context_axis == "stable" and behavior_axis == "stable":
+        quadrant = "stable"
+        decision = "continue"
+        reasons = ["Context and multi-modal behavior match verified history"]
+    elif context_axis == "changed" and behavior_axis == "stable":
+        quadrant = "legit_change"
+        decision = "rebaseline"
+        reasons = ["Context changed (device/network/zone) while physical behavior remained consistent — legitimate change"]
+    elif context_axis == "stable" and behavior_axis == "changed":
+        quadrant = "handoff_signature"
+        decision = "challenge_at_safe_pause"
+        reasons = ["Known device/zone with anomalous behavior signature — potential unauthorized handoff"]
     else:
-        if context_axis == "stable" and behavior_axis == "stable":
-            quadrant = "stable"
-            decision = "continue"
-            reasons = ["Context and multi-modal behavior match verified history"]
-        elif context_axis == "changed" and behavior_axis == "stable":
-            quadrant = "legit_change"
-            decision = "rebaseline"
-            reasons = ["Context changed (device/network/zone) while physical behavior remained consistent — legitimate change"]
-        elif context_axis == "stable" and behavior_axis == "changed":
-            quadrant = "handoff_signature"
-            decision = "challenge_at_safe_pause"
-            reasons = ["Known device/zone with anomalous behavior signature — potential unauthorized handoff"]
-        else:
-            quadrant = "ambiguous"
-            decision = "step_up_check_at_safe_pause"
-            reasons = ["Both context and behavioral patterns shifted — step-up verification recommended"]
+        quadrant = "ambiguous"
+        decision = "step_up_check_at_safe_pause"
+        reasons = ["Both context and behavioral patterns shifted — step-up verification recommended"]
 
     # 5. LLM Reason-Vector Generation (for escalated sessions)
     reason_vector: dict[str, Any] | None = None
