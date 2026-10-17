@@ -1,20 +1,88 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Trust Juggler (Hackforge CaseBlitz)
 
-# Run and deploy your AI Studio app
+> **Continuous multi-modal behavioral authentication and account-sharing detection for delivery fleets.**
 
-This contains everything you need to run your app locally.
+Trust Juggler separates legitimate life changes (e.g., getting a new phone or moving delivery zones) from illicit account renting and identity handoffs using a **Continuous Two-Axis Trust Decision Matrix** coupled with **Dual-Timescale Baselines** and **Explainable LLM Reason Vectors**.
 
-View your app in AI Studio: https://ai.studio/apps/a2d11022-6dcb-4d78-b4d1-42051640d222
+---
 
-## Run Locally
+## Repository Structure
 
-**Prerequisites:**  Node.js
+The codebase is organized into three clean, dedicated modules:
 
+```
+hackforge/
+├── frontend/               # Interactive fleet dashboard & administrative interface
+│   ├── index.html          # Semantic dashboard layout (Matrix, Timeline, Reviews, Simulator)
+│   ├── style.css           # Glassmorphism dark-theme design system
+│   ├── app.js              # Real-time quadrant canvas engine, sync, and simulation suite
+│   └── README.md           # Frontend architecture and usage instructions
+│
+├── backend/                # Production-ready FastAPI service & SQLite state store
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py         # REST API routes (ingest, scoring, reviews, auth)
+│   │   └── ml_bridge.py    # Bridge wiring ML feature extractors and two-axis combiner
+│   ├── requirements.txt    # Backend dependencies (fastapi, uvicorn, pydantic)
+│   └── README.md           # API endpoints documentation & usage
+│
+├── ml/                     # ML models, feature engineering, and red-team suites
+│   ├── calibration/        # Conformal calibration & multi-signal fusion
+│   ├── combiner/           # Two-axis decision matrix (Context vs Behavior)
+│   ├── data/               # Loaders for GeoLife and H-MOG real-world biometrics
+│   ├── evaluation/         # Benchmark evaluation harness, metrics, and splits
+│   ├── features/           # Stroke-level touch, windowed motion, and operational features
+│   ├── llm/                # Claude-powered Reason Vector generator for escalated sessions
+│   ├── models/             # Isolation Forest & Mahalanobis distance baselines
+│   ├── redteam/            # 4 attacker scenarios + 2 honest edge cases + drift detectors
+│   ├── scorers/            # Multi-modal anomaly scorers (touch, motion, operational, GPS)
+│   ├── scripts/            # Validation, calibration, and test execution scripts
+│   ├── sim/                # Parametric synthetic rider session & persona simulator
+│   └── README.md           # ML research documentation & benchmark findings
+│
+├── docs/                   # Hackathon challenge briefs and role division blueprint
+└── requirements.txt        # Unified root dependencies
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+---
+
+## Quickstart Guide
+
+### 1. Install Dependencies
+```powershell
+python -m pip install -r requirements.txt
+```
+
+### 2. Start the Backend API & Live Dashboard
+From the repository root:
+```powershell
+python -m uvicorn backend.app.main:app --reload --port 8000
+```
+- **Live Fleet Dashboard**: [http://localhost:8000/dashboard/](http://localhost:8000/dashboard/) (or root [http://localhost:8000/](http://localhost:8000/))
+- **Interactive Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### 3. Run ML Validation Suites
+```powershell
+# Run side-by-side scorers smoke test
+python ml/scripts/test_scorers.py
+
+# Run two-axis combiner 4-quadrant test
+python ml/scripts/test_combiner.py
+
+# Run full red-team attack & honest trap evaluation
+python ml/scripts/test_redteam.py
+
+# Run Phase-1 evaluation harness across H-MOG cohorts
+python ml/scripts/run_phase1_evaluation.py
+```
+
+---
+
+## Key Differentiators
+
+| Capability | How Trust Juggler Solves It |
+| :--- | :--- |
+| **Two-Axis Combiner** | Context and behavior never collapse into a single confidence number. An identical context change is classified as `legit_change` (silent rebaseline) when behavior matches, but `handoff_signature` (escalate challenge) when biometrics shift. |
+| **Dual-Timescale Baselines** | Pairs an adaptive **Fast Baseline (EWMA)** with a **Frozen Identity Anchor** to defeat gradual multi-session "boiling frog" account takeover attacks. |
+| **Multi-Modal Biometrics** | Fuses tap pressure, stroke rhythm, accelerometer jerk, order acceptance latency, and trajectory dynamics to withstand single-signal spoofing. |
+| **Explainable Reason Vectors** | Flagged sessions generate factual, rider-facing explanations powered by Claude LLM with concrete next steps, ending "black box" driver suspensions. |

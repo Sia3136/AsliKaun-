@@ -1,9 +1,57 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Data directory (datasets, trajectories, extracted zips, raw logs)
+data/
+
+# Archives and compressed files
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# Large dataset formats
+*.geojson
+*.parquet
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.csv
+
+# Model weights and binaries
+*.weights
+*.pt
+*.pth
+*.onnx
+*.bin
+
+# Node & Frontend dependencies and build artifacts
 node_modules/
-build/
 dist/
-coverage/
-.DS_Store
 *.log
 .env*
 !.env.example
 meridian-assets/
+
+# OS and Editor metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# SQLite Databases
+*.db
+*.sqlite
+*.sqlite3

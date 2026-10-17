@@ -17,10 +17,11 @@ export const Navbar: React.FC<NavbarProps> = ({ theme, onToggleTheme }) => {
         <a href="#problem">The Problem</a>
         <a href="#approach">The Approach</a>
         <a href="#pipeline">Architecture</a>
+        <a href="/dashboard.html" style={{ color: 'var(--accent, #1169dc)', fontWeight: 600 }}>Fleet Dashboard</a>
       </div>
 
       <div className="nav-actions">
-        <a className="btn solid nav-btn" href="#cta">
+        <a className="btn solid nav-btn" href="/dashboard.html">
           Explore Demo ↗
         </a>
         <button
