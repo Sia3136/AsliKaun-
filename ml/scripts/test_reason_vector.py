@@ -10,9 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ml.sim.rider_sim import make_profile, generate_session
-from ml.scorers.operational import OperationalScorer
-from ml.scorers.motion import MotionScorer
-from ml.scorers.touch import TouchScorer
+from ml.combiner.signal_models import RiderSignalModels
 from ml.combiner.two_axis import ContextBaseline, context_continuity, behavior_continuity, classify
 from ml.llm.reason_vector import explain
 
@@ -27,11 +25,7 @@ history = [
 fit_history, calib_history = history[:40], history[40:]
 baseline = ContextBaseline.from_history(history)
 
-scorers = {
-    "operational": OperationalScorer(contamination=0.05).fit(fit_history, calib_history),
-    "motion": MotionScorer(contamination=0.05).fit(fit_history, calib_history),
-    "touch": TouchScorer(contamination=0.05).fit(fit_history, calib_history),
-}
+signal_models = RiderSignalModels(contamination=0.05).fit(fit_history, calib_history)
 
 t = base_time + timedelta(days=5)
 test_sessions = {
@@ -43,13 +37,13 @@ test_sessions = {
 
 for label, session in test_sessions.items():
     ctx = context_continuity(session, baseline)
-    scorer_outputs = {name: s.score(session) for name, s in scorers.items()}
-    beh = behavior_continuity(scorer_outputs)
+    p_values = signal_models.p_values(session)
+    beh = behavior_continuity(p_values)
     result = classify(ctx, beh)
     print(f"\n{label}: quadrant={result['quadrant']} decision={result['decision']}")
     if result["decision"] == "continue":
         print("  (no challenge -> no reason vector generated, by design)")
         continue
-    reason = explain(session, result, scorer_outputs)
+    reason = explain(session, result, p_values)
     print(f"  generated={reason['generated']} model={reason['model']}")
     print(f"  explanation: {reason['explanation']}")

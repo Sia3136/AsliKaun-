@@ -10,9 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ml.sim.rider_sim import make_profile, generate_session
-from ml.scorers.operational import OperationalScorer
-from ml.scorers.motion import MotionScorer
-from ml.scorers.touch import TouchScorer
+from ml.combiner.signal_models import RiderSignalModels
 from ml.combiner.two_axis import ContextBaseline, context_continuity, behavior_continuity, classify
 from ml.redteam.scenarios import (
     lazy_renter, slow_drift_renter, split_shift_sharer,
@@ -31,15 +29,11 @@ history = [
 fit_history, calib_history = history[:40], history[40:]
 baseline = ContextBaseline.from_history(history)
 
-scorers = {
-    "operational": OperationalScorer(contamination=0.05).fit(fit_history, calib_history),
-    "motion": MotionScorer(contamination=0.05).fit(fit_history, calib_history),
-    "touch": TouchScorer(contamination=0.05).fit(fit_history, calib_history),
-}
+signal_models = RiderSignalModels(contamination=0.05).fit(fit_history, calib_history)
 
 
 def behavior_continuity_of(session: dict) -> float:
-    return behavior_continuity({name: s.score(session) for name, s in scorers.items()})
+    return behavior_continuity(signal_models.p_values(session))
 
 
 def run_scenario_through_pipeline(label: str, sessions: list[dict]):
