@@ -58,6 +58,22 @@ def blend_profiles(a: dict, b: dict, alpha: float) -> dict:
     return {k: (1 - alpha) * np.asarray(a[k]) + alpha * np.asarray(b[k]) for k in _BLEND_KEYS}
 
 
+_OPERATIONAL_KEYS = ["accept_latency_mean_ms", "accept_latency_std_ms"]
+_PHYSICAL_KEYS = ["accel_signature", "accel_noise", "touch_pressure_mean",
+                  "touch_pressure_std", "tap_interval_ms_mean"]
+
+
+def compose_profile(operational_source: dict, physical_source: dict) -> dict:
+    """A behavior-only profile mixing one rider's operational traits
+    (acceptance timing) with another's physical traits (motion/touch).
+    Models a renter who deliberately copies the owner's schedule but
+    can't fake how their body actually moves/taps — the copycat-renter
+    red-team scenario."""
+    out = {k: operational_source[k] for k in _OPERATIONAL_KEYS}
+    out.update({k: physical_source[k] for k in _PHYSICAL_KEYS})
+    return out
+
+
 def _sample_touch_events(profile: dict, rng: np.random.Generator, n: int = 5) -> list:
     events = []
     t = 0.0

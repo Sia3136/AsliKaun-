@@ -5,7 +5,7 @@ run session-by-session to measure time-to-detection.
 """
 from datetime import timedelta
 
-from ml.sim.rider_sim import blend_profiles, generate_session
+from ml.sim.rider_sim import blend_profiles, compose_profile, generate_session
 
 
 def lazy_renter(owner: dict, renter: dict, base_time, n: int = 10, gap_hours: float = 2.0) -> list[dict]:
@@ -69,10 +69,49 @@ def honest_illness_recovery(owner: dict, base_time, n: int = 10, gap_hours: floa
     ]
 
 
+def copycat_renter(owner: dict, renter: dict, base_time, n: int = 10, gap_hours: float = 2.0) -> list[dict]:
+    """The renter deliberately works the owner's usual hours and accepts
+    orders at the owner's usual pace — operational signal matches, but
+    motion/touch (how their body actually moves) still belongs to the
+    renter. Tests whether fusion survives when one signal is spoofed."""
+    copycat = compose_profile(operational_source=owner, physical_source=renter)
+    return [
+        generate_session(owner, base_time + timedelta(hours=gap_hours * i), seed=6000 + i, impersonator=copycat)
+        for i in range(n)
+    ]
+
+
+def long_absence_then_return(owner: dict, base_time, gap_days: int = 21, n: int = 10, gap_hours: float = 2.0) -> list[dict]:
+    """Owner's own behavior, unchanged, but returning after a long gap
+    (injury leave, seasonal break). Must not be treated as suspicious —
+    tests baseline staleness handling, not a behavioral anomaly."""
+    return_time = base_time + timedelta(days=gap_days)
+    return [
+        generate_session(owner, return_time + timedelta(hours=gap_hours * i), seed=7000 + i)
+        for i in range(n)
+    ]
+
+
+def cold_start_rider(rider: dict, base_time, n: int = 5, gap_hours: float = 3.0) -> list[dict]:
+    """A brand-new rider with only a handful of sessions — too few to
+    fit a reliable per-rider model. Should route to the sparse/cold-start
+    policy (population prior, low-confidence state), never a confident
+    per-session verdict. See ml/evaluation/harness.py's `min_sessions`
+    and the sparse-cohort reporting it does instead of silently dropping
+    these riders."""
+    return [
+        generate_session(rider, base_time + timedelta(hours=gap_hours * i), seed=8000 + i)
+        for i in range(n)
+    ]
+
+
 SCENARIOS = {
     "lazy_renter": lazy_renter,
     "slow_drift_renter": slow_drift_renter,
     "split_shift_sharer": split_shift_sharer,
+    "copycat_renter": copycat_renter,
     "honest_phone_and_city_change": honest_phone_and_city_change,
     "honest_illness_recovery": honest_illness_recovery,
+    "long_absence_then_return": long_absence_then_return,
+    "cold_start_rider": cold_start_rider,
 }
