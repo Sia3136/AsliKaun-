@@ -57,6 +57,17 @@ The fix: measured the actual EER-balancing threshold directly (`ml/scripts/evalu
 
 **Takeaway for the pitch:** don't treat any of these thresholds as fixed constants. They're measured against the current signal set and will shift again once Phase 2 models change the underlying p-value distributions — recalibrate whenever the models change, the same way this round did.
 
+## Phase 2: GPS trajectory encoder (GRU + triplet loss, trained on Kaggle)
+
+Trained on `ml/kaggle/train_gps_encoder.py` (self-contained Kaggle notebook script) — a GRU encoder over per-leg route sequences (distance, duration, speed, cumulative time fraction), triplet loss (same-courier routes close, different-courier routes far), 30 epochs x 100 steps, ~400 training couriers **excluding** the 18-courier evaluation cohort (no leakage). Evaluated on the identical rider-disjoint harness as the classical baseline: `ml/scripts/evaluate_gps_encoder.py`.
+
+| Model | Pooled EER | Pooled AUC | FRR@FAR=1% | Per-rider mean EER |
+| --- | --- | --- | --- | --- |
+| IsolationForest (classical) | **0.397** | **0.622** | 0.90 | 0.399 [0.345, 0.452] |
+| GRU triplet encoder | 0.433 | 0.603 | 0.95 | 0.400 [0.336, 0.452] |
+
+**Honest result: the deep model did not beat the classical baseline.** Per-rider mean EER is essentially tied with overlapping confidence intervals. Per the Phase 2 ground rule set from the start ("keep whichever wins, say so either way"), **GPS stays on IsolationForest** — don't claim a deep-learning win here. This matches the documented finding behind the "Trajectory-User Linking is easier than you think" line of research cited earlier: simple per-rider statistical profiles are often competitive with learned trajectory embeddings. Likely causes, not investigated further: a small training run (400 couriers, 30 epochs) and a 4-feature-per-leg sequence representation that may not carry meaningfully more signal than the 23-feature hand-crafted summary the classical model already uses.
+
 ## Known issues to fix next
 
 1. **Mahalanobis is unreliable for high-dimensional signals (touch, motion) at this enrollment-set size.** Confirmed by the touch result above (AUC 0.454). Use IsolationForest for those; Mahalanobis stays viable for GPS (23 features) and operational (3 features), where dimensionality is much lower relative to enrollment size.
