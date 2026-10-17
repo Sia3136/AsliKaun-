@@ -1,20 +1,36 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import os
+import secrets
 import sqlite3
+import time
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 DB_PATH = os.getenv("TRUST_JUGGLER_DB", "trust_juggler.db")
 app = FastAPI(
     title="Trust Juggler API",
     description="Hackathon prototype: two-axis context and behavioral continuity.",
-    version="0.1.0",
+    version="0.2.0",
 )
+
+# Set TRUST_JUGGLER_TOKEN_SECRET to a long random value before deployment.
+# This fallback is only for local development and must not be used in production.
+TOKEN_SECRET = os.getenv(
+    "TRUST_JUGGLER_TOKEN_SECRET",
+    "local-development-only-change-this-secret-before-deployment",
+).encode("utf-8")
+TOKEN_TTL_SECONDS = 8 * 60 * 60
+PASSWORD_HASH_ITERATIONS = 310_000
+bearer_scheme = HTTPBearer(auto_error=False)
 
 # ---------- Request / response contracts ----------
 
@@ -36,11 +52,17 @@ class DeclareChange(BaseModel):
     zone: str | None = None
     reason: str = Field(default="rider_declared_change", max_length=200)
 
+
 class ResolveReview(BaseModel):
     resolution: str = Field(
         pattern="^(cleared|confirmed_handoff|needs_follow_up)$"
     )
     reviewer_note: str | None = Field(default=None, max_length=1000)
+
+
+class AdminLogin(BaseModel):
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=200)
 
 
 # ---------- SQLite ----------
@@ -91,14 +113,159 @@ def init_db() -> None:
             created_at TEXT NOT NULL,
             resolved_at TEXT,
             resolution TEXT,
+            reviewer_id TEXT,
             reviewer_note TEXT
         );
+        CREATE TABLE IF NOT EXISTS admin_users (
+            username TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
         """)
+        # Migrate databases created by earlier prototype versions.
+        review_columns = {
+            row["name"] for row in con.execute("PRAGMA table_info(review_queue)").fetchall()
+        }
+        if "reviewer_id" not in review_columns:
+            con.execute("ALTER TABLE review_queue ADD COLUMN reviewer_id TEXT")
+        if "reviewer_note" not in review_columns:
+            con.execute("ALTER TABLE review_queue ADD COLUMN reviewer_note TEXT")
+
+
+def hash_password(password: str, salt: bytes | None = None) -> str:
+    """Return a salted PBKDF2-SHA256 password hash suitable for storage."""
+    salt = salt or secrets.token_bytes(16)
+    derived = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS
+    )
+    return "pbkdf2_sha256${}${}${}".format(
+        PASSWORD_HASH_ITERATIONS,
+        base64.urlsafe_b64encode(salt).decode("ascii"),
+        base64.urlsafe_b64encode(derived).decode("ascii"),
+    )
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        algorithm, iterations_text, salt_text, digest_text = stored_hash.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        iterations = int(iterations_text)
+        salt = base64.urlsafe_b64decode(salt_text.encode("ascii"))
+        expected = base64.urlsafe_b64decode(digest_text.encode("ascii"))
+        actual = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt, iterations
+        )
+        return hmac.compare_digest(actual, expected)
+    except (ValueError, TypeError):
+        return False
+
+
+def b64url_encode(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+
+def b64url_decode(value: str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def create_access_token(username: str) -> str:
+    payload = {
+        "sub": username,
+        "exp": int(time.time()) + TOKEN_TTL_SECONDS,
+    }
+    encoded_payload = b64url_encode(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    )
+    signature = hmac.new(
+        TOKEN_SECRET, encoded_payload.encode("ascii"), hashlib.sha256
+    ).digest()
+    return f"{encoded_payload}.{b64url_encode(signature)}"
+
+
+def decode_access_token(token: str) -> dict[str, Any]:
+    try:
+        encoded_payload, encoded_signature = token.split(".", 1)
+        expected_signature = hmac.new(
+            TOKEN_SECRET, encoded_payload.encode("ascii"), hashlib.sha256
+        ).digest()
+        supplied_signature = b64url_decode(encoded_signature)
+        if not hmac.compare_digest(expected_signature, supplied_signature):
+            raise ValueError("Invalid token signature")
+        payload = json.loads(b64url_decode(encoded_payload))
+        if not isinstance(payload, dict) or not payload.get("sub"):
+            raise ValueError("Invalid token payload")
+        if int(payload.get("exp", 0)) <= int(time.time()):
+            raise ValueError("Token expired")
+        return payload
+    except (ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired admin token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+def require_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict[str, str]:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=401,
+            detail="Admin authentication required. Log in to obtain a bearer token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token_payload = decode_access_token(credentials.credentials)
+    username = str(token_payload["sub"])
+    with connect() as con:
+        admin = con.execute(
+            "SELECT username, active FROM admin_users WHERE username = ?",
+            (username,),
+        ).fetchone()
+    if admin is None or not admin["active"]:
+        raise HTTPException(
+            status_code=401,
+            detail="Admin account is missing or disabled",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return {"username": username}
+
+
+def seed_admin_from_env() -> None:
+    """Create the first admin only when both credentials are configured."""
+    username = os.getenv("TRUST_JUGGLER_ADMIN_USERNAME")
+    password = os.getenv("TRUST_JUGGLER_ADMIN_PASSWORD")
+    if not username and not password:
+        print(
+            "Trust Juggler admin login is not configured. Set "
+            "TRUST_JUGGLER_ADMIN_USERNAME and TRUST_JUGGLER_ADMIN_PASSWORD."
+        )
+        return
+    if not username or not password:
+        raise RuntimeError(
+            "Set both TRUST_JUGGLER_ADMIN_USERNAME and TRUST_JUGGLER_ADMIN_PASSWORD."
+        )
+    if len(password) < 12:
+        raise RuntimeError("TRUST_JUGGLER_ADMIN_PASSWORD must be at least 12 characters.")
+    with connect() as con:
+        existing = con.execute(
+            "SELECT username FROM admin_users WHERE username = ?", (username,)
+        ).fetchone()
+        if existing is None:
+            con.execute(
+                "INSERT INTO admin_users(username, password_hash, active, created_at) "
+                "VALUES(?, ?, 1, ?)",
+                (username, hash_password(password), now_iso()),
+            )
+            print(f"Created initial Trust Juggler admin account: {username}")
 
 
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    seed_admin_from_env()
 
 
 def now_iso() -> str:
@@ -199,6 +366,34 @@ def health() -> dict:
     return {"status": "ok", "service": "trust-juggler-api"}
 
 
+@app.post("/v1/admin/login")
+def admin_login(body: AdminLogin) -> dict:
+    """Authenticate an admin and return an expiring bearer token."""
+    with connect() as con:
+        admin = con.execute(
+            "SELECT username, password_hash, active FROM admin_users WHERE username = ?",
+            (body.username,),
+        ).fetchone()
+
+    if (
+        admin is None
+        or not admin["active"]
+        or not verify_password(body.password, admin["password_hash"])
+    ):
+        # Keep the error generic so callers cannot distinguish unknown usernames.
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    return {
+        "access_token": create_access_token(admin["username"]),
+        "token_type": "bearer",
+        "expires_in": TOKEN_TTL_SECONDS,
+    }
+
+
+@app.get("/v1/admin/me")
+def admin_me(admin: dict[str, str] = Depends(require_admin)) -> dict:
+    return {"username": admin["username"], "role": "admin"}
+
 
 @app.post("/v1/sessions/ingest")
 def ingest_session(body: SessionIngest) -> dict:
@@ -212,27 +407,17 @@ def ingest_session(body: SessionIngest) -> dict:
 
     with connect() as con:
         driver = con.execute(
-            "SELECT * FROM drivers WHERE driver_id = ?",
-            (body.driver_id,),
+            "SELECT * FROM drivers WHERE driver_id = ?", (body.driver_id,)
         ).fetchone()
 
         if driver is None:
-            # First session establishes a baseline; no identity verdict.
+            # First session establishes the starting baseline; no identity verdict.
             con.execute(
-                """INSERT INTO drivers(
-                    driver_id, anchor_json, fast_json, latest_json,
-                    latest_result_json, updated_at
-                ) VALUES(?,?,?,?,?,?)""",
-                (
-                    body.driver_id,
-                    json.dumps(current_behavior),
-                    json.dumps(current_behavior),
-                    json.dumps(current_context),
-                    "{}",
-                    now_iso(),
-                ),
+                """INSERT INTO drivers(driver_id, anchor_json, fast_json, latest_json,
+                   latest_result_json, updated_at) VALUES(?,?,?,?,?,?)""",
+                (body.driver_id, json.dumps(current_behavior), json.dumps(current_behavior),
+                 json.dumps(current_context), "{}", now_iso()),
             )
-
             result = {
                 "driver_id": body.driver_id,
                 "context_score": None,
@@ -241,112 +426,60 @@ def ingest_session(body: SessionIngest) -> dict:
                 "behavior_axis": "insufficient_evidence",
                 "quadrant": "baseline_established",
                 "decision": "baseline_established",
-                "reasons": [
-                    "First session stored as baseline; no risk verdict yet"
-                ],
+                "reasons": ["First session stored as baseline; no risk verdict yet"],
                 "model_status": "mock_behavior_scorer",
                 "timestamp": body.timestamp.isoformat(),
             }
-
             con.execute(
-                """INSERT INTO sessions(
-                    driver_id, timestamp, payload_json, context_score,
-                    behavior_score, context_axis, behavior_axis, quadrant,
-                    decision, reasons_json
-                ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    body.driver_id,
-                    body.timestamp.isoformat(),
-                    json.dumps(payload_dict),
-                    None,
-                    None,
-                    "insufficient_evidence",
-                    "insufficient_evidence",
-                    "baseline_established",
-                    "baseline_established",
-                    json.dumps(result["reasons"]),
-                ),
+                """INSERT INTO sessions(driver_id,timestamp,payload_json,context_score,
+                   behavior_score,context_axis,behavior_axis,quadrant,decision,reasons_json)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (body.driver_id, body.timestamp.isoformat(), json.dumps(payload_dict), None, None,
+                 "insufficient_evidence", "insufficient_evidence", "baseline_established",
+                 "baseline_established", json.dumps(result["reasons"])),
             )
-
             con.execute(
-                """UPDATE drivers
-                   SET latest_result_json=?, updated_at=?
-                   WHERE driver_id=?""",
+                "UPDATE drivers SET latest_result_json=?, updated_at=? WHERE driver_id=?",
                 (json.dumps(result), now_iso(), body.driver_id),
             )
-
-            write_event(
-                con,
-                body.driver_id,
-                "baseline_established",
-                {"context": current_context},
-            )
-
+            write_event(con, body.driver_id, "baseline_established", {"context": current_context})
             return result
 
         previous_context = decode_json(driver["latest_json"], {})
         anchor_behavior = decode_json(driver["anchor_json"], {})
         fast_behavior = decode_json(driver["fast_json"], {})
 
-        context_score, context_axis, context_reasons = compare_context(
-            current_context, previous_context
-        )
+        context_score, context_axis, context_reasons = compare_context(current_context, previous_context)
+        fast_score, fast_axis, fast_reasons = mock_behavior_score(current_behavior, fast_behavior)
+        anchor_score, anchor_axis, anchor_reasons = mock_behavior_score(current_behavior, anchor_behavior)
 
-        fast_score, fast_axis, fast_reasons = mock_behavior_score(
-            current_behavior, fast_behavior
-        )
-
-        anchor_score, anchor_axis, anchor_reasons = mock_behavior_score(
-            current_behavior, anchor_behavior
-        )
-
-        # Use the more conservative of the fast and frozen-anchor scores.
-        available_scores = [
-            score
-            for score in (fast_score, anchor_score)
-            if score is not None
-        ]
-        behavior_score = (
-            min(available_scores) if available_scores else None
-        )
-
-        if (
-            fast_axis == "insufficient_evidence"
-            and anchor_axis == "insufficient_evidence"
-        ):
+        # Dual timescale: fast baseline adapts to ordinary gradual changes; frozen anchor
+        # remains unchanged and can expose slow drift. Use the more conservative continuity.
+        available_scores = [s for s in (fast_score, anchor_score) if s is not None]
+        behavior_score = min(available_scores) if available_scores else None
+        if fast_axis == "insufficient_evidence" and anchor_axis == "insufficient_evidence":
             behavior_axis = "insufficient_evidence"
         elif "changed" in (fast_axis, anchor_axis):
             behavior_axis = "changed"
         else:
             behavior_axis = "stable"
-
         decision, quadrant = decide(context_axis, behavior_axis)
+        reasons = context_reasons + [f"Fast baseline: {r}" for r in fast_reasons] + [f"Frozen anchor: {r}" for r in anchor_reasons]
 
-        reasons = (
-            context_reasons
-            + [f"Fast baseline: {r}" for r in fast_reasons]
-            + [f"Frozen anchor: {r}" for r in anchor_reasons]
-        )
-
-        # Update only the adaptive baseline for safe decisions.
-        # The frozen identity anchor remains unchanged.
+        # A declared or apparently legitimate context change with stable behavior gets
+        # a context re-baseline. Keep the frozen anchor; update only the fast baseline.
         update_fast = decision in ("continue", "rebaseline")
-
         if update_fast:
+            # Slowly adapt the fast baseline, while anchor_behavior stays frozen.
             new_fast = {}
-
             for key, value in current_behavior.items():
                 old = fast_behavior.get(key)
-
                 if value is None:
                     new_fast[key] = old
                 elif old is None:
                     new_fast[key] = value
                 else:
-                    new_fast[key] = (
-                        0.8 * float(old) + 0.2 * float(value)
-                    )
-
+                    new_fast[key] = 0.8 * float(old) + 0.2 * float(value)
             fast_behavior = new_fast
 
         result = {
@@ -359,79 +492,45 @@ def ingest_session(body: SessionIngest) -> dict:
             "decision": decision,
             "reasons": reasons,
             "model_status": "mock_behavior_scorer",
-            "baseline_status": (
-                "fast_baseline_updated"
-                if update_fast
-                else "fast_baseline_frozen"
-            ),
+            "baseline_status": "fast_baseline_updated" if update_fast else "fast_baseline_frozen",
             "fast_behavior_score": fast_score,
             "anchor_behavior_score": anchor_score,
             "timestamp": body.timestamp.isoformat(),
         }
 
-        # Insert the session and retain its database ID.
         session_cursor = con.execute(
-            """INSERT INTO sessions(
-                driver_id, timestamp, payload_json, context_score,
-                behavior_score, context_axis, behavior_axis, quadrant,
-                decision, reasons_json
-            ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (
-                body.driver_id,
-                body.timestamp.isoformat(),
-                json.dumps(payload_dict),
-                context_score,
-                behavior_score,
-                context_axis,
-                behavior_axis,
-                quadrant,
-                decision,
-                json.dumps(reasons),
-            ),
+            """INSERT INTO sessions(driver_id,timestamp,payload_json,context_score,
+               behavior_score,context_axis,behavior_axis,quadrant,decision,reasons_json)
+               VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (body.driver_id, body.timestamp.isoformat(), json.dumps(payload_dict), context_score,
+             behavior_score, context_axis, behavior_axis, quadrant, decision, json.dumps(reasons)),
         )
-
         session_id = session_cursor.lastrowid
 
-        # Automatically queue sessions that need a human review.
-        if decision in (
-            "challenge_at_safe_pause",
-            "step_up_check_at_safe_pause",
-        ):
+        # Queue only decisions that require a human review.
+        if decision in ("challenge_at_safe_pause", "step_up_check_at_safe_pause"):
             con.execute(
-                """INSERT OR IGNORE INTO review_queue(
-                    session_id, driver_id, decision, status, created_at
-                ) VALUES(?, ?, ?, 'open', ?)""",
-                (
-                    session_id,
-                    body.driver_id,
-                    decision,
-                    now_iso(),
-                ),
+                """INSERT OR IGNORE INTO review_queue
+                   (session_id, driver_id, decision, status, created_at)
+                   VALUES (?, ?, ?, 'open', ?)""",
+                (session_id, body.driver_id, decision, now_iso()),
             )
 
-        # Preserve the existing driver update.
         con.execute(
-            """UPDATE drivers
-               SET fast_json=?, latest_json=?, latest_result_json=?,
-                   updated_at=?
+            """UPDATE drivers SET fast_json=?, latest_json=?, latest_result_json=?, updated_at=?
                WHERE driver_id=?""",
-            (
-                json.dumps(fast_behavior),
-                json.dumps(current_context),
-                json.dumps(result),
-                now_iso(),
-                body.driver_id,
-            ),
+            (json.dumps(fast_behavior), json.dumps(current_context), json.dumps(result),
+             now_iso(), body.driver_id),
         )
-
         write_event(con, body.driver_id, "session_scored", result)
 
     return result
 
 
-
 @app.get("/v1/drivers/{driver_id}/score")
-def driver_score(driver_id: str) -> dict:
+def driver_score(
+    driver_id: str, admin: dict[str, str] = Depends(require_admin)
+) -> dict:
     with connect() as con:
         row = con.execute("SELECT * FROM drivers WHERE driver_id=?", (driver_id,)).fetchone()
         if row is None:
@@ -456,7 +555,7 @@ def driver_score(driver_id: str) -> dict:
 
 
 @app.get("/v1/fleet/scores")
-def fleet_scores() -> dict:
+def fleet_scores(admin: dict[str, str] = Depends(require_admin)) -> dict:
     with connect() as con:
         rows = con.execute(
             """SELECT driver_id, latest_result_json, updated_at FROM drivers
@@ -509,7 +608,9 @@ def declare_change(driver_id: str, body: DeclareChange) -> dict:
 
 
 @app.get("/v1/drivers/{driver_id}/events")
-def driver_events(driver_id: str) -> dict:
+def driver_events(
+    driver_id: str, admin: dict[str, str] = Depends(require_admin)
+) -> dict:
     with connect() as con:
         exists = con.execute("SELECT 1 FROM drivers WHERE driver_id=?", (driver_id,)).fetchone()
         if not exists:
@@ -523,8 +624,17 @@ def driver_events(driver_id: str) -> dict:
              "details": decode_json(r["details_json"], {})} for r in rows
         ]}
 
+
+# ---------- Admin review workflow (authentication-protected) ----------
+
 @app.get("/v1/review-queue")
-def get_review_queue(status: str = "open", limit: int = 100) -> dict:
+def get_review_queue(
+    status: str = "open",
+    limit: int = 100,
+    driver_id: str | None = None,
+    admin: dict[str, str] = Depends(require_admin),
+) -> dict:
+    """List review items. Supports status=open|resolved|all and optional driver_id."""
     if status not in ("open", "resolved", "all"):
         raise HTTPException(
             status_code=400,
@@ -532,30 +642,75 @@ def get_review_queue(status: str = "open", limit: int = 100) -> dict:
         )
 
     limit = max(1, min(limit, 500))
+    query = """SELECT q.id AS review_id, q.session_id, q.driver_id, q.decision,
+                      q.status, q.created_at, q.resolved_at, q.resolution,
+                      q.reviewer_id, q.reviewer_note,
+                      s.timestamp AS session_timestamp, s.context_score,
+                      s.behavior_score, s.context_axis, s.behavior_axis,
+                      s.quadrant, s.reasons_json
+               FROM review_queue q
+               JOIN sessions s ON s.id = q.session_id"""
+    clauses = []
+    params: list[Any] = []
+
+    if status != "all":
+        clauses.append("q.status = ?")
+        params.append(status)
+    if driver_id:
+        clauses.append("q.driver_id = ?")
+        params.append(driver_id)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY q.created_at DESC LIMIT ?"
+    params.append(limit)
 
     with connect() as con:
-        if status == "all":
-            rows = con.execute(
-                """SELECT * FROM review_queue
-                   ORDER BY created_at DESC LIMIT ?""",
-                (limit,),
-            ).fetchall()
-        else:
-            rows = con.execute(
-                """SELECT * FROM review_queue
-                   WHERE status = ?
-                   ORDER BY created_at DESC LIMIT ?""",
-                (status, limit),
-            ).fetchall()
+        rows = con.execute(query, tuple(params)).fetchall()
 
-    return {
-        "count": len(rows),
-        "reviews": [dict(row) for row in rows],
-    }
+    reviews = []
+    for row in rows:
+        item = dict(row)
+        item["reasons"] = decode_json(item.pop("reasons_json"), [])
+        reviews.append(item)
+
+    return {"count": len(reviews), "reviews": reviews}
+
+
+@app.get("/v1/review-queue/{session_id}")
+def get_review_details(
+    session_id: int, admin: dict[str, str] = Depends(require_admin)
+) -> dict:
+    """Return the review item and associated session evidence for admin inspection."""
+    with connect() as con:
+        row = con.execute(
+            """SELECT q.id AS review_id, q.session_id, q.driver_id, q.decision,
+                      q.status, q.created_at, q.resolved_at, q.resolution,
+                      q.reviewer_id, q.reviewer_note,
+                      s.timestamp AS session_timestamp, s.payload_json,
+                      s.context_score, s.behavior_score, s.context_axis,
+                      s.behavior_axis, s.quadrant, s.reasons_json
+               FROM review_queue q
+               JOIN sessions s ON s.id = q.session_id
+               WHERE q.session_id = ?""",
+            (session_id,),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Review item not found")
+
+    item = dict(row)
+    item["reasons"] = decode_json(item.pop("reasons_json"), [])
+    item["session_payload"] = decode_json(item.pop("payload_json"), {})
+    return item
 
 
 @app.post("/v1/review-queue/{session_id}/resolve")
-def resolve_review(session_id: int, body: ResolveReview) -> dict:
+def resolve_review(
+    session_id: int,
+    body: ResolveReview,
+    admin: dict[str, str] = Depends(require_admin),
+) -> dict:
+    """Resolve an open review and write an audit event."""
     with connect() as con:
         review = con.execute(
             "SELECT * FROM review_queue WHERE session_id = ?",
@@ -563,34 +718,24 @@ def resolve_review(session_id: int, body: ResolveReview) -> dict:
         ).fetchone()
 
         if review is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Review item not found",
-            )
-
+            raise HTTPException(status_code=404, detail="Review item not found")
         if review["status"] == "resolved":
-            raise HTTPException(
-                status_code=409,
-                detail="Review item is already resolved",
-            )
+            raise HTTPException(status_code=409, detail="Review item is already resolved")
 
         resolved_at = now_iso()
-
         con.execute(
             """UPDATE review_queue
-               SET status = 'resolved',
-                   resolved_at = ?,
-                   resolution = ?,
-                   reviewer_note = ?
-               WHERE session_id = ?""",
+               SET status='resolved', resolved_at=?, resolution=?,
+                   reviewer_id=?, reviewer_note=?
+               WHERE session_id=? AND status='open'""",
             (
                 resolved_at,
                 body.resolution,
+                admin["username"],
                 body.reviewer_note,
                 session_id,
             ),
         )
-
         write_event(
             con,
             review["driver_id"],
@@ -599,6 +744,7 @@ def resolve_review(session_id: int, body: ResolveReview) -> dict:
                 "session_id": session_id,
                 "original_decision": review["decision"],
                 "resolution": body.resolution,
+                "reviewer_id": admin["username"],
                 "reviewer_note": body.reviewer_note,
                 "resolved_at": resolved_at,
             },
@@ -609,5 +755,6 @@ def resolve_review(session_id: int, body: ResolveReview) -> dict:
         "driver_id": review["driver_id"],
         "status": "resolved",
         "resolution": body.resolution,
+        "reviewer_id": admin["username"],
         "resolved_at": resolved_at,
     }
