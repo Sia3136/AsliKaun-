@@ -15,6 +15,14 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
+try:
+    from trust_juggler_backend.app.ml_bridge import evaluate_session_ml
+except ImportError:
+    try:
+        from app.ml_bridge import evaluate_session_ml
+    except ImportError:
+        evaluate_session_ml = None
+
 DB_PATH = os.getenv("TRUST_JUGGLER_DB", "trust_juggler.db")
 app = FastAPI(
     title="Trust Juggler API",
@@ -411,11 +419,19 @@ def ingest_session(body: SessionIngest) -> dict:
         ).fetchone()
 
         if driver is None:
-            # First session establishes the starting baseline; no identity verdict.
+            # First session establishes the starting baseline; no identity verdict yet.
+            if evaluate_session_ml is not None:
+                ml_eval = evaluate_session_ml(body, {})
+                initial_behavior = ml_eval["current_behavior"]
+                model_status = ml_eval["model_status"]
+            else:
+                initial_behavior = current_behavior
+                model_status = "mock_behavior_scorer"
+
             con.execute(
                 """INSERT INTO drivers(driver_id, anchor_json, fast_json, latest_json,
                    latest_result_json, updated_at) VALUES(?,?,?,?,?,?)""",
-                (body.driver_id, json.dumps(current_behavior), json.dumps(current_behavior),
+                (body.driver_id, json.dumps(initial_behavior), json.dumps(initial_behavior),
                  json.dumps(current_context), "{}", now_iso()),
             )
             result = {
@@ -426,8 +442,9 @@ def ingest_session(body: SessionIngest) -> dict:
                 "behavior_axis": "insufficient_evidence",
                 "quadrant": "baseline_established",
                 "decision": "baseline_established",
-                "reasons": ["First session stored as baseline; no risk verdict yet"],
-                "model_status": "mock_behavior_scorer",
+                "signals": {},
+                "reasons": ["First session stored as multi-modal baseline; no risk verdict yet"],
+                "model_status": model_status,
                 "timestamp": body.timestamp.isoformat(),
             }
             con.execute(
@@ -449,38 +466,68 @@ def ingest_session(body: SessionIngest) -> dict:
         anchor_behavior = decode_json(driver["anchor_json"], {})
         fast_behavior = decode_json(driver["fast_json"], {})
 
-        context_score, context_axis, context_reasons = compare_context(current_context, previous_context)
-        fast_score, fast_axis, fast_reasons = mock_behavior_score(current_behavior, fast_behavior)
-        anchor_score, anchor_axis, anchor_reasons = mock_behavior_score(current_behavior, anchor_behavior)
-
-        # Dual timescale: fast baseline adapts to ordinary gradual changes; frozen anchor
-        # remains unchanged and can expose slow drift. Use the more conservative continuity.
-        available_scores = [s for s in (fast_score, anchor_score) if s is not None]
-        behavior_score = min(available_scores) if available_scores else None
-        if fast_axis == "insufficient_evidence" and anchor_axis == "insufficient_evidence":
-            behavior_axis = "insufficient_evidence"
-        elif "changed" in (fast_axis, anchor_axis):
-            behavior_axis = "changed"
+        if evaluate_session_ml is not None:
+            # Full ML Two-Axis evaluation with reason-vector explainability
+            ml_eval = evaluate_session_ml(body, {
+                "fast_behavior": fast_behavior,
+                "anchor_behavior": anchor_behavior,
+                "known_contexts": [previous_context],
+            })
+            context_score = ml_eval["context_score"]
+            behavior_score = ml_eval["behavior_score"]
+            context_axis = ml_eval["context_axis"]
+            behavior_axis = ml_eval["behavior_axis"]
+            quadrant = ml_eval["quadrant"]
+            decision = ml_eval["decision"]
+            reasons = ml_eval["reasons"]
+            signals = ml_eval["signals"]
+            reason_vector = ml_eval.get("reason_vector")
+            current_behavior = ml_eval["current_behavior"]
+            model_status = ml_eval["model_status"]
         else:
-            behavior_axis = "stable"
-        decision, quadrant = decide(context_axis, behavior_axis)
-        reasons = context_reasons + [f"Fast baseline: {r}" for r in fast_reasons] + [f"Frozen anchor: {r}" for r in anchor_reasons]
+            context_score, context_axis, context_reasons = compare_context(current_context, previous_context)
+            fast_score, fast_axis, fast_reasons = mock_behavior_score(current_behavior, fast_behavior)
+            anchor_score, anchor_axis, anchor_reasons = mock_behavior_score(current_behavior, anchor_behavior)
+            available_scores = [s for s in (fast_score, anchor_score) if s is not None]
+            behavior_score = min(available_scores) if available_scores else None
+            if fast_axis == "insufficient_evidence" and anchor_axis == "insufficient_evidence":
+                behavior_axis = "insufficient_evidence"
+            elif "changed" in (fast_axis, anchor_axis):
+                behavior_axis = "changed"
+            else:
+                behavior_axis = "stable"
+            decision, quadrant = decide(context_axis, behavior_axis)
+            reasons = context_reasons + [f"Fast baseline: {r}" for r in fast_reasons] + [f"Frozen anchor: {r}" for r in anchor_reasons]
+            signals = {}
+            reason_vector = None
+            model_status = "mock_behavior_scorer"
 
         # A declared or apparently legitimate context change with stable behavior gets
         # a context re-baseline. Keep the frozen anchor; update only the fast baseline.
         update_fast = decision in ("continue", "rebaseline")
         if update_fast:
-            # Slowly adapt the fast baseline, while anchor_behavior stays frozen.
-            new_fast = {}
-            for key, value in current_behavior.items():
-                old = fast_behavior.get(key)
-                if value is None:
-                    new_fast[key] = old
-                elif old is None:
-                    new_fast[key] = value
-                else:
-                    new_fast[key] = 0.8 * float(old) + 0.2 * float(value)
-            fast_behavior = new_fast
+            if isinstance(fast_behavior.get("operational"), dict):
+                # Adaptive update for structured ML feature categories
+                for cat in ("operational", "touch", "motion"):
+                    cur_cat = current_behavior.get(cat, {})
+                    fast_cat = fast_behavior.get(cat, {})
+                    for k, val in cur_cat.items():
+                        if val is not None and isinstance(val, (int, float)):
+                            old_v = fast_cat.get(k)
+                            fast_cat[k] = val if old_v is None else round(0.8 * float(old_v) + 0.2 * float(val), 4)
+                    fast_behavior[cat] = fast_cat
+            else:
+                # Flat dictionary fallback
+                new_fast = {}
+                for key, value in current_behavior.items():
+                    old = fast_behavior.get(key)
+                    if value is None:
+                        new_fast[key] = old
+                    elif old is None:
+                        new_fast[key] = value
+                    else:
+                        new_fast[key] = 0.8 * float(old) + 0.2 * float(value)
+                fast_behavior = new_fast
 
         result = {
             "driver_id": body.driver_id,
@@ -490,11 +537,11 @@ def ingest_session(body: SessionIngest) -> dict:
             "behavior_axis": behavior_axis,
             "quadrant": quadrant,
             "decision": decision,
+            "signals": signals,
+            "reason_vector": reason_vector,
             "reasons": reasons,
-            "model_status": "mock_behavior_scorer",
+            "model_status": model_status,
             "baseline_status": "fast_baseline_updated" if update_fast else "fast_baseline_frozen",
-            "fast_behavior_score": fast_score,
-            "anchor_behavior_score": anchor_score,
             "timestamp": body.timestamp.isoformat(),
         }
 
