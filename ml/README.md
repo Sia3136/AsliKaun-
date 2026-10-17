@@ -66,7 +66,7 @@ Trained on `ml/kaggle/train_gps_encoder.py` (self-contained Kaggle notebook scri
 | IsolationForest (classical) | **0.397** | **0.622** | 0.90 | 0.399 [0.345, 0.452] |
 | GRU triplet encoder | 0.433 | 0.603 | 0.95 | 0.400 [0.336, 0.452] |
 
-**Honest result: the deep model did not beat the classical baseline.** Per-rider mean EER is essentially tied with overlapping confidence intervals. Per the Phase 2 ground rule set from the start ("keep whichever wins, say so either way"), **GPS stays on IsolationForest** — don't claim a deep-learning win here. This matches the documented finding behind the "Trajectory-User Linking is easier than you think" line of research cited earlier: simple per-rider statistical profiles are often competitive with learned trajectory embeddings. Likely causes, not investigated further: a small training run (400 couriers, 30 epochs) and a 4-feature-per-leg sequence representation that may not carry meaningfully more signal than the 23-feature hand-crafted summary the classical model already uses.
+**Initial result: the deep model did not beat the classical baseline here** — per-rider mean EER was essentially tied with overlapping confidence intervals. **Correction after holdout re-validation (see the "Holdout re-validation" section below): this result did not generalize to a fresh cohort, where the triplet encoder won instead.** The correct conclusion for GPS is "inconclusive, not enough evaluation data to call a winner" — not "classical wins," which is what this section originally (incorrectly) stated. Don't cite a confident GPS winner in the pitch.
 
 ## Phase 2: touch stroke autoencoder (LSTM, trained on Kaggle)
 
@@ -91,19 +91,26 @@ Same training data (`touch_training_sequences.pkl`, no new upload needed), same 
 
 **This one wins, genuinely.** EER drops from 0.408 to 0.352, AUC rises from 0.624 to 0.722 — confirms the autoencoder's diagnosis was correct: the training objective (person-discriminative triplet loss vs. population-general reconstruction) was the actual problem, not model capacity. **Touch now uses the triplet encoder, not IsolationForest.**
 
-## Phase 2 summary
+## Phase 2 summary (CORRECTED after holdout re-validation — see below)
 
 | Signal | Classical EER | Best deep-model EER | Winner |
 | --- | --- | --- | --- |
-| GPS | 0.397 | 0.433 (GRU triplet) | Classical (IsolationForest) |
-| Touch | 0.408 | **0.352** (GRU triplet, iteration 2) | **Deep model** |
+| GPS | 0.397 (orig) / 0.427 (holdout) | 0.433 (orig) / **0.372 (holdout)** | **Inconclusive — see holdout finding** |
+| Touch | 0.408 (orig) / 0.436 (holdout) | **0.352 (orig) / 0.351 (holdout)** | **Deep model — confirmed on fresh data** |
 | Motion | 0.440 | not attempted in Phase 2 | Classical (IsolationForest), by default |
 
-One real win, one honest loss, one not attempted — reported as the actual result, not spun into a uniform success story. The GPS loss and the touch autoencoder's failure both point to the same lesson, now validated by the touch triplet win: **a person-discriminative training objective (triplet/contrastive loss, scored by distance-to-rider-centroid) is the right pattern for a deep model here — a reconstruction-based model isn't**, and GPS's triplet attempt may simply have been under-trained (30 epochs, 400 couriers) rather than architecturally wrong — worth a longer retrain if more GPU time is available, using the same recipe that just worked for touch.
+## Holdout re-validation — the same 18-person cohort was being reused too much
+
+Every result above the first few runs was measured against the *same* 18 H-MOG users / 18 ODIDMob couriers, repeatedly. That's a real methodological risk: with a cohort this small, it's easy to unknowingly tune conclusions (and thresholds) to that specific set rather than to the underlying truth. Ran a genuine holdout check for both signals:
+
+- **GPS: a fully fresh cohort** (8 new targets + 10 new impostors, zero overlap with the original eval cohort — `ml/scripts/evaluate_gps_holdout.py`). Result: **the conclusion flipped.** Triplet encoder won here (0.372 vs 0.427), opposite of the original cohort (classical 0.397 vs triplet 0.433). With only 8 target riders, per-rider EER swings ±0.03-0.05 just from which people get sampled — **the classical-vs-triplet gap for GPS is within that noise band on both cohorts.** The honest conclusion is **"too close to call with this little evaluation data,"** not "classical wins" (what was previously claimed here). Either keep both models and route by a larger, better-powered evaluation later, or default to the simpler classical model on engineering-simplicity grounds alone — but don't cite a confident GPS winner in the pitch.
+- **Touch: same 8 fitted target riders (H-MOG only has 100 users total — 18 eval + 82 training already accounts for 99/100, so no third fully-disjoint group exists), tested against a fresh, 2x-larger impostor pool** (20 new impostors never used before — `ml/scripts/evaluate_touch_holdout.py`). Result: **confirmed.** Triplet 0.351 vs classical 0.436, consistent with the original 0.352 vs 0.408. This conclusion holds up.
+
+**Takeaway for the pitch and for any future evaluation:** state cohort sizes and holdout status explicitly next to every number (as this README now does). A single 8-vs-10 cohort is a *pilot*, not a definitive result — the GPS flip is the proof. Touch's repeated win across two different, non-overlapping impostor sets is the kind of evidence that's actually trustworthy.
 
 ## Production inference wiring (`ml/inference/`) — and a real schema gap found while building it
 
-`ml/inference/rider_model_bundle.py`'s `RiderModelBundle` is the single entry point backend should call: `RiderModelBundle.fit(enroll, calib)` once per rider (batch job / on enough history), then `.score(session)` per incoming session — wires together the winning model per signal (IsolationForest for operational/motion/GPS, the triplet encoder for touch), conformal calibration, Fisher fusion, the two-axis combiner, and the reason vector, with a missing-signal policy that skips a signal cleanly rather than ever imputing a value. Plumbing-tested end to end (`ml/scripts/test_inference_wiring.py`) — not a new accuracy validation, just confirms the wiring runs.
+`ml/inference/rider_model_bundle.py`'s `RiderModelBundle` is the single entry point backend should call: `RiderModelBundle.fit(enroll, calib)` once per rider (batch job / on enough history), then `.score(session)` per incoming session — wires together IsolationForest for operational/motion/GPS (GPS uses classical by default on engineering-simplicity grounds — see Holdout re-validation, its deep-model comparison was inconclusive, not a loss) and the triplet encoder for touch (confirmed winner on holdout), plus conformal calibration, Fisher fusion, the two-axis combiner, and the reason vector, with a missing-signal policy that skips a signal cleanly rather than ever imputing a value. Plumbing-tested end to end (`ml/scripts/test_inference_wiring.py`) — not a new accuracy validation, just confirms the wiring runs.
 
 **Real finding, not theoretical:** the frozen session schema (agreed hour 0-1) doesn't carry enough detail for the touch model to work as trained, and the plumbing test *demonstrates* this, not just argues it. The schema's `touch_events` is one entry per completed gesture (`{type, x, y, pressure, area, duration_ms, t}` — a single point). The touch triplet encoder was trained on H-MOG's raw per-sample stream (many points per gesture) and gets its EER win specifically from velocity/curvature/pressure-slope features computed along that path. With only one point per gesture, those features are all 0.0 — and in the plumbing test, touch's p-value pinned at **1.0 for both the honest and the handoff session**, meaning it contributed zero discriminative signal in practice, not just in theory.
 
@@ -139,6 +146,10 @@ python ml/scripts/test_reason_vector.py   # set ANTHROPIC_API_KEY for real gener
 
 # Production inference wiring (plumbing test, not an accuracy check)
 python ml/scripts/test_inference_wiring.py
+
+# Holdout re-validation (fresh cohorts, see Holdout re-validation section)
+python ml/scripts/evaluate_gps_holdout.py
+python ml/scripts/evaluate_touch_holdout.py
 ```
 
 ## Layout
@@ -168,7 +179,7 @@ ml/
   llm/reason_vector.py                  Claude-generated rider-facing explanation for escalated sessions
   inference/schema_adapters.py          frozen-schema session -> each model's expected input (see schema gap note above)
   inference/rider_model_bundle.py       THE production entry point: RiderModelBundle.fit() / .score()
-  models/gps_triplet_encoder.py         GRU + triplet loss GPS encoder (lost to classical, kept for reference/retry)
+  models/gps_triplet_encoder.py         GRU + triplet loss GPS encoder (result INCONCLUSIVE after holdout — see Holdout re-validation)
   models/touch_autoencoder.py           LSTM reconstruction autoencoder for touch (lost badly, kept for reference)
   models/touch_triplet_encoder.py       GRU + triplet loss touch encoder (WINNER — used in production wiring)
   kaggle/                               self-contained Kaggle training scripts + prepared training data
