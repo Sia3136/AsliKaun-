@@ -19,7 +19,7 @@ DB_PATH = os.getenv("TRUST_JUGGLER_DB", "trust_juggler.db")
 app = FastAPI(
     title="Trust Juggler API",
     description="Hackathon prototype: two-axis context and behavioral continuity.",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 # Set TRUST_JUGGLER_TOKEN_SECRET to a long random value before deployment.
@@ -352,8 +352,12 @@ def behavior_features(payload: SessionIngest) -> dict[str, float | None]:
 def compare_context(current: dict, previous: dict) -> tuple[float | None, str, list[str]]:
     fields = ["device_id", "ip_subnet", "zone"]
     available = [f for f in fields if current.get(f) is not None and previous.get(f) is not None]
-    if not available:
-        return None, "insufficient_evidence", ["Not enough context fields to compare"]
+    # Avoid a confident context verdict from a single surviving field. Missing data
+    # must reduce confidence rather than turn one changed field into an accusation.
+    if len(available) < 2:
+        return None, "insufficient_evidence", [
+            f"Not enough comparable context fields ({len(available)} of 3; need at least 2)"
+        ]
 
     changed = [f for f in available if current[f] != previous[f]]
     score = 1.0 - (len(changed) / len(available))  # continuity score: 1 = stable
@@ -441,7 +445,12 @@ def admin_me(admin: dict[str, str] = Depends(require_admin)) -> dict:
 
 
 @app.post("/v1/sessions/ingest")
-def ingest_session(body: SessionIngest) -> dict:
+def ingest_session(
+    body: SessionIngest,
+    x_driver_token: str | None = Header(default=None, alias="X-Driver-Token"),
+) -> dict:
+    """Ingest a session only from the driver app/token assigned to this driver ID."""
+    require_driver_token(body.driver_id, x_driver_token)
     current_context = {
         "device_id": body.device_id,
         "ip_subnet": body.ip_subnet,
@@ -455,14 +464,26 @@ def ingest_session(body: SessionIngest) -> dict:
             "SELECT * FROM drivers WHERE driver_id = ?", (body.driver_id,)
         ).fetchone()
 
-        if driver is None:
-            # First session establishes the starting baseline; no identity verdict.
-            con.execute(
-                """INSERT INTO drivers(driver_id, anchor_json, fast_json, latest_json,
-                   latest_result_json, updated_at) VALUES(?,?,?,?,?,?)""",
-                (body.driver_id, json.dumps(current_behavior), json.dumps(current_behavior),
-                 json.dumps(current_context), "{}", now_iso()),
-            )
+        has_baseline = bool(
+            driver is not None and decode_json(driver["latest_result_json"], {})
+        )
+        if driver is None or not has_baseline:
+            # First authenticated session establishes the starting baseline; no identity verdict.
+            if driver is None:
+                con.execute(
+                    """INSERT INTO drivers(driver_id, anchor_json, fast_json, latest_json,
+                       latest_result_json, updated_at) VALUES(?,?,?,?,?,?)""",
+                    (body.driver_id, json.dumps(current_behavior), json.dumps(current_behavior),
+                     json.dumps(current_context), "{}", now_iso()),
+                )
+            else:
+                # The admin may have provisioned this driver before its first session.
+                con.execute(
+                    """UPDATE drivers SET anchor_json=?, fast_json=?, latest_json=?, updated_at=?
+                       WHERE driver_id=?""",
+                    (json.dumps(current_behavior), json.dumps(current_behavior),
+                     json.dumps(current_context), now_iso(), body.driver_id),
+                )
             result = {
                 "driver_id": body.driver_id,
                 "context_score": None,
@@ -782,7 +803,13 @@ def issue_driver_token(
             "SELECT driver_id FROM drivers WHERE driver_id = ?", (driver_id,)
         ).fetchone()
         if driver is None:
-            raise HTTPException(status_code=404, detail="Driver not found")
+            # Admin provisioning is the trust boundary: create the driver record before
+            # issuing a token, so unauthenticated clients cannot claim a new driver ID.
+            con.execute(
+                """INSERT INTO drivers(driver_id, anchor_json, fast_json, latest_json,
+                   latest_result_json, updated_at) VALUES(?, '{}', '{}', '{}', '{}', ?)""",
+                (driver_id, timestamp),
+            )
 
         existing = con.execute(
             "SELECT driver_id FROM driver_tokens WHERE driver_id = ?", (driver_id,)
