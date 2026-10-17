@@ -71,64 +71,25 @@
       left: 0;
       width: 100vw;
       height: 100vh;
-      z-index: -2;
+      z-index: 0;
       pointer-events: none;
       display: block;
-    }
-
-    /* Floating Mesh Palette Switcher */
-    .mesh-palette-switcher {
-      position: fixed;
-      bottom: 24px;
-      left: 24px;
-      z-index: 1000;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      background: rgba(255, 255, 255, 0.76);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.9);
-      padding: 4px 6px;
-      border-radius: 20px;
-      box-shadow: 0 4px 18px rgba(6, 25, 47, 0.08);
-    }
-    .switcher-label {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: var(--muted);
-      padding: 0 5px 0 3px;
-      letter-spacing: 0.05em;
-    }
-    .palette-btn {
-      font-size: 12px;
-      font-weight: 600;
-      padding: 4px 10px;
-      border-radius: 12px;
-      color: var(--muted);
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .palette-btn:hover {
-      color: var(--ink);
-      background: rgba(255, 255, 255, 0.65);
-    }
-    .palette-btn.active {
-      color: var(--ink);
-      background: #ffffff;
-      box-shadow: 0 2px 8px rgba(6, 25, 47, 0.1);
     }
 
     /* Fixed film noise overlay */
     .noise-overlay {
       position: fixed;
       inset: 0;
-      opacity: 0.12;
+      opacity: 0.10;
       mix-blend-mode: soft-light;
       background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.32'/%3E%3C/svg%3E");
       pointer-events: none;
-      z-index: 9999;
+      z-index: 1;
+    }
+
+    main, .site-footer {
+      position: relative;
+      z-index: 2;
     }
 
     button {
@@ -1466,16 +1427,6 @@
   <!-- Full-bleed WebGL GPU Mesh Gradient Canvas -->
   <canvas id="bgCanvas" class="bg-mesh-canvas" aria-hidden="true"></canvas>
 
-  <!-- Floating Mesh Gradient Palette Switcher -->
-  <div class="mesh-palette-switcher" id="paletteSwitcher" aria-label="Background gradient palette switcher">
-    <span class="switcher-label">Mesh:</span>
-    <button class="palette-btn active" data-palette="Ice">Ice</button>
-    <button class="palette-btn" data-palette="Mint">Mint</button>
-    <button class="palette-btn" data-palette="Noir">Noir</button>
-    <button class="palette-btn" data-palette="Plum">Plum</button>
-    <button class="palette-btn" data-palette="Neon">Neon</button>
-  </div>
-
   <!-- Noise filter overlay -->
   <div class="noise-overlay" aria-hidden="true"></div>
 
@@ -2391,12 +2342,11 @@
         toast.classList.remove('show');
       }, 1900);
     }
-  </script>
 
-  /* ════════════════════════════════════════════════════════════════
-     GPU ANIMATED MESH GRADIENT (SEAMLESS LOOP + 4x4 BAYER DITHER)
-     ════════════════════════════════════════════════════════════════ */
-  (function initMeshGradient() {
+    /* ════════════════════════════════════════════════════════════════
+       GPU ANIMATED MESH GRADIENT (SEAMLESS LOOP + 4x4 BAYER DITHER)
+       ════════════════════════════════════════════════════════════════ */
+    (function initMeshGradient() {
     const canvas = document.getElementById('bgCanvas');
     if (!canvas) return;
 
@@ -2604,20 +2554,6 @@
       targetMouse.y = (0.5 - e.clientY / window.innerHeight) * 2.0;
     }, { passive: true });
 
-    // Palette Switcher Event Listeners
-    const paletteButtons = document.querySelectorAll('.palette-btn');
-    paletteButtons.forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        const palName = btn.getAttribute('data-palette');
-        if (!PALETTES[palName]) return;
-        paletteButtons.forEach(function(b) { b.classList.remove('active'); });
-        btn.classList.add('active');
-        activePaletteName = palName;
-        targetPalette = PALETTES[palName].map(hexToRgb);
-        say('Background: ' + palName + ' Palette');
-      });
-    });
-
     // Render loop
     const SPEED = 0.22;
     let startTime = performance.now();
@@ -2651,6 +2587,6 @@
     }
     requestAnimationFrame(renderFrame);
   })();
-
+  </script>
 </body>
 </html>
