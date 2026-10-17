@@ -19,9 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ml.sim.rider_sim import make_profile, generate_session
-from ml.scorers.operational import OperationalScorer
-from ml.scorers.motion import MotionScorer
-from ml.scorers.touch import TouchScorer
+from ml.combiner.signal_models import RiderSignalModels
 from ml.combiner.two_axis import ContextBaseline, context_continuity, behavior_continuity, classify
 
 rider_a = make_profile("rider_a", seed=1)
@@ -36,11 +34,7 @@ history = [
 fit_history, calib_history = history[:40], history[40:]
 baseline = ContextBaseline.from_history(history)
 
-scorers = {
-    "operational": OperationalScorer(contamination=0.05).fit(fit_history, calib_history),
-    "motion": MotionScorer(contamination=0.05).fit(fit_history, calib_history),
-    "touch": TouchScorer(contamination=0.05).fit(fit_history, calib_history),
-}
+signal_models = RiderSignalModels(contamination=0.05).fit(fit_history, calib_history)
 
 
 def run_trials(label: str, make_session):
@@ -48,8 +42,8 @@ def run_trials(label: str, make_session):
     for i in range(N_TRIALS):
         session = make_session(seed=500 + i)
         ctx = context_continuity(session, baseline)
-        scorer_outputs = {name: s.score(session) for name, s in scorers.items()}
-        beh = behavior_continuity(scorer_outputs)
+        p_values = signal_models.p_values(session)
+        beh = behavior_continuity(p_values)
         result = classify(ctx, beh)
         quadrants.append(result["quadrant"])
         trust_scores.append(result["trust_score"])

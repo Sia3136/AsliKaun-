@@ -6,6 +6,8 @@ moved (see the main doc's Top Differentiators #1).
 """
 from dataclasses import dataclass
 
+from ml.calibration.fusion import fisher_combine
+
 
 @dataclass
 class ContextBaseline:
@@ -34,15 +36,25 @@ def context_continuity(session: dict, baseline: ContextBaseline) -> float:
     return matches / 3.0
 
 
-def behavior_continuity(scorer_outputs: dict) -> float:
-    """1.0 = behavior fully matches the rider's history. scorer_outputs is
-    {signal_name: anomaly_score in [0,1]} from the operational/motion/
-    touch/gps scorers; combined as a simple mean (unweighted — a
-    red-team evaluation pass should tune these weights, not guesswork)."""
-    if not scorer_outputs:
+def behavior_continuity(p_values: dict) -> float:
+    """1.0 = behavior fully matches the rider's history. `p_values` is
+    {signal_name: conformal p-value in [0,1]} from
+    ml/combiner/signal_models.py's RiderSignalModels (or any per-signal
+    ConformalScorer) — a p-value near 1 means that signal looks
+    thoroughly normal against the rider's own calibration set, near 0
+    means it looks anomalous.
+
+    Fused with Fisher's method rather than averaged: the fusion check
+    in ml/scripts/evaluate_fusion.py measured this directly — on the
+    synthetic cohort, Fisher fusion dropped EER from 0.222 (best single
+    signal) to 0.158, vs. the old mean-of-anomaly-scores approach this
+    function used to use. Fisher only produces a small fused p-value
+    (= low behavior_continuity) when MULTIPLE signals independently
+    look unusual, which is the actual design intent — a single noisy
+    signal shouldn't be able to drag the verdict around."""
+    if not p_values:
         return 1.0
-    mean_anomaly = sum(scorer_outputs.values()) / len(scorer_outputs)
-    return 1.0 - mean_anomaly
+    return fisher_combine(p_values)
 
 
 QUADRANTS = {
@@ -69,12 +81,26 @@ QUADRANTS = {
 }
 
 
-def classify(context_cont: float, behavior_cont: float, threshold: float = 0.6) -> dict:
-    """threshold: continuity >= threshold counts as 'stable' on that axis.
-    0.6 is a starting point, not a calibrated value — the conformal
-    calibration step (per-rider, per-cohort) replaces this fixed cutoff."""
-    ctx_state = "stable" if context_cont >= threshold else "changed"
-    beh_state = "stable" if behavior_cont >= threshold else "changed"
+def classify(context_cont: float, behavior_cont: float,
+             context_threshold: float = 0.6, behavior_alpha: float = 0.05) -> dict:
+    """context_threshold: context_continuity (a simple match-fraction,
+    0/0.33/0.67/1) >= this counts as 'stable' — unchanged semantics.
+
+    behavior_alpha: behavior_continuity is now a Fisher-fused conformal
+    p-value (see behavior_continuity's docstring), which is uniformly
+    distributed on [0,1] for genuinely normal behavior BY CONSTRUCTION —
+    that's what makes it a valid p-value. So 'stable' must mean p is
+    NOT small, i.e. behavior_cont >= behavior_alpha, with alpha a
+    standard significance level (0.05 default), not a 0.6 cutoff.
+    Using the old 0.6 threshold here would flag ~60% of genuinely
+    honest sessions on the behavior axis alone, since P(uniform < 0.6)
+    = 0.6 — this was a real bug caught when the fusion math was
+    formalized, not a style choice. alpha itself is still a starting
+    point; the product's per-rider conformal calibration (not yet
+    wired) would let each rider's threshold be set from their own
+    history to hit a target false-challenge rate directly."""
+    ctx_state = "stable" if context_cont >= context_threshold else "changed"
+    beh_state = "stable" if behavior_cont >= behavior_alpha else "changed"
     result = dict(QUADRANTS[(ctx_state, beh_state)])
     result["context_continuity"] = round(context_cont, 3)
     result["behavior_continuity"] = round(behavior_cont, 3)
