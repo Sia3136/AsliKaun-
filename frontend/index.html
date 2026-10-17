@@ -56,7 +56,7 @@
       min-height: 100%;
       margin: 0;
       padding: 0;
-      background: radial-gradient(circle at 44% 18%, #edf6fd 0%, #dbeaf6 32%, #d6e6f5 68%, #d2e3f3 100%);
+      background: transparent;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       color: var(--ink);
       overflow-x: hidden;
@@ -64,15 +64,32 @@
       line-height: 1.5;
     }
 
+    /* Full-bleed GPU Animated Mesh Gradient Canvas */
+    .bg-mesh-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+      pointer-events: none;
+      display: block;
+    }
+
     /* Fixed film noise overlay */
     .noise-overlay {
       position: fixed;
       inset: 0;
-      opacity: 0.12;
+      opacity: 0.10;
       mix-blend-mode: soft-light;
       background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.32'/%3E%3C/svg%3E");
       pointer-events: none;
-      z-index: 9999;
+      z-index: 1;
+    }
+
+    main, .site-footer {
+      position: relative;
+      z-index: 2;
     }
 
     button {
@@ -1407,6 +1424,9 @@
 </head>
 <body>
 
+  <!-- Full-bleed WebGL GPU Mesh Gradient Canvas -->
+  <canvas id="bgCanvas" class="bg-mesh-canvas" aria-hidden="true"></canvas>
+
   <!-- Noise filter overlay -->
   <div class="noise-overlay" aria-hidden="true"></div>
 
@@ -2322,6 +2342,251 @@
         toast.classList.remove('show');
       }, 1900);
     }
+
+    /* ════════════════════════════════════════════════════════════════
+       GPU ANIMATED MESH GRADIENT (SEAMLESS LOOP + 4x4 BAYER DITHER)
+       ════════════════════════════════════════════════════════════════ */
+    (function initMeshGradient() {
+    const canvas = document.getElementById('bgCanvas');
+    if (!canvas) return;
+
+    const gl = canvas.getContext('webgl', { alpha: false, depth: false, antialias: false, powerPreference: 'low-power' }) ||
+               canvas.getContext('experimental-webgl');
+
+    const PALETTES = {
+      Ice:  ['#d6e6f5', '#e8f3fb', '#b8d7f2', '#1169dc'],
+      Mint: ['#f7f4e8', '#dcecd9', '#9ccfb2', '#5c9c85'],
+      Noir: ['#08090b', '#2f3237', '#8b9099', '#f3f4f6'],
+      Plum: ['#180814', '#48103e', '#95275f', '#e07a9c'],
+      Neon: ['#04060a', '#7dff4d', '#ff2f92', '#29e6ff']
+    };
+
+    function hexToRgb(h) {
+      h = h.replace('#', '');
+      return [
+        parseInt(h.substring(0, 2), 16) / 255.0,
+        parseInt(h.substring(2, 4), 16) / 255.0,
+        parseInt(h.substring(4, 6), 16) / 255.0
+      ];
+    }
+
+    let activePaletteName = 'Ice';
+    let currentPalette = PALETTES[activePaletteName].map(hexToRgb);
+    let targetPalette = PALETTES[activePaletteName].map(hexToRgb);
+
+    function setFallbackCSS(palName) {
+      const stops = PALETTES[palName] || PALETTES.Ice;
+      document.body.style.background = 'linear-gradient(135deg, ' + stops[0] + ' 0%, ' + stops[1] + ' 35%, ' + stops[2] + ' 70%, ' + stops[3] + ' 100%)';
+    }
+
+    if (!gl) {
+      setFallbackCSS(activePaletteName);
+      return;
+    }
+
+    const vsSource = `
+      attribute vec2 a_pos;
+      void main() {
+        gl_Position = vec4(a_pos, 0.0, 1.0);
+      }
+    `;
+
+    const fsSource = `
+      precision highp float;
+      uniform vec2 u_resolution;
+      uniform float u_t;
+      uniform vec2 u_mouse;
+      uniform vec3 u_c0;
+      uniform vec3 u_c1;
+      uniform vec3 u_c2;
+      uniform vec3 u_c3;
+
+      float hash(vec2 p) {
+        p = fract(p * vec2(123.34, 456.21));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+      }
+
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+      }
+
+      float fbm(vec2 p) {
+        float v = 0.0;
+        float a = 0.5;
+        for (int i = 0; i < 5; i++) {
+          v += a * noise(p);
+          p = p * 2.02;
+          a *= 0.5;
+        }
+        return v;
+      }
+
+      float bayer4x4(vec2 p) {
+        vec2 b = floor(mod(p, 4.0));
+        float d = 0.0;
+        if (b.y < 0.5) {
+          if (b.x < 0.5) d = 0.0;
+          else if (b.x < 1.5) d = 8.0;
+          else if (b.x < 2.5) d = 2.0;
+          else d = 10.0;
+        } else if (b.y < 1.5) {
+          if (b.x < 0.5) d = 12.0;
+          else if (b.x < 1.5) d = 4.0;
+          else if (b.x < 2.5) d = 14.0;
+          else d = 6.0;
+        } else if (b.y < 2.5) {
+          if (b.x < 0.5) d = 3.0;
+          else if (b.x < 1.5) d = 11.0;
+          else if (b.x < 2.5) d = 1.0;
+          else d = 9.0;
+        } else {
+          if (b.x < 0.5) d = 15.0;
+          else if (b.x < 1.5) d = 7.0;
+          else if (b.x < 2.5) d = 13.0;
+          else d = 5.0;
+        }
+        return (d / 16.0) - 0.5;
+      }
+
+      void main() {
+        vec2 p = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+        p *= 2.2;
+        p += u_mouse * 0.12;
+
+        vec2 orb = vec2(cos(u_t), sin(u_t)) * 0.55;
+
+        vec2 q = vec2(fbm(p + orb), fbm(p + orb.yx + 3.1));
+        vec2 r = vec2(fbm(p + 2.0 * q + orb * 1.3 + 1.7), fbm(p + 2.0 * q - orb + 9.2));
+        float f = fbm(p + 1.8 * r);
+
+        float g = clamp(f, 0.0, 1.0);
+        float s = length(q);
+
+        vec3 col = mix(u_c0, u_c1, smoothstep(0.0, 0.45, g));
+        col = mix(col, u_c2, smoothstep(0.35, 0.78, g));
+        col = mix(col, u_c3, smoothstep(0.62, 1.0, g) * (0.55 + 0.45 * s));
+
+        // 4x4 Bayer dither
+        col += bayer4x4(gl_FragCoord.xy) * 0.016;
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `;
+
+    function createShader(type, src) {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        console.warn(gl.getShaderInfoLog(s));
+        gl.deleteShader(s);
+        return null;
+      }
+      return s;
+    }
+
+    const vs = createShader(gl.VERTEX_SHADER, vsSource);
+    const fs = createShader(gl.FRAGMENT_SHADER, fsSource);
+    if (!vs || !fs) {
+      setFallbackCSS(activePaletteName);
+      return;
+    }
+
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      console.warn(gl.getProgramInfoLog(prog));
+      setFallbackCSS(activePaletteName);
+      return;
+    }
+
+    gl.useProgram(prog);
+
+    // Full-screen triangle: (-1,-1), (3,-1), (-1,3)
+    const posBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1.0, -1.0,
+       3.0, -1.0,
+      -1.0,  3.0
+    ]), gl.STATIC_DRAW);
+
+    const aPos = gl.getAttribLocation(prog, 'a_pos');
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+    const uRes = gl.getUniformLocation(prog, 'u_resolution');
+    const uT = gl.getUniformLocation(prog, 'u_t');
+    const uMouse = gl.getUniformLocation(prog, 'u_mouse');
+    const uC0 = gl.getUniformLocation(prog, 'u_c0');
+    const uC1 = gl.getUniformLocation(prog, 'u_c1');
+    const uC2 = gl.getUniformLocation(prog, 'u_c2');
+    const uC3 = gl.getUniformLocation(prog, 'u_c3');
+
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const w = Math.floor(window.innerWidth * dpr);
+      const h = Math.floor(window.innerHeight * dpr);
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        gl.viewport(0, 0, w, h);
+      }
+    }
+    resize();
+    window.addEventListener('resize', resize, { passive: true });
+
+    // Pointer parallax
+    let mouse = { x: 0, y: 0 };
+    let targetMouse = { x: 0, y: 0 };
+    window.addEventListener('pointermove', function(e) {
+      targetMouse.x = (e.clientX / window.innerWidth - 0.5) * 2.0;
+      targetMouse.y = (0.5 - e.clientY / window.innerHeight) * 2.0;
+    }, { passive: true });
+
+    // Render loop
+    const SPEED = 0.22;
+    let startTime = performance.now();
+
+    function renderFrame(now) {
+      const elapsed = (now - startTime) * 0.001;
+      const t = elapsed * SPEED;
+
+      // Eased mouse parallax
+      mouse.x += (targetMouse.x - mouse.x) * 0.05;
+      mouse.y += (targetMouse.y - mouse.y) * 0.05;
+
+      // Smooth color transition
+      for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 3; j++) {
+          currentPalette[i][j] += (targetPalette[i][j] - currentPalette[i][j]) * 0.08;
+        }
+      }
+
+      gl.useProgram(prog);
+      gl.uniform2f(uRes, canvas.width, canvas.height);
+      gl.uniform1f(uT, t);
+      gl.uniform2f(uMouse, mouse.x, mouse.y);
+      gl.uniform3fv(uC0, currentPalette[0]);
+      gl.uniform3fv(uC1, currentPalette[1]);
+      gl.uniform3fv(uC2, currentPalette[2]);
+      gl.uniform3fv(uC3, currentPalette[3]);
+
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      requestAnimationFrame(renderFrame);
+    }
+    requestAnimationFrame(renderFrame);
+  })();
   </script>
 </body>
 </html>
