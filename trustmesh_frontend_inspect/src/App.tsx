@@ -1074,10 +1074,12 @@ function Profile({
   navigate,
   openDemo,
   scenario,
+  onLogout,
 }: {
   navigate: (page: Page) => void;
   openDemo: () => void;
   scenario: Scenario;
+  onLogout: () => void;
 }) {
   return (
     <main className="content profile-page">
@@ -1126,7 +1128,7 @@ function Profile({
           ["phone", "Device and session", "This device · active now", "settings"],
         ]}
       />
-      <Button variant="danger">Sign out</Button>
+      <Button variant="danger" onClick={onLogout}>Sign out</Button>
       <button className="demo-entry" onClick={openDemo}>
         <Icon name="settings" size={15} />
         Prototype scenario controls
@@ -1609,7 +1611,95 @@ function ScenarioSheet({
   );
 }
 
+function MockLogin({ onLogin }: { onLogin: () => void }) {
+  const [driverId, setDriverId] = useState("DEMO-2841");
+  const [pin, setPin] = useState("4821");
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setLoading(true);
+    setTimeout(() => {
+      onLogin();
+    }, 350);
+  };
+
+  return (
+    <div className="login-page">
+      <div className="login-brand-wrap">
+        <span className="brand-mark">
+          <span />
+          <span />
+          <span />
+        </span>
+        <span className="login-brand-title">AsliKaun</span>
+      </div>
+
+      <div className="login-header">
+        <h1>Driver Sign In.</h1>
+        <p>Continuous identity verification & partner delivery terminal.</p>
+      </div>
+
+      <div className="demo-account-box">
+        <div className="demo-tag">
+          <Icon name="check" size={13} />
+          Pre-Configured Demo Account
+        </div>
+        <div className="demo-driver-row">
+          <div className="demo-avatar">KS</div>
+          <div className="demo-info">
+            <h3>Kavya Sharma</h3>
+            <p>ID: DEMO-2841 · +91 ••••• ••482</p>
+            <small>● Two-Wheeler · Verified Partner</small>
+          </div>
+        </div>
+        <Button variant="primary" onClick={() => handleLogin()} disabled={loading}>
+          {loading ? "Signing in..." : "Continue as Kavya Sharma ↗"}
+        </Button>
+      </div>
+
+      <div className="login-divider">or manual terminal login</div>
+
+      <form onSubmit={handleLogin}>
+        <div className="login-field">
+          <label>Registered Phone / Driver ID</label>
+          <input
+            type="text"
+            value={driverId}
+            onChange={(e) => setDriverId(e.target.value)}
+            placeholder="Driver ID or Mobile"
+            required
+          />
+        </div>
+
+        <div className="login-field">
+          <label>Security PIN</label>
+          <input
+            type="password"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            placeholder="Security PIN"
+            required
+          />
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <Button variant="secondary" disabled={loading}>
+            {loading ? "Verifying..." : "Sign In to Terminal"}
+          </Button>
+        </div>
+      </form>
+
+      <p className="login-footer-note">
+        Continuous Identity Intelligence Active<br />
+        Protected by AsliKaun behavioral telematics.
+      </p>
+    </div>
+  );
+}
+
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [page, setPage] = useState<Page>("home");
   const [lastTab, setLastTab] = useState<Tab>("home");
   const [online, setOnline] = useState(false);
@@ -1700,6 +1790,14 @@ export default function App() {
   const showBottomNav = ["home", "orders", "earnings", "profile"].includes(page);
   const todayEarnings = earningData.Today.total + deliveryBonus;
 
+  if (!isAuthenticated) {
+    return (
+      <div className="app">
+        <MockLogin onLogin={() => setIsAuthenticated(true)} />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <Header
@@ -1745,6 +1843,10 @@ export default function App() {
           navigate={navigate}
           openDemo={() => setShowScenarios(true)}
           scenario={scenario}
+          onLogout={() => {
+            setIsAuthenticated(false);
+            setPage("home");
+          }}
         />
       )}
       {page === "notifications" && (
