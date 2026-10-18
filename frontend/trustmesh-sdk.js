@@ -1,12 +1,12 @@
 /**
- * TrustMesh Driver Telemetry SDK v1.0.0
+ * AsliKaun Driver Telemetry SDK v1.0.0
  * Lightweight, privacy-preserving continuous biometric & telemetry collector.
  * Designed for effortless drop-in integration into gig-economy and delivery apps (Shopify/Stripe-style).
  *
  * Usage:
  *   <script src="trustmesh-sdk.js"></script>
  *   <script>
- *     TrustMesh.init({
+ *     AsliKaun.init({
  *       driverId: "rider-101",
  *       endpoint: "http://127.0.0.1:8000",
  *       zone: "Mumbai-Andheri",
@@ -27,7 +27,7 @@
     return id;
   }
 
-  const TrustMesh = {
+  const AsliKaun = {
     version: '1.0.0',
     config: {
       endpoint: 'http://127.0.0.1:8000',
@@ -56,7 +56,7 @@
     },
 
     /**
-     * Initialize the TrustMesh SDK
+     * Initialize the AsliKaun SDK
      * @param {Object} options Configuration options
      */
     init: function (options) {
@@ -69,7 +69,7 @@
       Object.assign(this.config, options);
 
       if (!this.config.driverId) {
-        console.warn('[TrustMesh SDK] Warning: driverId was not provided during init.');
+        console.warn('[AsliKaun SDK] Warning: driverId was not provided during init.');
       }
 
       this.startListeners();
@@ -81,7 +81,7 @@
       }
 
       this.state.initialized = true;
-      this.log('TrustMesh SDK initialized successfully for driver:', this.config.driverId);
+      this.log('AsliKaun SDK initialized successfully for driver:', this.config.driverId);
       return this;
     },
 
@@ -225,7 +225,7 @@
      */
     flush: async function () {
       if (!this.config.driverId) {
-        console.warn('[TrustMesh SDK] Skipping flush: driverId is not configured.');
+        console.warn('[AsliKaun SDK] Skipping flush: driverId is not configured.');
         return null;
       }
 
@@ -289,7 +289,7 @@
 
         return data;
       } catch (err) {
-        console.error('[TrustMesh SDK] Ingestion error:', err.message);
+        console.error('[AsliKaun SDK] Ingestion error:', err.message);
         return null;
       }
     },
@@ -316,19 +316,20 @@
 
     log: function (...args) {
       if (this.config.debug) {
-        console.log('[TrustMesh SDK]', ...args);
+        console.log('[AsliKaun SDK]', ...args);
       }
     },
   };
 
   // Export to global scope
-  global.TrustMesh = TrustMesh;
+  global.AsliKaun = AsliKaun;
+  global.TrustMesh = AsliKaun;
 
   // Auto-initialize if data attributes are present on script tag
   if (typeof document !== 'undefined') {
     const script = document.currentScript;
     if (script && script.getAttribute('data-driver-id')) {
-      TrustMesh.init({
+      AsliKaun.init({
         driverId: script.getAttribute('data-driver-id'),
         endpoint: script.getAttribute('data-endpoint') || 'http://127.0.0.1:8000',
         zone: script.getAttribute('data-zone') || 'default-zone',

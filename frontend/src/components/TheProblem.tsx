@@ -57,7 +57,7 @@ export const TheProblem: React.FC = () => {
           <h2>
             Authentication verifies access.
             <br />
-            TrustMesh investigates <em>continuity.</em>
+            AsliKaun investigates <em>continuity.</em>
           </h2>
           <p className="section-desc">
             A driver can pass an initial login check while the vehicle and account are later operated by someone else. The challenge isn't detecting every deviation—it's distinguishing legitimate routine changes from driver handoffs.

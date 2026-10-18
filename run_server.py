@@ -1,4 +1,4 @@
-"""Single-command runner for the Trust Juggler & TrustMesh integrated application.
+"""Single-command runner for the Trust Juggler & AsliKaun integrated application.
 
 Boots FastAPI + ML Bridge + Static Web Server on http://localhost:8000.
 """
@@ -13,9 +13,9 @@ if str(root_dir) not in sys.path:
 
 if __name__ == "__main__":
     print("=" * 65)
-    print("  Trust Juggler / TrustMesh - Continuous Identity Intelligence")
+    print("  Trust Juggler / AsliKaun - Continuous Identity Intelligence")
     print("=" * 65)
-    print("  * Web Portal (TrustMesh):       http://localhost:8000/")
+    print("  * Web Portal (AsliKaun):       http://localhost:8000/")
     print("  * Operations Admin Dashboard:   http://localhost:8000/dashboard.html")
     print("  * API Documentation (Swagger):  http://localhost:8000/docs")
     print("=" * 65)

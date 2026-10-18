@@ -1,4 +1,4 @@
-# Frontend Development Log — Trust Juggler & TrustMesh UI
+# Frontend Development Log — Trust Juggler & AsliKaun UI
 
 This log documents all visual interfaces, WebGL shaders, client-side state engines, dashboard capabilities, and API integrations established in the `frontend/` module.
 
@@ -6,7 +6,7 @@ This log documents all visual interfaces, WebGL shaders, client-side state engin
 
 ## 1. Module Overview & Responsibilities
 The `frontend/` module delivers the user experience for Trust Juggler across two primary interfaces:
-1. **TrustMesh Landing Platform** (`frontend/index.html`): High-impact product showcase, biometric continuity explainer, interactive driver portal, and scenario simulation trigger.
+1. **AsliKaun Landing Platform** (`frontend/index.html`): High-impact product showcase, biometric continuity explainer, interactive driver portal, and scenario simulation trigger.
 2. **Fleet Operations Dashboard** (`frontend/dashboard.html`): Real-time operations center for trust operations teams, displaying two-axis fleet distributions, live sensor telemetry, driver review queues, and incident resolution workflows.
 
 ---
@@ -20,7 +20,7 @@ The `frontend/` module delivers the user experience for Trust Juggler across two
   - Full-bleed fixed canvas positioned beneath glassmorphic UI elements with isolated CSS stacking context (`z-index: 0`).
   - Graceful degradation: includes hardware capability check with fallback to gradient backdrop if WebGL is unsupported.
 
-### B. TrustMesh Landing Interface (`index.html`)
+### B. AsliKaun Landing Interface (`index.html`)
 - **Continuous Identity Intelligence Hero**:
   - Narrative framing: *"The account stays the same. But does the person? Trust the behavior. Detect the handoff."*
   - Dual-perspective interactive portrait reveal contrasting verified registered couriers against unauthorized account renters.

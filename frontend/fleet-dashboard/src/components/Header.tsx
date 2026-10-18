@@ -80,12 +80,12 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Left zone: Brand, Version */}
       <div className="flex items-center gap-4 shrink-0">
         <div className="flex items-center gap-2">
-          {/* TrustMesh Logo Shield */}
+          {/* AsliKaun Logo Shield */}
           <div className="w-8 h-8 rounded-lg bg-[#0058be] flex items-center justify-center text-white shadow-xs">
             <Shield className="w-5 h-5 fill-white/20 stroke-white stroke-[2.2]" />
           </div>
           <span className="text-lg font-bold tracking-tight text-[#0b1c30]">
-            TrustMesh
+            AsliKaun
           </span>
           <span className="text-[10px] font-semibold tracking-wider uppercase text-[#424754] bg-[#eff4ff] border border-[#d3e4fe] px-2 py-0.5 rounded">
             ENTERPRISE INTEL V3.4

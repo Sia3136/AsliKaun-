@@ -121,7 +121,7 @@ export const TheApproach: React.FC = () => {
             It's a pattern over time.
           </h2>
           <p className="section-desc">
-            TrustMesh fuses continuous mobility, behavioral, and device signals into an adaptive trust baseline—distinguishing routine changes from account sharing.
+            AsliKaun fuses continuous mobility, behavioral, and device signals into an adaptive trust baseline—distinguishing routine changes from account sharing.
           </p>
         </header>
 

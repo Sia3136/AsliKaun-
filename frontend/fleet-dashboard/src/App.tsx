@@ -335,7 +335,7 @@ export default function App() {
       <footer className="w-full bg-white border-t border-[#e2e8f0] px-6 py-3 mt-12 text-xs text-[#565e74] flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-[#0b1c30]">
-            TrustMesh Security OS v3.4-prod
+            AsliKaun Security OS v3.4-prod
           </span>
           <span className="text-[#c2c6d6]">·</span>
           <span className="inline-flex items-center gap-1.5 text-[#006947] font-medium">

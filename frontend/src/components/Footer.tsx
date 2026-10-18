@@ -15,7 +15,7 @@ export const Footer: React.FC = () => {
           <div>
             <a className="logo" href="#top">
               <span className="ring" aria-hidden="true"></span>
-              TrustMesh
+              AsliKaun
             </a>
             <p>
               Continuous Identity Intelligence. Trust the behavior. Detect the handoff without introducing friction for legitimate drivers.
@@ -40,7 +40,7 @@ export const Footer: React.FC = () => {
         </div>
 
         <div className="fb">
-          <span>© 2026 TrustMesh Systems. Continuous Identity Intelligence. All rights reserved.</span>
+          <span>© 2026 AsliKaun Systems. Continuous Identity Intelligence. All rights reserved.</span>
           <div>
             <a href="#approach">The Approach</a>
             <a href="#pipeline">Architecture</a>
@@ -58,13 +58,13 @@ export const Footer: React.FC = () => {
           </linearGradient>
         </defs>
         <text className="b" x="0" y="205">
-          TrustMesh
+          AsliKaun
         </text>
         <text className="d" x="0" y="205">
-          TrustMesh
+          AsliKaun
         </text>
         <text className="r" x="0" y="205">
-          TrustMesh
+          AsliKaun
         </text>
       </svg>
     </footer>

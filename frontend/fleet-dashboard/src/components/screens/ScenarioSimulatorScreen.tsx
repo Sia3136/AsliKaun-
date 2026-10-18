@@ -76,7 +76,7 @@ export const ScenarioSimulatorScreen: React.FC = () => {
         </div>
         <h1 className="text-2xl font-bold text-[#0b1c30] mt-1">Advanced Scenario Simulator</h1>
         <p className="text-xs text-[#565e74] mt-1 max-w-3xl">
-          Stress-test the TrustMesh ML telemetry detection pipeline with synthetic attack vectors, GPS spoofing models, and hardware impersonation attempts.
+          Stress-test the AsliKaun ML telemetry detection pipeline with synthetic attack vectors, GPS spoofing models, and hardware impersonation attempts.
         </p>
       </div>
 
