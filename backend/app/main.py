@@ -71,7 +71,7 @@ def _load_env_file():
                     k, v = line.split("=", 1)
                     k = k.strip()
                     v = v.strip().strip("'\"")
-                    if k and k not in os.environ:
+                    if k:
                         os.environ[k] = v
             except Exception:
                 pass
@@ -706,7 +706,14 @@ def auth_google_login(
     target_origin = frontend_origin or "http://localhost:3000"
     sandbox_redirect = f"/v1/auth/google/sandbox-login?state={state_str}"
 
-    if client_id and client_secret and live and not configure:
+    has_real_credentials = bool(
+        client_id
+        and client_secret
+        and "your-client-id" not in client_id.lower()
+        and "your-secret" not in client_secret.lower()
+    )
+
+    if (has_real_credentials or live) and not configure:
         params = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
@@ -833,37 +840,39 @@ async def auth_google_callback(
     if not code:
         raise HTTPException(status_code=400, detail="Missing authorization code from Google")
 
-    async with httpx.AsyncClient() as client:
-        token_resp = await client.post(
-            "https://oauth2.googleapis.com/token",
-            data={
-                "code": code,
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "redirect_uri": GOOGLE_REDIRECT_URI,
-                "grant_type": "authorization_code",
-            },
-            timeout=10.0,
-        )
-        if token_resp.status_code != 200:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Google token exchange failed: {token_resp.text}",
-            )
-        token_data = token_resp.json()
-        access_token = token_data.get("access_token")
+    client_id = os.getenv("GOOGLE_CLIENT_ID", GOOGLE_CLIENT_ID).strip().strip("'\"")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET", GOOGLE_CLIENT_SECRET).strip().strip("'\"")
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", GOOGLE_REDIRECT_URI).strip().strip("'\"")
 
-        userinfo_resp = await client.get(
-            "https://www.googleapis.com/oauth2/v3/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"},
-            timeout=10.0,
-        )
-        if userinfo_resp.status_code != 200:
-            raise HTTPException(
-                status_code=400,
-                detail="Failed to retrieve user profile from Google",
+    try:
+        async with httpx.AsyncClient() as client:
+            token_resp = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": code,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+                timeout=10.0,
             )
-        userinfo = userinfo_resp.json()
+            if token_resp.status_code != 200:
+                err_text = token_resp.text
+                return RedirectResponse(url=f"{target_origin}/auth?error={quote('Google token exchange error: ' + err_text[:120])}")
+            token_data = token_resp.json()
+            access_token = token_data.get("access_token")
+
+            userinfo_resp = await client.get(
+                "https://www.googleapis.com/oauth2/v3/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10.0,
+            )
+            if userinfo_resp.status_code != 200:
+                return RedirectResponse(url=f"{target_origin}/auth?error=Failed+to+fetch+user+profile+from+Google")
+            userinfo = userinfo_resp.json()
+    except Exception as exc:
+        return RedirectResponse(url=f"{target_origin}/auth?error={quote(str(exc))}")
 
     email = userinfo.get("email")
     if not email:
