@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     branch: backend
-    buildCommand: pip install -r requirements.txt && npm ci --prefix frontend && npm run build --prefix frontend
+    buildCommand: pip install -r requirements.txt && npm install --prefix trustmesh_frontend_inspect && npm run build --prefix trustmesh_frontend_inspect
     startCommand: python -m uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:

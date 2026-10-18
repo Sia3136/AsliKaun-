@@ -1221,23 +1221,38 @@ def public_driver_status(driver_id: str) -> dict:
         }
 
 
-# ---------- Frontend Dashboard Static Mount ----------
-_DASHBOARD_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+# ---------- Frontend Phone UI & Dashboard Static Mount ----------
+_PHONE_DIR = _PROJECT_ROOT / "trustmesh_frontend_inspect" / "dist"
+_DASHBOARD_DIR = _PROJECT_ROOT / "frontend" / "dist"
+
+if _PHONE_DIR.exists() and (_PHONE_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(_PHONE_DIR / "assets")), name="phone-assets")
+elif _DASHBOARD_DIR.exists() and (_DASHBOARD_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(_DASHBOARD_DIR / "assets")), name="dashboard-assets")
+
 if _DASHBOARD_DIR.exists():
     app.mount("/dashboard", StaticFiles(directory=str(_DASHBOARD_DIR), html=True), name="dashboard")
-    app.mount("/assets", StaticFiles(directory=str(_DASHBOARD_DIR / "assets")), name="dashboard-assets")
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+def favicon() -> Any:
+    if _PHONE_DIR.exists() and (_PHONE_DIR / "favicon.svg").exists():
+        return FileResponse(_PHONE_DIR / "favicon.svg")
+    raise HTTPException(status_code=404)
 
 
 @app.get("/auth", include_in_schema=False)
 def auth_page() -> Any:
-    if _DASHBOARD_DIR.exists():
+    if _DASHBOARD_DIR.exists() and (_DASHBOARD_DIR / "index.html").exists():
         return FileResponse(_DASHBOARD_DIR / "index.html")
     return RedirectResponse(url="/docs")
 
 
 @app.get("/", include_in_schema=False)
 def root_redirect() -> Any:
-    if _DASHBOARD_DIR.exists():
+    if _PHONE_DIR.exists() and (_PHONE_DIR / "index.html").exists():
+        return FileResponse(_PHONE_DIR / "index.html")
+    if _DASHBOARD_DIR.exists() and (_DASHBOARD_DIR / "index.html").exists():
         return RedirectResponse(url="/dashboard/index.html")
     return {"message": "Trust Juggler API is running. Visit /docs for OpenAPI specs."}
 
@@ -1245,5 +1260,6 @@ def root_redirect() -> Any:
 @app.get("/dashboard.html", include_in_schema=False)
 def dashboard_html_redirect() -> Any:
     return RedirectResponse(url="/dashboard/dashboard.html")
+
 
 
