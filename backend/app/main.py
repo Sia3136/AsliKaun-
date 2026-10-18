@@ -1221,17 +1221,11 @@ def public_driver_status(driver_id: str) -> dict:
         }
 
 
-# ---------- Frontend Phone UI & Dashboard Static Mount ----------
+# ---------- Frontend Phone UI Static Mount ----------
 _PHONE_DIR = _PROJECT_ROOT / "trustmesh_frontend_inspect" / "dist"
-_DASHBOARD_DIR = _PROJECT_ROOT / "frontend" / "dist"
 
 if _PHONE_DIR.exists() and (_PHONE_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(_PHONE_DIR / "assets")), name="phone-assets")
-elif _DASHBOARD_DIR.exists() and (_DASHBOARD_DIR / "assets").exists():
-    app.mount("/assets", StaticFiles(directory=str(_DASHBOARD_DIR / "assets")), name="dashboard-assets")
-
-if _DASHBOARD_DIR.exists():
-    app.mount("/dashboard", StaticFiles(directory=str(_DASHBOARD_DIR), html=True), name="dashboard")
 
 
 @app.get("/favicon.svg", include_in_schema=False)
@@ -1241,25 +1235,29 @@ def favicon() -> Any:
     raise HTTPException(status_code=404)
 
 
-@app.get("/auth", include_in_schema=False)
-def auth_page() -> Any:
-    if _DASHBOARD_DIR.exists() and (_DASHBOARD_DIR / "index.html").exists():
-        return FileResponse(_DASHBOARD_DIR / "index.html")
-    return RedirectResponse(url="/docs")
+@app.get("/robots.txt", include_in_schema=False)
+def robots() -> Any:
+    if _PHONE_DIR.exists() and (_PHONE_DIR / "robots.txt").exists():
+        return FileResponse(_PHONE_DIR / "robots.txt")
+    raise HTTPException(status_code=404)
 
 
 @app.get("/", include_in_schema=False)
+@app.get("/index.html", include_in_schema=False)
 def root_redirect() -> Any:
     if _PHONE_DIR.exists() and (_PHONE_DIR / "index.html").exists():
         return FileResponse(_PHONE_DIR / "index.html")
-    if _DASHBOARD_DIR.exists() and (_DASHBOARD_DIR / "index.html").exists():
-        return RedirectResponse(url="/dashboard/index.html")
-    return {"message": "Trust Juggler API is running. Visit /docs for OpenAPI specs."}
+    return {"message": "Trust Juggler API is running. Phone UI bundle not found."}
 
 
+# Redirect any lingering dashboard or legacy links straight to the Phone UI root
+@app.get("/dashboard", include_in_schema=False)
+@app.get("/dashboard/index.html", include_in_schema=False)
 @app.get("/dashboard.html", include_in_schema=False)
-def dashboard_html_redirect() -> Any:
-    return RedirectResponse(url="/dashboard/dashboard.html")
+@app.get("/dashboard/{full_path:path}", include_in_schema=False)
+def dashboard_redirect(full_path: str = "") -> Any:
+    return RedirectResponse(url="/")
+
 
 
 
