@@ -68,6 +68,7 @@ const elements = {
 
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
+  initThemeToggle();
   setupNavigation();
   initQuadrantCanvas();
   setupSimulationHandlers();
@@ -107,6 +108,32 @@ function setupNavigation() {
 
   document.getElementById('btn-quick-ingest').addEventListener('click', () => {
     triggerQuickRandomSession();
+  });
+}
+
+// Theme Switching
+function initThemeToggle() {
+  const btn = document.getElementById('btn-theme-toggle');
+  if (!btn) return;
+
+  function updateThemeIcon() {
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    btn.innerHTML = isDark
+      ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`
+      : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+  }
+
+  updateThemeIcon();
+
+  btn.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('tm_theme', next);
+    updateThemeIcon();
+    drawQuadrant();
+    if (state.activeTab === 'timeline-tab') renderTimeline(elements.timelineDriverSelect.value);
+    if (state.activeTab === 'fairness-tab') renderCohortFairnessChart();
   });
 }
 
@@ -338,11 +365,12 @@ function drawQuadrant() {
   const w = canvas.width;
   const h = canvas.height;
   const pad = 40;
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
 
   ctx.clearRect(0, 0, w, h);
 
-  // Background subtle grid
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+  // Background subtle cyber grid
+  ctx.strokeStyle = isDark ? 'rgba(56, 189, 248, 0.07)' : 'rgba(15, 30, 60, 0.08)';
   ctx.lineWidth = 1;
   const step = (w - 2 * pad) / 10;
   for (let i = 0; i <= 10; i++) {
@@ -362,9 +390,9 @@ function drawQuadrant() {
   // Threshold Dividers (at 0.6 continuity)
   const threshCoords = toCanvasCoords(0.6, 0.6);
 
-  ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = 'rgba(0, 229, 255, 0.35)';
-  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 5]);
+  ctx.strokeStyle = isDark ? 'rgba(0, 229, 255, 0.5)' : 'rgba(2, 132, 199, 0.5)';
+  ctx.lineWidth = 1.6;
 
   // Vertical threshold line
   ctx.beginPath();
@@ -385,21 +413,21 @@ function drawQuadrant() {
     const isSelected = state.selectedDriver && state.selectedDriver.driver_id === d.driver_id;
 
     let fillColor = '#10b981';
-    let glowColor = 'rgba(16, 185, 129, 0.4)';
+    let glowColor = 'rgba(16, 185, 129, 0.5)';
     if (d.quad === 'legit_change') {
       fillColor = '#06b6d4';
-      glowColor = 'rgba(6, 182, 212, 0.4)';
+      glowColor = 'rgba(6, 182, 212, 0.5)';
     } else if (d.quad === 'handoff_signature') {
       fillColor = '#ef4444';
-      glowColor = 'rgba(239, 68, 68, 0.5)';
+      glowColor = 'rgba(239, 68, 68, 0.65)';
     } else if (d.quad === 'ambiguous') {
       fillColor = '#f59e0b';
-      glowColor = 'rgba(245, 158, 11, 0.4)';
+      glowColor = 'rgba(245, 158, 11, 0.55)';
     }
 
     // Outer glow pulse
     ctx.beginPath();
-    ctx.arc(pos.x, pos.y, isSelected ? 16 : 10, 0, Math.PI * 2);
+    ctx.arc(pos.x, pos.y, isSelected ? 18 : 11, 0, Math.PI * 2);
     ctx.fillStyle = glowColor;
     ctx.fill();
 
@@ -409,13 +437,22 @@ function drawQuadrant() {
     ctx.fillStyle = fillColor;
     ctx.fill();
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = isSelected ? 2.5 : 1.5;
+    ctx.lineWidth = isSelected ? 3 : 1.5;
     ctx.stroke();
 
+    // Selected outer ring
+    if (isSelected) {
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 14, 0, Math.PI * 2);
+      ctx.strokeStyle = isDark ? 'rgba(0, 229, 255, 0.9)' : 'rgba(2, 132, 199, 0.9)';
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+    }
+
     // Rider Label
-    ctx.font = '10px Inter, sans-serif';
-    ctx.fillStyle = '#cbd5e1';
-    ctx.fillText(d.driver_id, pos.x + 10, pos.y - 6);
+    ctx.font = '600 10.5px JetBrains Mono, monospace';
+    ctx.fillStyle = isDark ? '#e2e8f0' : '#1e293b';
+    ctx.fillText(d.driver_id, pos.x + 12, pos.y - 6);
   });
 }
 
@@ -424,21 +461,33 @@ function findDriverAt(x, y) {
   for (const d of state.drivers) {
     const pos = toCanvasCoords(d.ctx, d.beh);
     const dist = Math.hypot(pos.x - x, pos.y - y);
-    if (dist <= 14) return d;
+    if (dist <= 16) return d;
   }
   return null;
 }
 
 function showTooltip(driver, clientX, clientY) {
   const tt = elements.tooltip;
-  tt.style.left = `${clientX + 12}px`;
-  tt.style.top = `${clientY + 12}px`;
+  tt.style.left = `${clientX + 14}px`;
+  tt.style.top = `${clientY + 14}px`;
   tt.style.opacity = '1';
+
+  let badgeColor = '#10b981';
+  if (driver.quad === 'handoff_signature') badgeColor = '#ef4444';
+  else if (driver.quad === 'legit_change') badgeColor = '#06b6d4';
+  else if (driver.quad === 'ambiguous') badgeColor = '#f59e0b';
+
   tt.innerHTML = `
-    <strong>${driver.driver_id}</strong> (${driver.name})<br>
-    Quadrant: <span style="color:#00e5ff">${driver.quad}</span><br>
-    Context Score: ${driver.ctx.toFixed(2)} | Behavior: ${driver.beh.toFixed(2)}<br>
-    Decision: <em>${driver.dec}</em>
+    <div style="font-weight:700;font-size:0.85rem;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <span>${driver.driver_id}</span>
+      <span style="font-size:0.65rem;font-family:var(--font-mono);padding:1px 7px;border-radius:4px;background:${badgeColor}22;color:${badgeColor};border:1px solid ${badgeColor}66;">${driver.quad.toUpperCase()}</span>
+    </div>
+    <div style="color:var(--text-muted);font-size:0.75rem;">${driver.name} · ${driver.zone}</div>
+    <div style="margin-top:6px;font-family:var(--font-mono);font-size:0.72rem;display:grid;grid-template-columns:1fr 1fr;gap:4px;color:var(--text-main);">
+      <span>Ctx: <b>${driver.ctx.toFixed(2)}</b></span>
+      <span>Beh: <b>${driver.beh.toFixed(2)}</b></span>
+    </div>
+    <div style="margin-top:5px;font-size:0.72rem;color:${badgeColor};font-weight:600;">Verdict: ${driver.dec}</div>
   `;
 }
 
@@ -529,8 +578,10 @@ function renderTimeline(driverId) {
     });
   }
 
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+
   // Draw axes
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+  ctx.strokeStyle = isDark ? 'rgba(56, 189, 248, 0.15)' : 'rgba(15, 30, 60, 0.15)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(pad, pad);
@@ -909,15 +960,17 @@ function renderCohortFairnessChart() {
   const barWidth = 42;
   const spacing = (w - 2 * pad - (zones.length * barWidth)) / (zones.length - 1);
 
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+
   // Axis
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+  ctx.strokeStyle = isDark ? 'rgba(56, 189, 248, 0.15)' : 'rgba(15, 30, 60, 0.15)';
   ctx.beginPath();
   ctx.moveTo(pad, h - pad);
   ctx.lineTo(w - pad, h - pad);
   ctx.stroke();
 
   // Target parity threshold line
-  ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+  ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
   ctx.setLineDash([4, 4]);
   const threshY = (h - pad) - (0.25 / maxVal) * (h - 2 * pad);
   ctx.beginPath();
@@ -940,8 +993,8 @@ function renderCohortFairnessChart() {
     ctx.fillRect(x, y, barWidth, barHeight);
 
     // Label
-    ctx.font = '10px Inter, sans-serif';
-    ctx.fillStyle = '#94a3b8';
+    ctx.font = '600 10.5px JetBrains Mono, monospace';
+    ctx.fillStyle = isDark ? '#94a3b8' : '#475569';
     ctx.textAlign = 'center';
     ctx.fillText(z.name, x + barWidth / 2, h - pad + 18);
     ctx.fillText(`${(z.score * 100).toFixed(0)}%`, x + barWidth / 2, y - 6);
