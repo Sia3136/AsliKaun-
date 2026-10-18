@@ -1927,8 +1927,76 @@ footer {
 .auth-home-link, .auth-intro, .auth-switch { color: #626a7d; }
 .auth-fields label { color: #303649; }
 .auth-fields input { background: rgba(255, 255, 255, .9); color: #171a27; box-shadow: 0 2px 5px rgba(20, 28, 48, .03); }
-.auth-fields input::placeholder { color: #9299a9; }
-.auth-demo-note { background: rgba(255, 255, 255, .75); box-shadow: 0 6px 20px rgba(30, 38, 65, .04); }
 .auth-demo-note strong { color: #34394b; }
 .auth-demo-note p { color: #6f778a; }
+
+/* ════════════════════════════════════════════════════════════════
+   SCROLL-LINKED WORD REVEAL SECTION (Matches user reference)
+   ════════════════════════════════════════════════════════════════ */
+.scroll-reveal-container {
+  position: relative;
+  height: 220vh;
+  background: transparent;
+  width: 100%;
+}
+
+.scroll-reveal-sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0 var(--gutter);
+}
+
+.scroll-reveal-content {
+  max-width: 880px;
+  width: 100%;
+  margin: 0 auto;
+  text-align: center;
+  position: relative;
+  z-index: 2;
+}
+
+.scroll-reveal-text {
+  font-family: var(--sans);
+  font-size: clamp(32px, 4.2vw, 54px);
+  line-height: 1.32;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+  user-select: none;
+  margin: 0;
+}
+
+.reveal-word {
+  display: inline-block;
+  color: #ffffff;
+  transition: opacity 0.1s ease, filter 0.15s ease, color 0.15s ease;
+  will-change: opacity, filter;
+}
+
+.reveal-word.special-italic {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+  color: #ff7a3d;
+  font-size: 1.08em;
+  padding: 0 0.04em;
+}
+
+[data-theme="light"] .scroll-reveal-text {
+  color: #0c1527;
+}
+
+[data-theme="light"] .reveal-word {
+  color: #0c1527;
+}
+
+[data-theme="light"] .reveal-word.special-italic {
+  color: #ea580c;
+}
 

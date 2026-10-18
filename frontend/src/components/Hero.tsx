@@ -24,7 +24,7 @@ export const Hero: React.FC = () => {
         </h1>
 
         <p className="lede">
-          Agents are getting smarter every month. The gaps between them are where work quietly breaks. TrustMesh closes those gaps.
+          TrustMesh continuously analyzes behavioral and contextual continuity to detect account handoffs with explainable precision—safeguarding platforms without disrupting legitimate drivers.
         </p>
 
         <div className="btns">

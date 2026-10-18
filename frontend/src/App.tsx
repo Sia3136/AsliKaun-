@@ -3,6 +3,7 @@ import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { Marquee } from './components/Marquee';
 import { TheProblem } from './components/TheProblem';
+import { ScrollWordReveal } from './components/ScrollWordReveal';
 import { TheApproach } from './components/TheApproach';
 import { ArchitectureStack } from './components/ArchitectureStack';
 import { CallToAction } from './components/CallToAction';
@@ -39,6 +40,7 @@ export default function App() {
       <main id="top">
         <Hero />
         <Marquee />
+        <ScrollWordReveal />
         <TheProblem />
         <TheApproach />
         <ArchitectureStack />
