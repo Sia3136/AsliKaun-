@@ -14,7 +14,7 @@ from typing import Any
 from urllib.parse import quote, unquote, urlencode
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -1524,6 +1524,98 @@ def get_review_queue(
         reviews.append(item)
 
     return {"count": len(reviews), "reviews": reviews, "items": reviews}
+
+
+@app.get("/v1/review-queue/export-csv")
+def export_review_queue_csv(
+    status: str = "all",
+    driver_id: str | None = None,
+) -> Response:
+    """Download review queue and audit log as a CSV file for compliance & offline ops analysis."""
+    import csv
+    import io
+
+    query = """SELECT q.id AS review_id, q.session_id, q.driver_id, q.decision,
+                      q.status, q.created_at, q.resolved_at, q.resolution,
+                      s.timestamp AS session_timestamp, s.context_score,
+                      s.behavior_score, s.quadrant, s.reasons_json
+               FROM review_queue q
+               JOIN sessions s ON s.id = q.session_id"""
+    clauses = []
+    params: list[Any] = []
+    if status != "all":
+        clauses.append("q.status = ?")
+        params.append(status)
+    if driver_id:
+        clauses.append("q.driver_id = ?")
+        params.append(driver_id)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY q.created_at DESC LIMIT 500"
+
+    with connect() as con:
+        rows = con.execute(query, tuple(params)).fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Review ID", "Session ID", "Driver ID", "Quadrant", "Decision",
+        "Context Score", "Behavior Score", "Status", "Timestamp", "Evidence / Reason"
+    ])
+    for row in rows:
+        reasons = decode_json(row["reasons_json"], [])
+        reason_str = " | ".join(reasons) if isinstance(reasons, list) else str(reasons)
+        writer.writerow([
+            row["review_id"],
+            row["session_id"],
+            row["driver_id"],
+            row["quadrant"],
+            row["decision"],
+            row["context_score"],
+            row["behavior_score"],
+            row["status"],
+            row["created_at"],
+            reason_str.replace('"', '""')
+        ])
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="aslikaun_fleet_audit_report.csv"'}
+    )
+
+
+@app.get("/v1/fleet/export-csv")
+def export_fleet_csv() -> Response:
+    """Export current fleet status as CSV."""
+    import csv
+    import io
+
+    with connect() as con:
+        rows = con.execute("SELECT driver_id, latest_result_json, updated_at FROM drivers ORDER BY updated_at DESC").fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Driver ID", "Quadrant", "Decision", "Context Score", "Behavior Score", "Updated At", "Reason"])
+    for row in rows:
+        res = decode_json(row["latest_result_json"], {})
+        reasons = res.get("reasons", [])
+        reason_str = " | ".join(reasons) if isinstance(reasons, list) else str(reasons)
+        writer.writerow([
+            row["driver_id"],
+            res.get("quadrant", "unknown"),
+            res.get("decision", "continue"),
+            res.get("context_score", ""),
+            res.get("behavior_score", ""),
+            row["updated_at"],
+            reason_str.replace('"', '""')
+        ])
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="aslikaun_fleet_scores.csv"'}
+    )
 
 
 @app.get("/v1/review-queue/{session_id}")
