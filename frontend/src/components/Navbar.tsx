@@ -68,6 +68,10 @@ export const Navbar: React.FC<NavbarProps> = ({ theme, onToggleTheme }) => {
             )}
           </button>
 
+          <a className="nav-item" href="/auth?mode=login" style={{ fontSize: '13px', fontWeight: 500, marginRight: '4px' }}>
+            Sign in
+          </a>
+
           <a className="btn-get-access" href="/auth?mode=signup">
             Get access
           </a>

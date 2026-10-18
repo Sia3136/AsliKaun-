@@ -117,34 +117,97 @@ def extract_motion_features(payload: Any) -> dict[str, float | None]:
 
 
 def extract_touch_features(payload: Any) -> dict[str, float | None]:
-    """Extract touch biometric features: pressure, tap rhythm, contact size."""
+    """Extract touch biometric features: pressure, tap rhythm, contact size, and gesture paths."""
     touch_events = getattr(payload, "touch_events", []) or []
     if not touch_events:
         return {
             "touch_count": 0,
+            "has_gesture_paths": False,
             "pressure_mean": None,
             "pressure_std": None,
             "interval_mean_ms": None,
+            "velocity_mean": None,
+            "velocity_peak": None,
+            "curvature_std": None,
+            "pressure_slope": None,
+            "status": "unavailable_no_events",
         }
 
-    pressures = [float(t["pressure"]) for t in touch_events if "pressure" in t]
+    pressures = [float(t["pressure"]) for t in touch_events if "pressure" in t and t["pressure"] is not None]
     intervals = []
-    offsets = [float(t["t_offset_ms"]) for t in touch_events if "t_offset_ms" in t]
+    offsets = [float(t["t_offset_ms"]) for t in touch_events if "t_offset_ms" in t and t["t_offset_ms"] is not None]
     if len(offsets) > 1:
         intervals = list(np.diff(np.sort(offsets)))
 
+    # Extract gesture sample paths with timestamped coordinates and pressure
+    path_velocities = []
+    path_curvatures = []
+    path_pressure_slopes = []
+    has_paths = False
+
+    for event in touch_events:
+        path = event.get("path")
+        if path and len(path) >= 2:
+            has_paths = True
+            try:
+                xs = [float(p.get("x", 0.0)) for p in path]
+                ys = [float(p.get("y", 0.0)) for p in path]
+                ps = [float(p.get("pressure", 0.5)) for p in path]
+                ts = [float(p.get("t", p.get("t_offset_ms", 0.0))) for p in path]
+                dt = max(ts[-1] - ts[0], 1.0)
+                dists = [np.sqrt((xs[i]-xs[i-1])**2 + (ys[i]-ys[i-1])**2) for i in range(1, len(path))]
+                total_dist = sum(dists)
+                path_velocities.append(total_dist / dt)
+                if len(path) >= 3:
+                    angles = [np.arctan2(ys[i]-ys[i-1], xs[i]-xs[i-1]) for i in range(1, len(path))]
+                    d_angles = np.diff(angles)
+                    path_curvatures.append(float(np.std(d_angles)))
+                if dt > 0:
+                    path_pressure_slopes.append((ps[-1] - ps[0]) / dt)
+            except Exception:
+                pass
+
     return {
         "touch_count": len(touch_events),
+        "has_gesture_paths": has_paths,
         "pressure_mean": round(float(np.mean(pressures)), 4) if pressures else None,
-        "pressure_std": round(float(np.std(pressures)), 4) if len(pressures) > 1 else 0.0 if pressures else None,
+        "pressure_std": round(float(np.std(pressures)), 4) if len(pressures) > 1 else (0.0 if pressures else None),
         "interval_mean_ms": round(float(np.mean(intervals)), 2) if intervals else None,
+        "velocity_mean": round(float(np.mean(path_velocities)), 4) if path_velocities else None,
+        "velocity_peak": round(float(np.max(path_velocities)), 4) if path_velocities else None,
+        "curvature_std": round(float(np.mean(path_curvatures)), 4) if path_curvatures else None,
+        "pressure_slope": round(float(np.mean(path_pressure_slopes)), 4) if path_pressure_slopes else None,
+        "status": "active_gesture_paths" if has_paths else "sparse_single_points",
+    }
+
+
+def extract_gps_features(payload: Any) -> dict[str, Any]:
+    """Extract GPS trajectory features: speeds, turn dynamics, and corridor alignment."""
+    gps_points = getattr(payload, "gps", []) or []
+    if not gps_points:
+        return {
+            "gps_count": 0,
+            "has_gps": False,
+            "speed_mean_mph": None,
+            "speed_std_mph": None,
+            "status": "unavailable_no_gps_stream",
+        }
+
+    speeds = [float(p["speed"]) for p in gps_points if "speed" in p and p["speed"] is not None]
+    return {
+        "gps_count": len(gps_points),
+        "has_gps": True,
+        "speed_mean_mph": round(float(np.mean(speeds)), 2) if speeds else None,
+        "speed_std_mph": round(float(np.std(speeds)), 2) if len(speeds) > 1 else (0.0 if speeds else None),
+        "status": "active_gps_stream",
     }
 
 
 def compute_signal_anomalies(
     current: dict[str, Any], baseline: dict[str, Any]
 ) -> dict[str, float]:
-    """Calculate per-signal normalized anomaly score in [0.0, 1.0]."""
+    """Calculate per-signal normalized anomaly score in [0.0, 1.0].
+    Missing or sparse signals are treated as 'insufficient evidence' and never penalized."""
     anomalies: dict[str, float] = {}
 
     # 1. Operational anomaly (latency + hour of day)
@@ -160,17 +223,25 @@ def compute_signal_anomalies(
         hour_diff = min(abs(hour_cur - hour_base), 24.0 - abs(hour_cur - hour_base)) / 12.0
         anomalies["operational"] = float(np.clip(0.6 * min(lat_diff, 1.0) + 0.4 * hour_diff, 0.0, 1.0))
 
-    # 2. Touch anomaly (pressure + rhythm)
+    # 2. Touch anomaly (only when valid data exists in both current and baseline)
     touch_cur = current.get("touch", {})
     touch_base = baseline.get("touch", {})
     cur_p = touch_cur.get("pressure_mean")
     base_p = touch_base.get("pressure_mean")
+    cur_vel = touch_cur.get("velocity_mean")
+    base_vel = touch_base.get("velocity_mean")
+
     if cur_p is not None and base_p is not None:
         p_diff = abs(cur_p - base_p) / max(base_p, 0.1)
         cur_int = touch_cur.get("interval_mean_ms")
         base_int = touch_base.get("interval_mean_ms")
         int_diff = (abs(cur_int - base_int) / max(base_int, 50.0)) if (cur_int and base_int) else 0.0
-        anomalies["touch"] = float(np.clip(0.7 * min(p_diff, 1.0) + 0.3 * min(int_diff, 1.0), 0.0, 1.0))
+        # If rich gesture paths exist, incorporate velocity divergence
+        if cur_vel is not None and base_vel is not None:
+            vel_diff = abs(cur_vel - base_vel) / max(base_vel, 0.05)
+            anomalies["touch"] = float(np.clip(0.4 * min(p_diff, 1.0) + 0.3 * min(int_diff, 1.0) + 0.3 * min(vel_diff, 1.0), 0.0, 1.0))
+        else:
+            anomalies["touch"] = float(np.clip(0.7 * min(p_diff, 1.0) + 0.3 * min(int_diff, 1.0), 0.0, 1.0))
 
     # 3. Motion anomaly (accel mean magnitude + gyro)
     motion_cur = current.get("motion", {})
@@ -181,7 +252,17 @@ def compute_signal_anomalies(
         acc_diff = abs(cur_acc - base_acc) / max(abs(base_acc), 0.5)
         anomalies["motion"] = float(np.clip(min(acc_diff, 1.0), 0.0, 1.0))
 
+    # 4. GPS speed consistency anomaly
+    gps_cur = current.get("gps", {})
+    gps_base = baseline.get("gps", {})
+    cur_speed = gps_cur.get("speed_mean_mph")
+    base_speed = gps_base.get("speed_mean_mph")
+    if cur_speed is not None and base_speed is not None and base_speed > 3.0:
+        speed_diff = abs(cur_speed - base_speed) / max(base_speed, 10.0)
+        anomalies["gps"] = float(np.clip(min(speed_diff, 1.0), 0.0, 1.0))
+
     return anomalies
+
 
 
 def evaluate_session_ml(
@@ -196,12 +277,15 @@ def evaluate_session_ml(
     op_feats = extract_operational_features(payload)
     touch_feats = extract_touch_features(payload)
     motion_feats = extract_motion_features(payload)
+    gps_feats = extract_gps_features(payload)
 
     current_behavior = {
         "operational": op_feats,
         "touch": touch_feats,
         "motion": motion_feats,
+        "gps": gps_feats,
     }
+
 
     current_context = {
         "device_id": getattr(payload, "device_id", None),
@@ -340,6 +424,20 @@ def evaluate_session_ml(
             reason_vector = {"explanation": explanation_text, "model": None, "generated": False}
             reasons.append(f"Reason Vector: {explanation_text}")
 
+    # 6. Pause-Aware Safety Timing Verification
+    v_speed = getattr(payload, "vehicle_speed_mph", None)
+    if v_speed is None and gps_feats.get("speed_mean_mph") is not None:
+        v_speed = gps_feats["speed_mean_mph"]
+
+    safe_pause_info = {
+        "is_moving": v_speed is not None and v_speed > 2.0,
+        "speed_mph": v_speed,
+        "safe_pause_scheduled": decision in ("challenge_at_safe_pause", "step_up_check_at_safe_pause") and (v_speed is not None and v_speed > 2.0),
+        "scheduled_state": "queued_for_stop" if (v_speed is not None and v_speed > 2.0) else "safe_stop_confirmed",
+    }
+    if safe_pause_info["safe_pause_scheduled"]:
+        reasons.append(f"Safe-pause timing gate: Active speed {v_speed:.1f} mph detected. Challenge deferred to verified standstill (speed = 0 mph) to guarantee rider safety.")
+
     return {
         "context_score": round(context_score, 3) if context_score is not None else None,
         "behavior_score": behavior_score,
@@ -352,5 +450,7 @@ def evaluate_session_ml(
         "reason_vector": reason_vector,
         "current_behavior": current_behavior,
         "current_context": current_context,
+        "safe_pause_info": safe_pause_info,
         "model_status": "ml_two_axis_fusion",
     }
+

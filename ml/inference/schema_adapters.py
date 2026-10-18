@@ -75,25 +75,60 @@ def motion_features_from_schema(session: dict):
 
 
 def touch_stroke_sequence_from_schema(session: dict) -> np.ndarray | None:
-    """Degraded stroke-feature sequence from the frozen schema's one-
-    point-per-gesture touch_events — see this module's docstring for
-    what's lost (velocity/curvature/pressure-slope all come back 0.0)
-    versus what the model was actually trained on."""
+    """Extract stroke-feature sequence from touch_events.
+    If gesture sample paths with timestamped coordinates and pressure are present,
+    computes full kinematics (velocity, curvature, pressure slopes).
+    If touch events lack sample paths, explicitly disables the touch model
+    (returns None) to trigger the missing-signal policy without feeding uncalibrated zeros."""
     events = session.get("touch_events", [])
     if len(events) < 3:
         return None
+
+    # Check if any event has a sample path
+    events_with_path = [e for e in events if e.get("path") and len(e["path"]) >= 2]
+    if not events_with_path:
+        # Explicitly disable touch model for inputs lacking sample paths
+        return None
+
     idx = {name: i for i, name in enumerate(STROKE_FEATURE_NAMES)}
     vecs = []
     for e in events:
-        v = np.zeros(len(STROKE_FEATURE_NAMES))
-        v[idx["duration_ms"]] = e.get("duration_ms", 0.0)
-        v[idx["pressure_mean"]] = e.get("pressure", 0.0)
-        v[idx["area_mean"]] = e.get("area", 0.0)
-        # path_length_px, velocity_mean, velocity_peak, accel_mean_abs,
-        # direction_rad, curvature_std, pressure_var, pressure_slope all
-        # stay 0.0 — not computable from a single (x, y) point.
+        v = np.zeros(len(STROKE_FEATURE_NAMES), dtype=np.float32)
+        v[idx["duration_ms"]] = float(e.get("duration_ms", 0.0))
+        v[idx["pressure_mean"]] = float(e.get("pressure", 0.0))
+        v[idx["area_mean"]] = float(e.get("area", 0.0))
+
+        path = e.get("path")
+        if path and len(path) >= 2:
+            try:
+                xs = np.array([float(p.get("x", 0.0)) for p in path])
+                ys = np.array([float(p.get("y", 0.0)) for p in path])
+                ps = np.array([float(p.get("pressure", 0.5)) for p in path])
+                ts = np.array([float(p.get("t", p.get("t_offset_ms", 0.0))) for p in path])
+                dt = max(ts[-1] - ts[0], 1.0)
+                dists = np.sqrt(np.diff(xs)**2 + np.diff(ys)**2)
+                path_len = float(np.sum(dists))
+                v[idx["path_length_px"]] = path_len
+                v[idx["velocity_mean"]] = path_len / dt
+                diff_ts = np.maximum(np.diff(ts), 1.0)
+                step_vels = dists / diff_ts
+                v[idx["velocity_peak"]] = float(np.max(step_vels)) if len(step_vels) > 0 else 0.0
+                if len(step_vels) > 1:
+                    v[idx["accel_mean_abs"]] = float(np.mean(np.abs(np.diff(step_vels))))
+                if len(path) >= 2:
+                    v[idx["direction_rad"]] = float(np.arctan2(ys[-1] - ys[0], xs[-1] - xs[0]))
+                if len(path) >= 3:
+                    angles = np.arctan2(np.diff(ys), np.diff(xs))
+                    v[idx["curvature_std"]] = float(np.std(np.diff(angles)))
+                v[idx["pressure_mean"]] = float(np.mean(ps))
+                v[idx["pressure_var"]] = float(np.var(ps))
+                v[idx["pressure_slope"]] = float((ps[-1] - ps[0]) / dt)
+            except Exception:
+                pass
         vecs.append(v)
+
     return np.stack(vecs).astype(np.float32)
+
 
 
 def gps_features_from_schema(session: dict) -> np.ndarray | None:

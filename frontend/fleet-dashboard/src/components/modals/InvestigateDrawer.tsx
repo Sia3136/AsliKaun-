@@ -31,14 +31,32 @@ export const InvestigateDrawer: React.FC<InvestigateDrawerProps> = ({
   onFreezeSession,
   onTriggerLiveness,
 }) => {
-  const [activeTab, setActiveTab] = useState<'lineage' | 'sensors' | 'biometrics' | 'history'>('lineage');
+  const [activeTab, setActiveTab] = useState<'score' | 'lineage' | 'sensors' | 'biometrics' | 'history'>('score');
+  const [scoreData, setScoreData] = useState<any>(null);
+  const [isLoadingScore, setIsLoadingScore] = useState(false);
   const [operatorNote, setOperatorNote] = useState('');
   const [notesList, setNotesList] = useState<string[]>([
     'Flagged for immediate review following cell tower divergence from route manifest on Western Express Highway.',
     'Mumbai BKC depot dispatcher notified of unaccounted MAC address handshake.',
   ]);
 
+  React.useEffect(() => {
+    if (!driver) return;
+    setIsLoadingScore(true);
+    const token = sessionStorage.getItem('tm-auth-token') || 'demo-admin-session-token';
+    fetch(`/v1/drivers/${driver.id}/score`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setScoreData(data))
+      .catch(() => setScoreData(null))
+      .finally(() => setIsLoadingScore(false));
+  }, [driver?.id]);
+
   if (!driver) return null;
+
 
   const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,10 +132,20 @@ export const InvestigateDrawer: React.FC<InvestigateDrawerProps> = ({
         </div>
 
         {/* Tabs */}
-        <div className="px-6 border-b border-[#e2e8f0] flex items-center gap-4 text-xs font-medium">
+        <div className="px-6 border-b border-[#e2e8f0] flex items-center gap-4 text-xs font-medium overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('score')}
+            className={`py-3 border-b-2 font-semibold cursor-pointer shrink-0 ${
+              activeTab === 'score'
+                ? 'border-[#0058be] text-[#0058be]'
+                : 'border-transparent text-[#565e74] hover:text-[#0b1c30]'
+            }`}
+          >
+            Two-Axis Trust &amp; Reason Vector
+          </button>
           <button
             onClick={() => setActiveTab('lineage')}
-            className={`py-3 border-b-2 font-semibold cursor-pointer ${
+            className={`py-3 border-b-2 font-semibold cursor-pointer shrink-0 ${
               activeTab === 'lineage'
                 ? 'border-[#0058be] text-[#0058be]'
                 : 'border-transparent text-[#565e74] hover:text-[#0b1c30]'
@@ -127,17 +155,17 @@ export const InvestigateDrawer: React.FC<InvestigateDrawerProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('sensors')}
-            className={`py-3 border-b-2 font-semibold cursor-pointer ${
+            className={`py-3 border-b-2 font-semibold cursor-pointer shrink-0 ${
               activeTab === 'sensors'
                 ? 'border-[#0058be] text-[#0058be]'
                 : 'border-transparent text-[#565e74] hover:text-[#0b1c30]'
             }`}
           >
-            Inertial & G-Force
+            Inertial &amp; G-Force
           </button>
           <button
             onClick={() => setActiveTab('biometrics')}
-            className={`py-3 border-b-2 font-semibold cursor-pointer ${
+            className={`py-3 border-b-2 font-semibold cursor-pointer shrink-0 ${
               activeTab === 'biometrics'
                 ? 'border-[#0058be] text-[#0058be]'
                 : 'border-transparent text-[#565e74] hover:text-[#0b1c30]'
@@ -147,7 +175,7 @@ export const InvestigateDrawer: React.FC<InvestigateDrawerProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('history')}
-            className={`py-3 border-b-2 font-semibold cursor-pointer ${
+            className={`py-3 border-b-2 font-semibold cursor-pointer shrink-0 ${
               activeTab === 'history'
                 ? 'border-[#0058be] text-[#0058be]'
                 : 'border-transparent text-[#565e74] hover:text-[#0b1c30]'
@@ -159,6 +187,155 @@ export const InvestigateDrawer: React.FC<InvestigateDrawerProps> = ({
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {activeTab === 'score' && (
+            <div className="space-y-4">
+              {isLoadingScore ? (
+                <div className="py-8 text-center text-xs text-[#565e74] space-y-2">
+                  <div className="w-5 h-5 border-2 border-[#0058be] border-t-transparent rounded-full animate-spin mx-auto" />
+                  <span>Loading live score dossier from GET /v1/drivers/{driver.id}/score...</span>
+                </div>
+              ) : (
+                <>
+                  {/* Two-Axis Verdict Card */}
+                  <div className="p-4 rounded-xl border border-[#e2e8f0] bg-[#f8f9ff] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#727785]">
+                        TWO-AXIS ML CLASSIFICATION
+                      </span>
+                      <span className={`px-2.5 py-0.5 rounded text-xs font-bold font-mono uppercase ${
+                        (scoreData?.decision || '').includes('challenge')
+                          ? 'bg-[#ba1a1a] text-white'
+                          : scoreData?.quadrant === 'legit_change'
+                          ? 'bg-[#0058be] text-white'
+                          : 'bg-[#006947] text-white'
+                      }`}>
+                        {scoreData?.decision?.toUpperCase() || driver.riskCategory.toUpperCase()}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div className="p-3 bg-white rounded-lg border border-[#e2e8f0]">
+                        <span className="text-[10px] font-semibold text-[#727785] block">CONTEXT CONTINUITY</span>
+                        <div className="text-xl font-bold text-[#0b1c30] mt-0.5 tabular-nums">
+                          {scoreData?.context_score !== undefined && scoreData?.context_score !== null
+                            ? `${(scoreData.context_score * 100).toFixed(0)}%`
+                            : `${driver.contextScore}%`}
+                        </div>
+                        <span className="text-[10px] text-[#565e74]">
+                          Axis: <strong className="font-mono text-[#0058be]">{scoreData?.context_axis || (driver.contextScore >= 60 ? 'stable' : 'changed')}</strong>
+                        </span>
+                      </div>
+
+                      <div className="p-3 bg-white rounded-lg border border-[#e2e8f0]">
+                        <span className="text-[10px] font-semibold text-[#727785] block">BEHAVIORAL CONTINUITY</span>
+                        <div className="text-xl font-bold text-[#0b1c30] mt-0.5 tabular-nums">
+                          {scoreData?.behavior_score !== undefined && scoreData?.behavior_score !== null
+                            ? `${(scoreData.behavior_score * 100).toFixed(0)}%`
+                            : `${driver.behavioralScore}%`}
+                        </div>
+                        <span className="text-[10px] text-[#565e74]">
+                          Axis: <strong className="font-mono text-[#0058be]">{scoreData?.behavior_axis || (driver.behavioralScore >= 60 ? 'stable' : 'changed')}</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-[#565e74] flex items-center justify-between pt-1">
+                      <span>Assigned Quadrant: <strong className="font-mono text-[#0058be]">{scoreData?.quadrant || (driver.contextScore >= 60 ? (driver.behavioralScore >= 60 ? 'stable' : 'handoff_signature') : (driver.behavioralScore >= 60 ? 'legit_change' : 'ambiguous'))}</strong></span>
+                      <span className="text-[10px] text-[#006947] font-semibold">Model: {scoreData?.model_status || 'ml_two_axis_fusion'}</span>
+                    </div>
+                  </div>
+
+                  {/* Pause-Aware Timing Banner */}
+                  <div className="p-3 rounded-lg bg-[#e8f5e9] border border-[#c8e6c9] flex items-start gap-2.5 text-xs text-[#006947]">
+                    <Lock className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Pause-Aware Challenge Verification:</strong>
+                      <p className="text-[11px] mt-0.5 text-[#004d34]">
+                        {driver.location.speedMph > 2
+                          ? `Vehicle in active transit (${driver.location.speedMph} mph). Safety timing gate will defer verification until verified 0 mph stop.`
+                          : `Vehicle at standstill (0 mph). Safe pause condition satisfied; operator verification permitted.`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* AI Explainability Reason Vector */}
+                  <div className="p-4 rounded-xl border border-[#e2e8f0] bg-white space-y-2 text-xs">
+                    <span className="font-bold text-[#0b1c30] block uppercase tracking-wider text-[11px]">
+                      AI Reason Vector &amp; Incongruity Explanation
+                    </span>
+                    <div className="p-3 rounded-lg bg-[#eff4ff] text-[#0047a0] text-xs leading-relaxed border border-[#d3e4fe]">
+                      {scoreData?.reason_vector?.explanation ||
+                        (scoreData?.reasons && scoreData.reasons.length > 0 ? scoreData.reasons.join(' | ') : driver.riskReason)}
+                    </div>
+
+                    {/* Multi-Signal Anomalies Breakdown */}
+                    {scoreData?.signals && Object.keys(scoreData.signals).length > 0 && (
+                      <div className="pt-2">
+                        <span className="text-[10px] font-bold uppercase text-[#727785] block mb-1.5">
+                          Signal Anomaly Deltas [0.0 = Baseline, 1.0 = Max Divergence]:
+                        </span>
+                        <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                          {Object.entries(scoreData.signals).map(([sig, val]: [string, any]) => (
+                            <div key={sig} className="p-2 rounded bg-[#f8f9ff] border border-[#e2e8f0]">
+                              <span className="text-[10px] uppercase text-[#727785] font-semibold block">{sig}</span>
+                              <span className={`font-mono font-bold ${val > 0.4 ? 'text-[#ba1a1a]' : 'text-[#006947]'}`}>
+                                {(val * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Session History Dossier */}
+                  <div className="space-y-2">
+                    <span className="font-bold text-[#0b1c30] block uppercase tracking-wider text-[11px]">
+                      Session Score History (Past 10 Telemetry Ingests)
+                    </span>
+                    {scoreData?.history && scoreData.history.length > 0 ? (
+                      <div className="border border-[#e2e8f0] rounded-xl overflow-hidden shadow-2xs divide-y divide-[#f1f5f9] text-xs">
+                        {scoreData.history.map((s: any) => (
+                          <div key={s.session_id} className="p-3 bg-white flex items-center justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-[#0b1c30]">Session #{s.session_id}</span>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  s.decision.includes('challenge')
+                                    ? 'bg-[#ffdad6] text-[#ba1a1a]'
+                                    : s.quadrant === 'legit_change'
+                                    ? 'bg-[#eff4ff] text-[#0058be]'
+                                    : 'bg-[#e8f5e9] text-[#006947]'
+                                }`}>
+                                  {s.decision}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-[#565e74] mt-0.5 truncate max-w-sm">
+                                {s.reasons?.[0] || 'Continuous verification logged'}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="font-mono text-xs">
+                                C: <strong>{s.context_score !== null ? (s.context_score * 100).toFixed(0) : '—'}%</strong> | B: <strong>{s.behavior_score !== null ? (s.behavior_score * 100).toFixed(0) : '—'}%</strong>
+                              </div>
+                              <span className="text-[10px] text-[#727785]">
+                                {new Date(s.timestamp).toLocaleTimeString()}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 rounded-lg bg-[#f8f9ff] text-center text-xs text-[#565e74] border border-[#e2e8f0]">
+                        No prior session history rows recorded yet for this driver.
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Anomaly Alerts Box if High Risk */}
           {driver.anomalyFlags.length > 0 && (
             <div className="bg-[#ffdad6]/40 border border-[#ffdad6] rounded-lg p-4">

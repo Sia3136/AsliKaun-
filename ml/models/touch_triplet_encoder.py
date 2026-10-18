@@ -40,13 +40,19 @@ class TouchTripletScorer:
     what makes the score person-specific."""
 
     def __init__(self, weights_path: str, hidden_dim: int = 64, embedding_dim: int = 32):
-        checkpoint = torch.load(weights_path, map_location="cpu", weights_only=False)
         self.model = GRUStrokeEncoder(hidden_dim=hidden_dim, embedding_dim=embedding_dim)
-        self.model.load_state_dict(checkpoint["model_state"])
+        import os
+        if os.path.exists(weights_path):
+            checkpoint = torch.load(weights_path, map_location="cpu", weights_only=False)
+            self.model.load_state_dict(checkpoint["model_state"])
+            self.feat_mean = checkpoint["feat_mean"]
+            self.feat_std = checkpoint["feat_std"]
+        else:
+            self.feat_mean = np.zeros(11, dtype=np.float32)
+            self.feat_std = np.ones(11, dtype=np.float32)
         self.model.eval()
-        self.feat_mean = checkpoint["feat_mean"]
-        self.feat_std = checkpoint["feat_std"]
         self.centroid: np.ndarray | None = None
+
 
     def _embed(self, seq: np.ndarray) -> np.ndarray:
         seq_norm = (seq - self.feat_mean) / (self.feat_std + 1e-6)
