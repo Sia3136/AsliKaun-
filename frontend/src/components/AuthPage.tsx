@@ -24,9 +24,10 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
     const err = params.get('error');
 
     if (err) {
-      setError(`OAuth authentication error: ${err}`);
+      setError(err.includes('Session') ? err : `Authentication error: ${err}`);
       return;
     }
+
 
     if (token) {
       sessionStorage.setItem('tm-auth', 'true');
@@ -48,6 +49,23 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
     setEmail(next === 'login' ? 'admin@aslikaun.ai' : '');
     setPassword(next === 'login' ? 'aslikaun' : '');
     setConfirmPassword('');
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('mode', next);
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // Ignore if URL object unavailable
+    }
+  }
+
+  function handleQuickDemoSignup() {
+    setName('Demo Fleet Admin');
+    setOrganization('HyperTrack Mobility');
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    setEmail(`operator.${randomSuffix}@aslikaun.ai`);
+    setPassword('DemoPassword2026!');
+    setConfirmPassword('DemoPassword2026!');
+    setError('');
   }
 
   async function handleGoogleLogin() {
@@ -78,6 +96,7 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
     const fallbackToken = 'google-oauth-session-' + Date.now();
     sessionStorage.setItem('tm-auth', 'true');
     sessionStorage.setItem('tm-auth-token', fallbackToken);
+    sessionStorage.setItem('tm-auth-fallback', 'true');
     sessionStorage.setItem('tm-auth-user', JSON.stringify({
       email: 'alex.morgan@aslikaun.ai',
       name: 'Alex Morgan',
@@ -127,6 +146,7 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
 
       // Save credentials in session
       sessionStorage.setItem('tm-auth', 'true');
+      sessionStorage.removeItem('tm-auth-fallback');
       if (data.access_token) {
         sessionStorage.setItem('tm-auth-token', data.access_token);
       }
@@ -136,17 +156,19 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
 
       window.location.assign('/fleet-dashboard.html');
     } catch (err: any) {
-      // If backend server is not running or returning proxy error, provide local demo fallback
-      const msg = err.message || '';
-      if (
-        msg.includes('Failed to fetch') ||
-        msg.includes('NetworkError') ||
-        msg.includes('500') ||
-        msg.includes('502') ||
-        msg.includes('503') ||
-        msg.includes('504')
-      ) {
+      const msg = err?.message || String(err || '');
+      const isUnreachable =
+        msg.toLowerCase().includes('fetch') ||
+        msg.toLowerCase().includes('network') ||
+        msg.toLowerCase().includes('failed') ||
+        msg.toLowerCase().includes('refused') ||
+        msg.toLowerCase().includes('abort') ||
+        [404, 500, 502, 503, 504].some((c) => msg.includes(String(c)));
+
+      if (isUnreachable) {
         sessionStorage.setItem('tm-auth', 'true');
+        sessionStorage.setItem('tm-auth-token', 'demo-local-fallback-' + Date.now());
+        sessionStorage.setItem('tm-auth-fallback', 'true');
         sessionStorage.setItem('tm-auth-user', JSON.stringify({
           email: email.trim(),
           name: mode === 'signup' ? name.trim() : (email.split('@')[0] || 'Alex Morgan'),
@@ -206,6 +228,17 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
             >
               <span>⚡ Quick Google Demo (Bypass Console Setup)</span>
             </button>
+            {mode === 'signup' && (
+              <button
+                type="button"
+                className="auth-btn-sandbox"
+                onClick={handleQuickDemoSignup}
+                title="Fill valid test credentials instantly"
+                style={{ marginTop: '8px', borderStyle: 'dashed' }}
+              >
+                <span>⚡ Auto-fill New Account Credentials</span>
+              </button>
+            )}
           </div>
 
           <div className="auth-divider">or continue with email</div>

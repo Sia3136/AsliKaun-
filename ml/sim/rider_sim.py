@@ -79,14 +79,31 @@ def _sample_touch_events(profile: dict, rng: np.random.Generator, n: int = 5) ->
     t = 0.0
     for _ in range(n):
         t += rng.normal(profile["tap_interval_ms_mean"], 40)
+        dur = float(max(30, rng.normal(90, 20)))
+        base_p = float(np.clip(rng.normal(profile["touch_pressure_mean"], profile["touch_pressure_std"]), 0.05, 1.0))
+        
+        # Gesture sample path with timestamped coordinates and pressure
+        x0, y0 = float(rng.uniform(100, 300)), float(rng.uniform(200, 600))
+        n_points = int(rng.integers(4, 9))
+        path = []
+        for p_i in range(n_points):
+            frac = p_i / max(n_points - 1, 1)
+            px = x0 + frac * float(rng.normal(15, 5))
+            py = y0 + frac * float(rng.normal(25, 8))
+            pp = float(np.clip(base_p + rng.normal(0, 0.04), 0.05, 1.0))
+            pt = float(t + frac * dur)
+            path.append({"x": px, "y": py, "pressure": pp, "t_offset_ms": pt})
+
         events.append({
             "type": "tap",
-            "pressure": float(np.clip(rng.normal(profile["touch_pressure_mean"], profile["touch_pressure_std"]), 0, 1)),
+            "pressure": base_p,
             "area": float(np.clip(rng.normal(0.5, 0.1), 0, 1)),
-            "duration_ms": float(max(30, rng.normal(90, 20))),
+            "duration_ms": dur,
             "t_offset_ms": float(t),
+            "path": path,
         })
     return events
+
 
 
 def generate_session(
