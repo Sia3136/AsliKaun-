@@ -17,5 +17,6 @@ if __name__ == "__main__":
     print("=" * 65)
     print("  * Web Portal (AsliKaun):       http://localhost:8000/")
     print("  * Operations Admin Dashboard:   http://localhost:8000/dashboard.html")
+    print("  * Driver Mobile App Demo:       http://localhost:8000/driver-app-demo.html")
     print("  * API Documentation (Swagger):  http://localhost:8000/docs")
-    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["backend", "frontend"])
