@@ -550,15 +550,19 @@ h1 .l > span {
 
 .lede {
   margin: 22px 0 28px;
-  max-width: 34em;
-  color: #9d96ab;
-  font-size: clamp(16px, 1.35vw, 19px);
-  line-height: 1.62;
+  max-width: 36em;
+  color: #d1d5db;
+  font-size: clamp(16.5px, 1.4vw, 20px);
+  line-height: 1.65;
   font-weight: 400;
 }
 
 [data-theme="dark"] .lede {
-  color: #9d96ab;
+  color: #e2e8f0;
+}
+
+[data-theme="light"] .lede {
+  color: #334155;
 }
 
 .btns {
