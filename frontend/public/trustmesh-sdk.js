@@ -112,45 +112,67 @@
         }
       }, { passive: true });
 
-      // 3. Touch Gesture Dynamics
-      window.addEventListener('touchstart', (e) => {
-        if (e.touches && e.touches[0]) {
-          const touch = e.touches[0];
-          this.state.lastTouchStart = {
-            t: Date.now(),
-            x: Math.round(touch.clientX),
-            y: Math.round(touch.clientY),
-            pressure: touch.force || 0.5,
-            radius: touch.radiusX || 10,
-          };
-        }
-      }, { passive: true });
+      // 3. Touch & Pointer Gesture Dynamics (captures mobile touch and desktop pointers with continuous paths)
+      const onStart = (e) => {
+        const x = Math.round(e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0));
+        const y = Math.round(e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0));
+        const p = e.pressure !== undefined && e.pressure > 0 ? e.pressure : (e.touches && e.touches[0] && e.touches[0].force ? e.touches[0].force : 0.5);
+        this.state.lastTouchStart = {
+          t: Date.now(),
+          x,
+          y,
+          pressure: Number(p.toFixed(2)),
+          radius: e.radiusX || 10,
+          path: [{ x, y, pressure: Number(p.toFixed(2)), t_offset_ms: 0 }],
+        };
+      };
 
-      window.addEventListener('touchend', (e) => {
+      const onMove = (e) => {
+        if (!this.state.lastTouchStart) return;
+        const x = Math.round(e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0));
+        const y = Math.round(e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0));
+        const p = e.pressure !== undefined && e.pressure > 0 ? e.pressure : 0.5;
+        const tOffset = Date.now() - this.state.lastTouchStart.t;
+        if (this.state.lastTouchStart.path.length < 30) {
+          this.state.lastTouchStart.path.push({ x, y, pressure: Number(p.toFixed(2)), t_offset_ms: tOffset });
+        }
+      };
+
+      const onEnd = (e) => {
         if (!this.state.lastTouchStart) return;
         const now = Date.now();
         const duration = Math.max(1, now - this.state.lastTouchStart.t);
-        const touch = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : null;
-
-        const endX = touch ? Math.round(touch.clientX) : this.state.lastTouchStart.x;
-        const endY = touch ? Math.round(touch.clientY) : this.state.lastTouchStart.y;
+        const lastPt = this.state.lastTouchStart.path[this.state.lastTouchStart.path.length - 1];
+        const endX = lastPt ? lastPt.x : this.state.lastTouchStart.x;
+        const endY = lastPt ? lastPt.y : this.state.lastTouchStart.y;
         const dist = Math.sqrt((endX - this.state.lastTouchStart.x) ** 2 + (endY - this.state.lastTouchStart.y) ** 2);
 
         this.state.touchBuffer.push({
           type: dist > 15 ? 'swipe' : 'tap',
           x: this.state.lastTouchStart.x,
           y: this.state.lastTouchStart.y,
-          pressure: Number(this.state.lastTouchStart.pressure.toFixed(2)),
+          pressure: this.state.lastTouchStart.pressure,
           area: Number((this.state.lastTouchStart.radius ** 2 * Math.PI).toFixed(1)),
           duration_ms: duration,
           t: this.state.lastTouchStart.t,
+          path: this.state.lastTouchStart.path,
         });
 
         if (this.state.touchBuffer.length > 50) {
           this.state.touchBuffer.shift();
         }
         this.state.lastTouchStart = null;
-      }, { passive: true });
+      };
+
+      if (typeof window !== 'undefined' && window.PointerEvent) {
+        window.addEventListener('pointerdown', onStart, { passive: true });
+        window.addEventListener('pointermove', onMove, { passive: true });
+        window.addEventListener('pointerup', onEnd, { passive: true });
+      } else if (typeof window !== 'undefined') {
+        window.addEventListener('touchstart', onStart, { passive: true });
+        window.addEventListener('touchmove', onMove, { passive: true });
+        window.addEventListener('touchend', onEnd, { passive: true });
+      }
 
       this.state.isListening = true;
     },

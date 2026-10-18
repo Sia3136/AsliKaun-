@@ -430,12 +430,24 @@
 
     // Update Trust Banner based on verification response
     function updateVerdict(data) {
+      const isChallenged = data.quadrant === 'handoff_signature' || (data.decision || '').includes('challenge') || (data.decision || '').includes('step_up');
+      const isLegit = data.quadrant === 'legit_change';
+
       verdictBanner.className = 'verdict-banner ' + (
-        data.quadrant === 'handoff_signature' ? 'challenged' :
-        data.quadrant === 'legit_change' ? 'rebaseline' : 'stable'
+        isChallenged ? 'challenged' :
+        isLegit ? 'rebaseline' : 'stable'
       );
-      verdictText.textContent = `Continuous Trust: ${data.quadrant.toUpperCase().replace('_', ' ')}`;
-      verdictDecision.textContent = data.decision;
+
+      if (isChallenged) {
+        verdictText.innerHTML = `🚨 <strong>FLAGGED: UNUSUAL TOUCH / MOTOR PATTERN</strong><br><small style="opacity:0.85">Touch divergence detected &bull; Handoff Risk</small>`;
+        verdictDecision.textContent = '⏸️ Challenge Queued (Safe Stop: 0 mph)';
+      } else if (isLegit) {
+        verdictText.innerHTML = `Continuous Trust: Context Shift`;
+        verdictDecision.textContent = 'Hardware Re-baselined';
+      } else {
+        verdictText.innerHTML = `Continuous Trust: Verified`;
+        verdictDecision.textContent = 'Continuous Verification OK';
+      }
     }
 
     // Listen for global AsliKaun events
@@ -462,7 +474,18 @@
       AsliKaun.recordTelemetry({
         accel: [2.8, 3.2, 2.9, 3.4],
         gyro: [1.8, 2.1, 1.9],
-        touch: [{ type: 'tap', pressure: 0.95, area: 550, duration_ms: 380, t: Date.now() }],
+        touch: [{
+          type: 'swipe',
+          pressure: 0.95,
+          area: 550,
+          duration_ms: 380,
+          t: Date.now(),
+          path: [
+            { x: 120, y: 340, pressure: 0.92, t_offset_ms: 0 },
+            { x: 180, y: 490, pressure: 0.96, t_offset_ms: 120 },
+            { x: 240, y: 620, pressure: 0.95, t_offset_ms: 380 }
+          ]
+        }],
         acceptLatencyMs: 4600
       });
       AsliKaun.flush();
