@@ -4,16 +4,9 @@ uvicorn[standard]>=0.30,<1.0
 pydantic>=2.8,<3.0
 httpx>=0.27,<1.0
 
-# ML & Biometrics
+# Runtime ML bridge and two-axis scoring
 numpy>=1.24
-pandas>=2.0
-scikit-learn>=1.3
-pyod>=2.0
+scipy>=1.10
 
-# Optional LLM Reason Vector
+# Optional LLM Reason Vector; the bridge has a deterministic fallback.
 anthropic>=0.34
-
-# Deep models (Phase 2: touch/GPS encoders, face step-up verification)
-torch>=2.0
-torchvision>=0.15
-facenet-pytorch>=2.5

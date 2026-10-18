@@ -30,17 +30,29 @@ except ImportError:
         evaluate_session_ml = None
         evaluate_session_with_real_models = None
 
-DB_PATH = os.getenv("TRUST_JUGGLER_DB", "trust_juggler.db")
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DB_PATH = os.getenv("TRUST_JUGGLER_DB", str(_PROJECT_ROOT / "trust_juggler.db"))
 app = FastAPI(
     title="Trust Juggler API",
     description="Hackathon prototype: two-axis context and behavioral continuity.",
     version="0.3.0",
 )
 
-# Enable CORS for local development and dashboard access
+_default_cors_origins = (
+    "http://localhost:3000,http://127.0.0.1:3000,"
+    "http://localhost:5173,http://127.0.0.1:5173"
+)
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "TRUST_JUGGLER_FRONTEND_ORIGIN", _default_cors_origins
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1631,9 +1643,9 @@ def public_driver_status(driver_id: str) -> dict:
 
 
 # ---------- Frontend Dashboard Static Mount ----------
-_FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
-if _FRONTEND_DIR.exists():
-    app.mount("/dashboard", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="dashboard")
+_DASHBOARD_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _DASHBOARD_DIR.exists():
+    app.mount("/dashboard", StaticFiles(directory=str(_DASHBOARD_DIR), html=True), name="dashboard")
 
 
 @app.get("/health")
@@ -1643,7 +1655,7 @@ def health() -> dict:
 
 @app.get("/", include_in_schema=False)
 def root_redirect() -> Any:
-    if _FRONTEND_DIR.exists():
+    if _DASHBOARD_DIR.exists():
         return RedirectResponse(url="/dashboard/index.html")
     return {"message": "Trust Juggler API is running. Visit /docs for OpenAPI specs."}
 
