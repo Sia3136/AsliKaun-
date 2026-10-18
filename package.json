@@ -1,5 +1,5 @@
 {
-  "name": "truthmesh-monorepo",
+  "name": "aslikaun",
   "private": true,
   "scripts": {
     "dev": "npm --prefix trustmesh_frontend_inspect run dev",

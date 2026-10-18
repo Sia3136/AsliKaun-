@@ -116,12 +116,12 @@ export async function sendSession(): Promise<IngestResponse | null> {
     if (!response.ok) throw new Error(`API ${response.status}: ${(await response.text()) || response.statusText}`);
     const result = await response.json() as IngestResponse;
     state.accel = []; state.gyro = []; state.touches = []; state.acceptLatencyMs = null; state.sessionStartedAt = Date.now(); state.lastTouchAt = null;
-    window.dispatchEvent(new CustomEvent("trustmesh:ingest-success", { detail: result }));
+    window.dispatchEvent(new CustomEvent("aslikaun:ingest-success", { detail: result }));
     status("api", true, `Session sent successfully${result.model_status ? `; scorer: ${result.model_status}` : ""}.`);
-    console.info("[TrustMesh] Session ingested", { driverId: DRIVER_ID, modelStatus: result.model_status }); return result;
+    console.info("[AsliKaun] Session ingested", { driverId: DRIVER_ID, modelStatus: result.model_status }); return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown ingestion error";
-    window.dispatchEvent(new CustomEvent("trustmesh:ingest-error", { detail: message })); status("api", false, message);
-    console.error("[TrustMesh] Session ingestion failed", error); return null;
+    window.dispatchEvent(new CustomEvent("aslikaun:ingest-error", { detail: message })); status("api", false, message);
+    console.error("[AsliKaun] Session ingestion failed", error); return null;
   }
 }

@@ -1,11 +1,10 @@
 {
-  "name": "figma-make-app",
+  "name": "aslikaun-app",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "npm install",
     "build": "vite build",
     "preview": "vite preview",
     "format": "oxfmt"

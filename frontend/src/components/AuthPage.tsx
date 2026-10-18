@@ -193,7 +193,7 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
           <h1>See the signal.<br /><span>Protect the network.</span></h1>
           <p>Continuous multi-modal identity assurance across your fleet. Prevent account rentals, detect unauthorized driver handoffs, and manage access safely.</p>
         </div>
-        <p className="auth-footnote">AsliKaun Security Console · Enterprise Edition</p>
+        <p className="auth-footnote">AsliKaun Admin Console · Continuous Identity Intelligence</p>
       </section>
 
       <section className="auth-form-side">

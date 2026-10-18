@@ -39,6 +39,8 @@ data/
 # Node & Frontend dependencies and build artifacts
 node_modules/
 dist/
+!trustmesh_frontend_inspect/dist/
+!trustmesh_frontend_inspect/dist/**
 *.log
 .env*
 !.env.example

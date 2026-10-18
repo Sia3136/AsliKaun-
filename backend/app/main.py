@@ -33,8 +33,8 @@ except ImportError:
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = os.getenv("TRUST_JUGGLER_DB", str(_PROJECT_ROOT / "trust_juggler.db"))
 app = FastAPI(
-    title="Trust Juggler API",
-    description="Hackathon prototype: two-axis context and behavioral continuity.",
+    title="AsliKaun API",
+    description="Continuous Identity Intelligence: two-axis context and behavioral continuity.",
     version="0.3.0",
 )
 
@@ -1658,10 +1658,10 @@ _FRONTEND_DIST = _FRONTEND_DIR / "dist"
 _STATIC_DIR = _FRONTEND_DIST if _FRONTEND_DIST.exists() else _FRONTEND_DIR
 _PHONE_DIR = _PROJECT_ROOT / "trustmesh_frontend_inspect" / "dist"
 
-if (_FRONTEND_DIST / "assets").exists():
-    app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="assets")
-elif _PHONE_DIR.exists() and (_PHONE_DIR / "assets").exists():
+if _PHONE_DIR.exists() and (_PHONE_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(_PHONE_DIR / "assets")), name="phone-assets")
+elif (_FRONTEND_DIST / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="assets")
 
 if _STATIC_DIR.exists():
     app.mount("/dashboard", StaticFiles(directory=str(_STATIC_DIR), html=True), name="dashboard")
@@ -1669,7 +1669,7 @@ if _STATIC_DIR.exists():
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "trust-mesh-api"}
+    return {"status": "ok", "service": "aslikaun-api"}
 
 
 @app.get("/favicon.svg", include_in_schema=False)
@@ -1679,16 +1679,24 @@ def favicon() -> Any:
     raise HTTPException(status_code=404)
 
 
+@app.get("/robots.txt", include_in_schema=False)
+def robots() -> Any:
+    if _PHONE_DIR.exists() and (_PHONE_DIR / "robots.txt").exists():
+        return FileResponse(str(_PHONE_DIR / "robots.txt"))
+    raise HTTPException(status_code=404)
+
+
 @app.get("/", include_in_schema=False)
+@app.get("/index.html", include_in_schema=False)
 def root_endpoint() -> Any:
+    if _PHONE_DIR.exists() and (_PHONE_DIR / "index.html").exists():
+        return FileResponse(str(_PHONE_DIR / "index.html"))
     dist_index = _FRONTEND_DIST / "index.html"
     if dist_index.exists():
         return FileResponse(str(dist_index))
-    if _PHONE_DIR.exists() and (_PHONE_DIR / "index.html").exists():
-        return FileResponse(str(_PHONE_DIR / "index.html"))
     if _FRONTEND_DIR.exists():
         return RedirectResponse(url="/dashboard/index.html")
-    return {"message": "Trust Juggler API is running. Visit /docs for OpenAPI specs."}
+    return {"message": "AsliKaun API is running. Visit /docs for OpenAPI specs."}
 
 
 @app.get("/driver-app-demo.html", include_in_schema=False)
