@@ -12,7 +12,7 @@ export const CallToAction: React.FC = () => {
             Connect the signals.
           </h2>
           <p className="lede-cta">
-            Discover how TrustMesh connects behavioral patterns, contextual intelligence, and explainable risk assessments to identify potential account handoffs.
+            Discover how AsliKaun connects behavioral patterns, contextual intelligence, and explainable risk assessments to identify potential account handoffs.
           </p>
           <div className="btns">
             <a className="btn solid" href="/auth?mode=login">

@@ -10,7 +10,7 @@ export const Navbar: React.FC<NavbarProps> = ({ theme, onToggleTheme }) => {
     <nav className="glass site-nav" aria-label="Main Navigation">
       <a className="logo" href="#top">
         <span className="ring" aria-hidden="true"></span>
-        TrustMesh
+        AsliKaun
       </a>
 
       <div className="links">

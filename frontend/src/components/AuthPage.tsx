@@ -41,7 +41,7 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
   return (
     <main className="auth-shell">
       <section className="auth-story">
-        <a className="auth-brand" href="/" aria-label="TrustMesh home"><span className="auth-brand-mark">◈</span> TrustMesh</a>
+        <a className="auth-brand" href="/" aria-label="AsliKaun home"><span className="auth-brand-mark">◈</span> AsliKaun</a>
         <div className="auth-story-copy">
           <span className="auth-kicker">Identity risk intelligence</span>
           <h1>See the signal.<br /><span>Protect the network.</span></h1>
@@ -52,16 +52,16 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
             <div><strong>Live</strong><span>Decision engine</span></div>
           </div>
         </div>
-        <p className="auth-footnote">TrustMesh Admin Console · Simulated demo environment</p>
+        <p className="auth-footnote">AsliKaun Admin Console · Simulated demo environment</p>
       </section>
 
       <section className="auth-form-side">
-        <a className="auth-brand auth-mobile-brand" href="/" aria-label="TrustMesh home"><span className="auth-brand-mark">◈</span> TrustMesh</a>
+        <a className="auth-brand auth-mobile-brand" href="/" aria-label="AsliKaun home"><span className="auth-brand-mark">◈</span> AsliKaun</a>
         <a className="auth-home-link" href="/">← Back to home</a>
         <div className="auth-card">
           <span className="auth-secure"><i />Secure admin access</span>
           <h2>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
-          <p className="auth-intro">{mode === 'login' ? 'Sign in to open the TrustMesh control center.' : 'Set up access to your TrustMesh workspace.'}</p>
+          <p className="auth-intro">{mode === 'login' ? 'Sign in to open the AsliKaun control center.' : 'Set up access to your AsliKaun workspace.'}</p>
           <form onSubmit={submit} className="auth-fields">
             {mode === 'signup' && <div className="auth-field-row">
               <label>Full name<input value={name} onChange={(e) => { setName(e.target.value); setError(''); }} autoComplete="name" placeholder="Alex Morgan" required /></label>
@@ -71,10 +71,10 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
             <label>Password<input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(''); }} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="Enter your password" minLength={mode === 'signup' ? 8 : undefined} required /></label>
             {mode === 'signup' && <label>Confirm password<input type="password" value={confirmPassword} onChange={(e) => { setConfirmPassword(e.target.value); setError(''); }} autoComplete="new-password" placeholder="Repeat your password" required /></label>}
             {error && <p className="auth-error" role="alert">{error}</p>}
-            <button className="auth-submit" type="submit">{mode === 'login' ? 'Sign in to TrustMesh' : 'Create account'}<span>↗</span></button>
+            <button className="auth-submit" type="submit">{mode === 'login' ? 'Sign in to AsliKaun' : 'Create account'}<span>↗</span></button>
           </form>
           <div className="auth-demo-note"><strong>{mode === 'login' ? 'Demo access' : 'Hackathon demo'}</strong><p>{mode === 'login' ? 'Credentials are prefilled for this demo. No account data is transmitted.' : 'Account creation is simulated locally. No personal data is stored or transmitted.'}</p></div>
-          <p className="auth-switch">{mode === 'login' ? 'New to TrustMesh?' : 'Already have an account?'} <button type="button" onClick={() => changeMode(mode === 'login' ? 'signup' : 'login')}>{mode === 'login' ? 'Create account' : 'Sign in'}</button></p>
+          <p className="auth-switch">{mode === 'login' ? 'New to AsliKaun?' : 'Already have an account?'} <button type="button" onClick={() => changeMode(mode === 'login' ? 'signup' : 'login')}>{mode === 'login' ? 'Create account' : 'Sign in'}</button></p>
           <p className="auth-legal">Authorized personnel only · Activity is audit logged</p>
         </div>
       </section>

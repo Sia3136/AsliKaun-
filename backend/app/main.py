@@ -30,8 +30,8 @@ except ImportError:
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = os.getenv("TRUST_JUGGLER_DB", str(_PROJECT_ROOT / "trust_juggler.db"))
 app = FastAPI(
-    title="Trust Juggler API",
-    description="Hackathon prototype: two-axis context and behavioral continuity.",
+    title="AsliKaun API",
+    description="Continuous Identity Intelligence: two-axis context and behavioral continuity.",
     version="0.3.0",
 )
 

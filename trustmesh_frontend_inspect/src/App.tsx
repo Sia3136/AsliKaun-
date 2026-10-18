@@ -388,13 +388,13 @@ function Header({
 }) {
   return (
     <header className="topbar">
-      <button className="brand" onClick={onHome} aria-label="TrustMesh home">
+      <button className="brand" onClick={onHome} aria-label="AsliKaun home">
         <span className="brand-mark">
           <span />
           <span />
           <span />
         </span>
-        TrustMesh
+        AsliKaun
       </button>
       <div className="header-actions">
         <button
@@ -1193,7 +1193,7 @@ function Settings({
         <div>
           <strong>Privacy by design</strong>
           <p>
-            TrustMesh uses necessary, permitted account and session context.
+            AsliKaun uses necessary, permitted account and session context.
             It does not ask you to manually enter motion or touch patterns.
             Missing data alone is not treated as proof of misuse.
           </p>
@@ -1620,12 +1620,12 @@ export default function App() {
   const [deliveryBonus, setDeliveryBonus] = useState(0);
   const [showScenarios, setShowScenarios] = useState(false);
   const [scenario, setScenario] = useState<Scenario>(() => {
-    const stored = localStorage.getItem("trustmesh-driver-scenario");
+    const stored = localStorage.getItem("aslikaun-driver-scenario");
     return scenarios.find((item) => item.id === stored) ?? scenarios[0];
   });
 
   useEffect(() => {
-    localStorage.setItem("trustmesh-driver-scenario", scenario.id);
+    localStorage.setItem("aslikaun-driver-scenario", scenario.id);
   }, [scenario]);
 
   useEffect(() => {
@@ -1644,7 +1644,7 @@ export default function App() {
     }
     // Obtain clear in-app consent before browser permissions or telemetry collection.
     const consent = window.confirm(
-      "Trust Juggler collects a coarse location zone, supported device-motion readings, and tap/swipe timing (plus touch pressure only if your device exposes it) while you are online. Exact GPS coordinates and raw touch coordinates are not uploaded. You can stop collection by going offline. Continue?"
+      "AsliKaun collects a coarse location zone, supported device-motion readings, and tap/swipe timing (plus touch pressure only if your device exposes it) while you are online. Exact GPS coordinates and raw touch coordinates are not uploaded. You can stop collection by going offline. Continue?"
     );
     if (!consent) return;
     // Browser permission prompts are triggered only after the driver explicitly chooses Go Online.

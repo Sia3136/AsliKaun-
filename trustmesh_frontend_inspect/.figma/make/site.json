@@ -1,4 +1,5 @@
 {
+  "title": "AsliKaun",
   "description": "Enables delivery drivers to monitor account status, report changes, manage permissions, and complete verifications to ensure secure, trusted platform access.",
   "robots": {
     "index": false

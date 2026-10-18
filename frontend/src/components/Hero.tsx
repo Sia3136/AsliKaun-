@@ -24,7 +24,7 @@ export const Hero: React.FC = () => {
         </h1>
 
         <p className="lede">
-          TrustMesh continuously analyzes behavioral and contextual continuity to detect account handoffs with explainable precision—safeguarding platforms without disrupting legitimate drivers.
+          AsliKaun continuously analyzes behavioral and contextual continuity to detect account handoffs with explainable precision—safeguarding platforms without disrupting legitimate drivers.
         </p>
 
         <div className="btns">
