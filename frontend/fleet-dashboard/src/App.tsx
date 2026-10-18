@@ -41,6 +41,28 @@ export default function App() {
   const [selectedDriverForFreeze, setSelectedDriverForFreeze] = useState<DriverRecord | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
+  // Capture OAuth credentials from URL parameters on login redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('auth_token');
+    const email = params.get('user_email');
+    const name = params.get('user_name');
+    const provider = params.get('provider') || 'google';
+
+    if (token) {
+      sessionStorage.setItem('tm-auth', 'true');
+      sessionStorage.setItem('tm-auth-token', token);
+      if (email) {
+        sessionStorage.setItem('tm-auth-user', JSON.stringify({
+          email,
+          name: name || email.split('@')[0],
+          provider,
+        }));
+      }
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   // Background Simulated Sync Jitter
   useEffect(() => {
     const interval = setInterval(() => {

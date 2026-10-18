@@ -25,6 +25,20 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [userProfile] = useState<{ name: string; email: string; provider?: string }>(() => {
+    try {
+      const stored = sessionStorage.getItem('tm-auth-user') || localStorage.getItem('tm-auth-user');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return { name: 'Elena Vance', email: 'elena.vance@defense.trustmesh.io', provider: 'email' };
+  });
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('tm-auth');
+    sessionStorage.removeItem('tm-auth-token');
+    sessionStorage.removeItem('tm-auth-user');
+    window.location.assign('/auth?mode=login');
+  };
 
   const notifications = [
     {
@@ -165,13 +179,15 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setShowProfileMenu(!showProfileMenu)}
             className="flex items-center gap-2 p-1 pl-2 hover:bg-[#f8f9ff] rounded-lg transition-colors cursor-pointer border border-transparent hover:border-[#e2e8f0]"
           >
-            {/* Elena Vance Avatar */}
+            {/* User Avatar */}
             <div className="w-8 h-8 rounded-full bg-[#0058be] text-white flex items-center justify-center font-semibold text-xs border border-white shadow-xs">
-              <UserCheck className="w-4 h-4" />
+              {userProfile.name ? userProfile.name.charAt(0).toUpperCase() : <UserCheck className="w-4 h-4" />}
             </div>
             <div className="text-left hidden md:block">
-              <div className="text-xs font-semibold text-[#0b1c30] leading-tight">Elena Vance</div>
-              <div className="text-[11px] text-[#565e74] leading-tight">Threat Ops Lead</div>
+              <div className="text-xs font-semibold text-[#0b1c30] leading-tight">{userProfile.name}</div>
+              <div className="text-[11px] text-[#565e74] leading-tight">
+                {userProfile.provider === 'google' ? 'Google Authenticated' : 'Threat Ops Lead'}
+              </div>
             </div>
             <ChevronDown className="w-3.5 h-3.5 text-[#727785]" />
           </button>
@@ -180,11 +196,11 @@ export const Header: React.FC<HeaderProps> = ({
           {showProfileMenu && (
             <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-[#e2e8f0] py-2 z-50 text-xs">
               <div className="px-3 py-2 border-b border-[#f1f5f9]">
-                <p className="font-semibold text-[#0b1c30]">Elena Vance</p>
-                <p className="text-[11px] text-[#565e74]">elena.vance@defense.trustmesh.io</p>
+                <p className="font-semibold text-[#0b1c30]">{userProfile.name}</p>
+                <p className="text-[11px] text-[#565e74] break-all">{userProfile.email}</p>
                 <div className="mt-1 flex items-center gap-1.5 text-[10px] text-[#006947] font-semibold">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#006947]" />
-                  Active Shift: SOC Tier 3 Lead
+                  {userProfile.provider === 'google' ? 'Google OAuth 2.0 Session' : 'Active Shift: SOC Tier 3 Lead'}
                 </div>
               </div>
               <div className="py-1">
@@ -196,11 +212,11 @@ export const Header: React.FC<HeaderProps> = ({
                   Threat Sensitivity Preferences
                 </button>
                 <button 
-                  onClick={() => setShowProfileMenu(false)}
+                  onClick={handleLogout}
                   className="w-full text-left px-3 py-2 hover:bg-[#f8f9ff] text-[#ba1a1a] flex items-center gap-2 cursor-pointer"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  Handoff & End Shift
+                  Handoff & End Shift (Logout)
                 </button>
               </div>
             </div>

@@ -6,7 +6,7 @@ export const Hero: React.FC = () => {
     <section className="hero" id="hero">
       <div className="copy">
         <span className="pill">
-          <i></i>CONTINUOUS IDENTITY INTELLIGENCE
+          <i></i>Now in public beta
         </span>
 
         <h1>
@@ -24,7 +24,7 @@ export const Hero: React.FC = () => {
         </h1>
 
         <p className="lede">
-          TrustMesh continuously analyzes behavioral and contextual continuity to detect account handoffs with explainable precision—safeguarding platforms without disrupting legitimate drivers.
+          Agents are getting smarter every month. The gaps between them are where work quietly breaks. TrustMesh closes those gaps.
         </p>
 
         <div className="btns">

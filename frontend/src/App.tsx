@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { BackgroundVideo } from './components/BackgroundVideo';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { Marquee } from './components/Marquee';
@@ -17,7 +16,7 @@ export default function App() {
       const saved = localStorage.getItem('tm_theme');
       if (saved === 'dark' || saved === 'light') return saved;
     }
-    return 'light';
+    return 'dark';
   });
 
   useEffect(() => {
@@ -35,7 +34,6 @@ export default function App() {
 
   return (
     <>
-      <BackgroundVideo theme={theme} />
       <Navbar theme={theme} onToggleTheme={toggleTheme} />
 
       <main id="top">

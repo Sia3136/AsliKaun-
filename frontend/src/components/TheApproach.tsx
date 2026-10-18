@@ -5,7 +5,6 @@ interface ApproachPillar {
   tag: string;
   title: string;
   desc: string;
-  img: string;
   chip: string;
 }
 
@@ -15,7 +14,6 @@ const PILLARS: ApproachPillar[] = [
     tag: 'CONTEXT',
     title: 'Contextual Continuity',
     desc: 'Understand shifts in device posture, session context, mobility, and network signals to verify whether current activity matches expected operating context.',
-    img: 'pillar-context',
     chip: 'Hardware Posture · Mobility Sensor Fusion',
   },
   {
@@ -23,7 +21,6 @@ const PILLARS: ApproachPillar[] = [
     tag: 'BEHAVIOR',
     title: 'Behavioral Continuity',
     desc: 'Analyze changes in activity rhythms over time to identify potential discontinuities that a static credential check alone completely misses.',
-    img: 'pillar-behavior',
     chip: 'Touch Profiles · Keystroke & Interaction Cadence',
   },
   {
@@ -31,7 +28,6 @@ const PILLARS: ApproachPillar[] = [
     tag: 'EXPLAINABLE',
     title: 'Explainable Risk Intelligence',
     desc: 'Combine available telemetry into a defensible risk score with explicit contributing factors, empowering platforms to act with full auditability.',
-    img: 'pillar-explainable',
     chip: 'Weighted Anomaly Attribution · Audit Trail',
   },
   {
@@ -39,7 +35,6 @@ const PILLARS: ApproachPillar[] = [
     tag: 'PROPORTIONATE',
     title: 'Context-Aware Verification',
     desc: 'Support proportionate step-up verification only when warranted, completely avoiding disruption to honest drivers during active trips.',
-    img: 'pillar-verification',
     chip: 'Zero-Friction Sentinel · Silent Baseline Check',
   },
   {
@@ -47,7 +42,6 @@ const PILLARS: ApproachPillar[] = [
     tag: 'BASELINES',
     title: 'Adaptive Trust Baselines',
     desc: 'Continuously calibrate behavioral baselines as driver routines evolve over weeks, isolating legitimate schedule shifts from abrupt driver swaps.',
-    img: 'pillar-baselines',
     chip: 'Dual-Timescale · Seasonal & Routine Evolution',
   },
   {
@@ -55,7 +49,6 @@ const PILLARS: ApproachPillar[] = [
     tag: 'HANDOFFS',
     title: 'Account Handoff Detection',
     desc: 'Detect intricate account-sharing where usage shifts between individuals and later returns, uncovering complex multi-driver sharing rings.',
-    img: 'pillar-handoff',
     chip: 'Cross-Driver Signatures · Fleet Ring Isolation',
   },
 ];
@@ -134,31 +127,22 @@ export const TheApproach: React.FC = () => {
 
         <div ref={trackRef} className="track" id="track">
           {PILLARS.map((p) => (
-            <article key={p.num} className="pc glass">
-              <img
-                className="im"
-                src={`/assets/${p.img}.jpg`}
-                alt={p.title}
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
-                }}
-              />
-              <div className="shade"></div>
-              
-              <div className="top">
+            <article key={p.num} className="pc pc-text-card glass">
+              <div className="pc-card-header">
                 <span className="pc-pill">
                   <span className="pc-num">{p.num}</span>
                   <span className="pc-tag">{p.tag}</span>
                 </span>
-                <span className="pc-live">● TELEMETRY</span>
+                <span className="pc-live">● CONTINUOUS</span>
               </div>
 
-              <div className="bot">
+              <div className="pc-card-body">
                 <h3>{p.title}</h3>
                 <p>{p.desc}</p>
-                <div className="pc-chip-wrap">
-                  <span className="pc-chip">{p.chip}</span>
-                </div>
+              </div>
+
+              <div className="pc-card-footer">
+                <span className="pc-chip">{p.chip}</span>
               </div>
             </article>
           ))}
