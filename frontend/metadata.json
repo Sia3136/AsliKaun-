@@ -1,0 +1,6 @@
+{
+  "name": "TruthMesh — Cyberspace Identity",
+  "description": "TruthMesh / Nival cyberspace identity verification platform with cursor-following spotlight mask reveal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

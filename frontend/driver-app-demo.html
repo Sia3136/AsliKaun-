@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Partner Delivery App — Powered by TrustMesh SDK</title>
+  <meta name="description" content="Simulated on-demand delivery partner app showing plug-and-play TrustMesh Telemetry SDK integration.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090f1d;
+      --card-bg: #111a2e;
+      --accent: #2563eb;
+      --accent-glow: rgba(37, 99, 235, 0.35);
+      --emerald: #10b981;
+      --amber: #f59e0b;
+      --rose: #ef4444;
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --border: rgba(255, 255, 255, 0.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 16px;
+    }
+    .phone-container {
+      width: 100%;
+      max-width: 420px;
+      height: 820px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 40px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(37, 99, 235, 0.15);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+    .status-bar {
+      padding: 14px 24px 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .sdk-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: var(--emerald);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+    .sdk-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--emerald);
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.2); }
+    }
+    .app-header {
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+    .partner-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .partner-logo {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #f97316, #ea580c);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: #fff;
+      font-size: 1rem;
+    }
+    .driver-info h3 { font-size: 0.95rem; font-weight: 700; }
+    .driver-info p { font-size: 0.75rem; color: var(--muted); }
+    .content-area {
+      flex: 1;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    .order-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: all 0.3s ease;
+    }
+    .order-card.incoming {
+      border-color: var(--accent);
+      background: rgba(37, 99, 235, 0.06);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .order-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .order-badge {
+      font-size: 0.7rem;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--muted);
+    }
+    .order-payout { font-size: 1.2rem; font-weight: 800; color: #fff; }
+    .order-route {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 0.8rem;
+    }
+    .route-stop {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #e5e7eb;
+    }
+    .stop-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .btn-action {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 14px 20px;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 14px var(--accent-glow);
+    }
+    .btn-action:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-action:active { transform: scale(0.98); }
+    .btn-action.accepted {
+      background: var(--emerald);
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+    }
+    .telemetry-tray {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+    }
+    .tray-title {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .telemetry-item {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 6px 10px;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .telemetry-val { color: #60a5fa; font-weight: 600; }
+    .verdict-banner {
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      display: none;
+    }
+    .verdict-banner.stable {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid var(--emerald);
+      color: #34d399;
+      display: flex;
+    }
+    .verdict-banner.challenged {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid var(--rose);
+      color: #f87171;
+      display: flex;
+    }
+    .verdict-banner.rebaseline {
+      background: rgba(37, 99, 235, 0.15);
+      border: 1px solid var(--accent);
+      color: #93c5fd;
+      display: flex;
+    }
+    .footer-nav {
+      padding: 12px 20px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-around;
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+    .nav-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+    .nav-btn.active { color: var(--accent); font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <div class="phone-container">
+    <!-- Top Status Bar -->
+    <div class="status-bar">
+      <span>9:41 AM</span>
+      <div class="sdk-badge">
+        <span class="sdk-dot"></span>
+        TrustMesh SDK Active
+      </div>
+      <span>5G • 98%</span>
+    </div>
+
+    <!-- App Header -->
+    <div class="app-header">
+      <div class="partner-brand">
+        <div class="partner-logo">F</div>
+        <div class="driver-info">
+          <h3>FastDash Partner</h3>
+          <p id="partner-driver-display">Rider: rider-001 (Rohan S.)</p>
+        </div>
+      </div>
+      <a href="dashboard.html" target="_blank" style="font-size:0.75rem; color:#60a5fa; text-decoration:none;">
+        Open Admin &rarr;
+      </a>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="content-area">
+      <!-- Live Trust Verification Status -->
+      <div id="verdict-banner" class="verdict-banner stable">
+        <span id="verdict-text">Continuous Trust: Verified (Quadrant: Stable)</span>
+        <span id="verdict-decision">Continue</span>
+      </div>
+
+      <!-- Active Delivery Offer -->
+      <div class="order-card incoming" id="order-card">
+        <div class="order-header">
+          <span class="order-badge">NEW DELIVERY OFFER</span>
+          <span class="order-payout">&#8377; 145.00</span>
+        </div>
+        <div class="order-route">
+          <div class="route-stop">
+            <span class="stop-dot"></span>
+            <span>Pickup: Gourmet Burger Kitchen (0.8 km)</span>
+          </div>
+          <div class="route-stop">
+            <span class="stop-dot" style="background:#f59e0b;"></span>
+            <span>Dropoff: 402 Palm Heights, Bandra (3.2 km)</span>
+          </div>
+        </div>
+        <button class="btn-action" id="btn-accept-order">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Accept Order (Tap Now)
+        </button>
+      </div>
+
+      <!-- SDK Background Sensor Telemetry Tray -->
+      <div class="telemetry-tray">
+        <div class="tray-title">
+          <span>TrustMesh Telemetry Collector</span>
+          <span id="flush-counter">Auto-Flush in 15s</span>
+        </div>
+        <div class="telemetry-grid">
+          <div class="telemetry-item">
+            <span>Latency</span>
+            <span class="telemetry-val" id="disp-latency">-- ms</span>
+          </div>
+          <div class="telemetry-item">
+            <span>Touch Dynamic</span>
+            <span class="telemetry-val" id="disp-touch">0 taps</span>
+          </div>
+          <div class="telemetry-item">
+            <span>Accel Var</span>
+            <span class="telemetry-val" id="disp-accel">0.24 m/s²</span>
+          </div>
+          <div class="telemetry-item">
+            <span>Hold Gyro</span>
+            <span class="telemetry-val" id="disp-gyro">0.12 rad/s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scenario Simulation Tools (For Developer / Demo Inspection) -->
+      <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:12px; padding:12px;">
+        <p style="font-size:0.75rem; color:var(--muted); margin-bottom:8px; font-weight:600;">SDK Driver Testing Mode:</p>
+        <div style="display:flex; gap:8px;">
+          <button id="btn-sim-honest" style="flex:1; padding:6px; font-size:0.7rem; border-radius:6px; border:1px solid var(--emerald); background:rgba(16,185,129,0.1); color:#34d399; cursor:pointer;">
+            Honest Rider
+          </button>
+          <button id="btn-sim-handoff" style="flex:1; padding:6px; font-size:0.7rem; border-radius:6px; border:1px solid var(--rose); background:rgba(239,68,68,0.1); color:#f87171; cursor:pointer;">
+            Account Handoff
+          </button>
+          <button id="btn-sim-newphone" style="flex:1; padding:6px; font-size:0.7rem; border-radius:6px; border:1px solid var(--accent); background:rgba(37,99,235,0.1); color:#93c5fd; cursor:pointer;">
+            Phone Change
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phone Footer Navigation -->
+    <div class="footer-nav">
+      <div class="nav-btn active">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        <span>Orders</span>
+      </div>
+      <div class="nav-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>Earnings</span>
+      </div>
+      <div class="nav-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>Profile</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TrustMesh Embeddable SDK -->
+  <script src="trustmesh-sdk.js"></script>
+
+  <script>
+    // Initialize the TrustMesh SDK as a third-party developer would
+    const currentDriver = 'rider-001';
+    TrustMesh.init({
+      driverId: currentDriver,
+      endpoint: window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
+        ? (window.location.port === '8000' ? '' : 'http://127.0.0.1:8000')
+        : '',
+      zone: 'Bandra-West',
+      autoFlushIntervalMs: 15000,
+      debug: true
+    });
+
+    const btnAccept = document.getElementById('btn-accept-order');
+    const orderCard = document.getElementById('order-card');
+    const dispLatency = document.getElementById('disp-latency');
+    const dispTouch = document.getElementById('disp-touch');
+    const verdictBanner = document.getElementById('verdict-banner');
+    const verdictText = document.getElementById('verdict-text');
+    const verdictDecision = document.getElementById('verdict-decision');
+
+    // Start order offer timer when card appears
+    TrustMesh.recordOrderOffer();
+
+    // Accept Order button interaction
+    btnAccept.addEventListener('click', async () => {
+      // 1. SDK captures the exact reaction latency
+      const latency = TrustMesh.recordOrderAccept();
+      dispLatency.textContent = latency + ' ms';
+      dispTouch.textContent = (TrustMesh.state.touchBuffer.length) + ' gestures';
+
+      btnAccept.textContent = 'Order Accepted!';
+      btnAccept.classList.add('accepted');
+      orderCard.classList.remove('incoming');
+
+      // 2. Immediately flush telemetry to backend API
+      const result = await TrustMesh.flush();
+      if (result) {
+        updateVerdict(result);
+      }
+
+      // Reset after 4s for continuous demonstration
+      setTimeout(() => {
+        btnAccept.textContent = 'Accept Order (Tap Now)';
+        btnAccept.classList.remove('accepted');
+        orderCard.classList.add('incoming');
+        TrustMesh.recordOrderOffer();
+      }, 4000);
+    });
+
+    // Update Trust Banner based on verification response
+    function updateVerdict(data) {
+      verdictBanner.className = 'verdict-banner ' + (
+        data.quadrant === 'handoff_signature' ? 'challenged' :
+        data.quadrant === 'legit_change' ? 'rebaseline' : 'stable'
+      );
+      verdictText.textContent = `Continuous Trust: ${data.quadrant.toUpperCase().replace('_', ' ')}`;
+      verdictDecision.textContent = data.decision;
+    }
+
+    // Listen for global TrustMesh events
+    window.addEventListener('trustmesh:verdict', (e) => {
+      updateVerdict(e.detail);
+    });
+
+    // Test scenario triggers
+    document.getElementById('btn-sim-honest').onclick = () => {
+      TrustMesh.config.driverId = 'rider-001';
+      TrustMesh.config.deviceId = 'phone-A';
+      TrustMesh.recordTelemetry({
+        accel: [0.22, 0.25, 0.23, 0.24],
+        gyro: [0.11, 0.12, 0.10],
+        touch: [{ type: 'tap', pressure: 0.45, area: 280, duration_ms: 110, t: Date.now() }],
+        acceptLatencyMs: 780
+      });
+      TrustMesh.flush();
+    };
+
+    document.getElementById('btn-sim-handoff').onclick = () => {
+      TrustMesh.config.driverId = 'rider-001';
+      TrustMesh.config.deviceId = 'phone-A'; // Same phone, strange behavior
+      TrustMesh.recordTelemetry({
+        accel: [2.8, 3.2, 2.9, 3.4],
+        gyro: [1.8, 2.1, 1.9],
+        touch: [{ type: 'tap', pressure: 0.95, area: 550, duration_ms: 380, t: Date.now() }],
+        acceptLatencyMs: 4600
+      });
+      TrustMesh.flush();
+    };
+
+    document.getElementById('btn-sim-newphone').onclick = () => {
+      TrustMesh.config.driverId = 'rider-001';
+      TrustMesh.config.deviceId = 'phone-NEW-IPHONE15'; // New phone, normal behavior
+      TrustMesh.recordTelemetry({
+        accel: [0.22, 0.25, 0.23],
+        gyro: [0.11, 0.12],
+        touch: [{ type: 'tap', pressure: 0.48, area: 290, duration_ms: 115, t: Date.now() }],
+        acceptLatencyMs: 810
+      });
+      TrustMesh.flush();
+    };
+  </script>
+</body>
+</html>
