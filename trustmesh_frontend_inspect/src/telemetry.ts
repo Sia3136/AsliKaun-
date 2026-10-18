@@ -8,7 +8,10 @@ type TouchEventSummary = {
   pressure?: number;
 };
 type IngestResponse = { driver_id?: string; decision?: string; quadrant?: string; model_status?: string; [key: string]: unknown };
-const API_BASE = (import.meta.env.VITE_TRUSTMESH_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+const API_BASE = (
+  import.meta.env.VITE_TRUSTMESH_API_URL ||
+  (typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://127.0.0.1:8000")
+).replace(/\/$/, "");
 const DRIVER_ID = import.meta.env.VITE_TRUSTMESH_DRIVER_ID || "rider-001";
 const DRIVER_TOKEN = import.meta.env.VITE_TRUSTMESH_DRIVER_TOKEN || "demo-driver-token-2026";
 const ZONE_STORAGE_KEY = "trustmesh_coarse_zone_v1";

@@ -150,7 +150,7 @@ export const SpotlightReveal: React.FC = () => {
             onError={(e) => {
               const target = e.currentTarget;
               if (target.src.indexOf('hero-front.png') !== -1 && target.src.indexOf('/assets/') !== -1) {
-                target.src = '/hero-front.png';
+                target.src = '/dashboard/hero-front.png';
               }
             }}
           />
@@ -165,7 +165,7 @@ export const SpotlightReveal: React.FC = () => {
             onError={(e) => {
               const target = e.currentTarget;
               if (target.src.indexOf('hero-back.png') !== -1 && target.src.indexOf('/assets/') !== -1) {
-                target.src = '/hero-back.png';
+                target.src = '/dashboard/hero-back.png';
               }
             }}
           />

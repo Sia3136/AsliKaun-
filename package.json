@@ -2,9 +2,9 @@
   "name": "truthmesh-monorepo",
   "private": true,
   "scripts": {
-    "dev": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend run build",
-    "preview": "npm --prefix frontend run preview",
-    "lint": "npm --prefix frontend run lint"
+    "dev": "npm --prefix trustmesh_frontend_inspect run dev",
+    "prebuild": "npm --prefix trustmesh_frontend_inspect install",
+    "build": "pip install -r requirements.txt && npm --prefix trustmesh_frontend_inspect run build",
+    "preview": "npm --prefix trustmesh_frontend_inspect run preview"
   }
 }

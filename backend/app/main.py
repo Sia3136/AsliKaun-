@@ -16,7 +16,7 @@ from urllib.parse import quote, unquote, urlencode
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -1652,13 +1652,16 @@ def public_driver_status(driver_id: str) -> dict:
         }
 
 
-# ---------- Frontend Dashboard Static Mount ----------
+# ---------- Frontend Phone UI & Dashboard Static Mount ----------
 _FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 _FRONTEND_DIST = _FRONTEND_DIR / "dist"
 _STATIC_DIR = _FRONTEND_DIST if _FRONTEND_DIST.exists() else _FRONTEND_DIR
+_PHONE_DIR = _PROJECT_ROOT / "trustmesh_frontend_inspect" / "dist"
 
 if (_FRONTEND_DIST / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="assets")
+elif _PHONE_DIR.exists() and (_PHONE_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(_PHONE_DIR / "assets")), name="phone-assets")
 
 if _STATIC_DIR.exists():
     app.mount("/dashboard", StaticFiles(directory=str(_STATIC_DIR), html=True), name="dashboard")
@@ -1669,11 +1672,20 @@ def health() -> dict:
     return {"status": "ok", "service": "trust-mesh-api"}
 
 
+@app.get("/favicon.svg", include_in_schema=False)
+def favicon() -> Any:
+    if _PHONE_DIR.exists() and (_PHONE_DIR / "favicon.svg").exists():
+        return FileResponse(str(_PHONE_DIR / "favicon.svg"))
+    raise HTTPException(status_code=404)
+
+
 @app.get("/", include_in_schema=False)
 def root_endpoint() -> Any:
     dist_index = _FRONTEND_DIST / "index.html"
     if dist_index.exists():
         return FileResponse(str(dist_index))
+    if _PHONE_DIR.exists() and (_PHONE_DIR / "index.html").exists():
+        return FileResponse(str(_PHONE_DIR / "index.html"))
     if _FRONTEND_DIR.exists():
         return RedirectResponse(url="/dashboard/index.html")
     return {"message": "Trust Juggler API is running. Visit /docs for OpenAPI specs."}
@@ -1706,5 +1718,6 @@ def dashboard_html_redirect() -> Any:
     if dist_fleet.exists():
         return FileResponse(str(dist_fleet))
     return RedirectResponse(url="/dashboard/dashboard.html")
+
 
 
