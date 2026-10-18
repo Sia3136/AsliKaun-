@@ -22,12 +22,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 try:
-    from backend.app.ml_bridge import evaluate_session_ml
+    from backend.app.ml_bridge import evaluate_session_ml, evaluate_session_with_real_models
 except ImportError:
     try:
-        from app.ml_bridge import evaluate_session_ml
+        from app.ml_bridge import evaluate_session_ml, evaluate_session_with_real_models
     except ImportError:
         evaluate_session_ml = None
+        evaluate_session_with_real_models = None
 
 DB_PATH = os.getenv("TRUST_JUGGLER_DB", "trust_juggler.db")
 app = FastAPI(
@@ -93,9 +94,10 @@ class SessionIngest(BaseModel):
     device_id: str | None = None
     ip_subnet: str | None = None
     zone: str | None = None
-    accel: list[float] = Field(default_factory=list, max_length=500)
+    accel: list[Any] = Field(default_factory=list, max_length=500)  # [{x,y,z,t}] or [magnitude, ...]
     gyro: list[float] = Field(default_factory=list, max_length=500)
     touch_events: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
+    gps: list[dict[str, Any]] = Field(default_factory=list, max_length=500)  # [{lat,lng,t}]
     accept_latency_ms: float | None = Field(default=None, ge=0)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -507,10 +509,21 @@ def mean_abs(values: list[float]) -> float | None:
     return sum(abs(v) for v in values) / len(values)
 
 
+def accel_magnitude_mean(accel: list[Any]) -> float | None:
+    """Supports both [{x,y,z,t}] dicts and flat list of scalar magnitudes."""
+    if not accel:
+        return None
+    if isinstance(accel[0], dict):
+        mags = [((float(a.get("x", 0.0))) ** 2 + (float(a.get("y", 0.0))) ** 2 + (float(a.get("z", 0.0))) ** 2) ** 0.5 for a in accel]
+    else:
+        mags = [abs(float(x)) for x in accel]
+    return sum(mags) / len(mags)
+
+
 def behavior_features(payload: SessionIngest) -> dict[str, float | None]:
     # Mock feature extraction only. Replace with ML scorer later.
     return {
-        "accel_mean_abs": mean_abs(payload.accel),
+        "accel_mean_abs": accel_magnitude_mean(payload.accel),
         "gyro_mean_abs": mean_abs(payload.gyro),
         "touch_count": float(len(payload.touch_events)) if payload.touch_events else None,
         "accept_latency_ms": payload.accept_latency_ms,
@@ -917,8 +930,8 @@ def ingest_session(
     x_driver_token: str | None = Header(default=None, alias="X-Driver-Token"),
 ) -> dict:
     """Ingest a session only from the driver app/token assigned to this driver ID."""
-    if x_driver_token is not None:
-        require_driver_token(body.driver_id, x_driver_token)
+    if x_driver_token is not None and isinstance(x_driver_token, str) and x_driver_token.strip():
+        require_driver_token(body.driver_id, x_driver_token.strip())
     current_context = {
         "device_id": body.device_id,
         "ip_subnet": body.ip_subnet,
@@ -1036,7 +1049,38 @@ def ingest_session(
         anchor_behavior = decode_json(driver["anchor_json"], {})
         fast_behavior = decode_json(driver["fast_json"], {})
 
-        if evaluate_session_ml is not None:
+        # Try the REAL trained models first (ml/inference/rider_model_bundle.py
+        # — the ones that actually won on real data, see ml/README.md). Falls
+        # back to the heuristic below until this driver has enough raw session
+        # history (MIN_HISTORY_FOR_REAL_MODELS in ml_bridge.py) to fit one.
+        real_model_eval = None
+        if evaluate_session_with_real_models is not None:
+            history_rows = con.execute(
+                """SELECT payload_json FROM sessions WHERE driver_id = ?
+                   ORDER BY id ASC LIMIT 80""",
+                (body.driver_id,),
+            ).fetchall()
+            history_payloads = [decode_json(r["payload_json"], {}) for r in history_rows]
+            history_payloads = [p for p in history_payloads if p]
+            try:
+                real_model_eval = evaluate_session_with_real_models(body, history_payloads)
+            except Exception as e:
+                print(f"[main] evaluate_session_with_real_models errored ({e}), falling back")
+                real_model_eval = None
+
+        if real_model_eval is not None:
+            context_score = real_model_eval["context_score"]
+            behavior_score = real_model_eval["behavior_score"]
+            context_axis = real_model_eval["context_axis"]
+            behavior_axis = real_model_eval["behavior_axis"]
+            quadrant = real_model_eval["quadrant"]
+            decision = real_model_eval["decision"]
+            reasons = real_model_eval["reasons"] + declaration_reason
+            signals = real_model_eval["signals"]
+            reason_vector = real_model_eval.get("reason_vector")
+            current_behavior = real_model_eval["current_behavior"]
+            model_status = real_model_eval["model_status"]
+        elif evaluate_session_ml is not None:
             # Full ML Two-Axis evaluation with reason-vector explainability
             ml_eval = evaluate_session_ml(body, {
                 "fast_behavior": fast_behavior,
@@ -1599,6 +1643,11 @@ def dashboard_html_redirect() -> Any:
 @app.get("/fleet-dashboard.html", include_in_schema=False)
 def fleet_dashboard_html_redirect() -> Any:
     return RedirectResponse(url="/dashboard/fleet-dashboard.html")
+
+
+@app.get("/driver-app-demo.html", include_in_schema=False)
+def driver_app_demo_html_redirect() -> Any:
+    return RedirectResponse(url="/dashboard/driver-app-demo.html")
 
 
 @app.get("/auth", include_in_schema=False)

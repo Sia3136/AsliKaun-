@@ -46,6 +46,21 @@ try:
 except ImportError:
     ML_LLM_AVAILABLE = False
 
+try:
+    from ml.inference.rider_model_bundle import RiderModelBundle
+    ML_RIDER_BUNDLE_AVAILABLE = True
+except ImportError:
+    ML_RIDER_BUNDLE_AVAILABLE = False
+
+# Minimum raw session history (from the `sessions` table) before attempting
+# the REAL trained models — below this, RiderModelBundle.fit()'s own
+# missing-signal / insufficient-data skip would trigger for every signal
+# anyway, so there's no point trying; the heuristic fallback runs instead.
+# See ml/README.md's "Per-rider threshold calibration" for why even this
+# is still a population-fallback regime, not the full per-rider guarantee,
+# until a rider has ~100 sessions.
+MIN_HISTORY_FOR_REAL_MODELS = 15
+
 # ml/combiner/two_axis.py's quadrant names match this backend's own exactly;
 # only the decision strings differ (this backend's vocabulary is what
 # main.py's review-queue routing depends on, e.g.
@@ -353,4 +368,100 @@ def evaluate_session_ml(
         "current_behavior": current_behavior,
         "current_context": current_context,
         "model_status": "ml_two_axis_fusion",
+    }
+
+
+def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict]) -> dict[str, Any] | None:
+    """Scores with the REAL validated trained models
+    (ml/inference/rider_model_bundle.py — the ones that actually won on
+    real H-MOG/ODIDMob data, see ml/README.md's Phase 2 results)
+    instead of the heuristic in evaluate_session_ml() above. Returns
+    None when there isn't enough raw history yet to fit a per-rider
+    model; the caller falls back to the heuristic in that case.
+
+    `history_payloads`: this driver's past raw session payloads from the
+    `sessions` table (chronological, oldest first), NOT including the
+    session currently being scored — each one is exactly a prior
+    `SessionIngest.model_dump(mode="json")`, which already matches the
+    frozen schema RiderModelBundle expects.
+
+    Known, named limitations (not hidden): refits the bundle from
+    scratch on every call (no caching — fine at demo scale, a real cost
+    at production scale); GPS uses the unvalidated GeoLife-style
+    stopgap feature set, not the ODIDMob-validated one (see
+    rider_model_bundle.py's own docstring); touch runs on a degraded
+    feature set until the mobile SDK sends full per-gesture `path` data.
+    """
+    if not ML_RIDER_BUNDLE_AVAILABLE or len(history_payloads) < MIN_HISTORY_FOR_REAL_MODELS:
+        return None
+
+    split = int(len(history_payloads) * 0.7)
+    enroll, calib = history_payloads[:split], history_payloads[split:]
+    if len(enroll) < 5 or len(calib) < 5:
+        return None
+
+    try:
+        bundle = RiderModelBundle.fit(enroll, calib)
+    except Exception as e:
+        print(f"[ml_bridge] RiderModelBundle.fit failed ({e}), falling back to heuristic")
+        return None
+
+    current_session = {
+        "driver_id": getattr(payload, "driver_id", None),
+        "session_id": "current",
+        "timestamp": payload.timestamp.isoformat(),
+        "device_id": payload.device_id,
+        "ip_subnet": payload.ip_subnet,
+        "zone": payload.zone,
+        "accel": payload.accel,
+        "touch_events": payload.touch_events,
+        "gps": payload.gps,
+        "accept_latency_ms": payload.accept_latency_ms,
+    }
+
+    try:
+        result = bundle.score(current_session, generate_reason=False)
+    except Exception as e:
+        print(f"[ml_bridge] RiderModelBundle.score failed ({e}), falling back to heuristic")
+        return None
+
+    quadrant = result["quadrant"]
+    if quadrant == "insufficient_evidence":
+        return None  # no signal could be scored at all — let the heuristic try instead
+
+    decision = _QUADRANT_TO_BACKEND_DECISION.get(quadrant, "continue")
+    # p-values (high = normal) -> 0-1 "anomaly-like" scale for the existing dashboard display convention
+    signals = {k: round(1.0 - v, 3) for k, v in result.get("p_values", {}).items()}
+
+    behavior_continuity = result.get("behavior_continuity")
+    reasons = [
+        f"Real trained-model verdict: {quadrant} "
+        f"(context_continuity={result['context_continuity']}, "
+        f"behavior_continuity={round(behavior_continuity, 3) if behavior_continuity is not None else None})"
+    ]
+
+    reason_vector: dict[str, Any] | None = None
+    if decision in ("challenge_at_safe_pause", "step_up_check_at_safe_pause") and ML_LLM_AVAILABLE:
+        try:
+            session_meta = {"driver_id": getattr(payload, "driver_id", "unknown")}
+            reason_vector = ml_explain(session_meta, result, result.get("p_values", {}))
+            if reason_vector and reason_vector.get("explanation"):
+                reasons.append(f"Reason Vector: {reason_vector['explanation']}")
+        except Exception as e:
+            reasons.append(f"Reason vector failed: {e}")
+
+    return {
+        "context_score": result["context_continuity"],
+        "behavior_score": round(behavior_continuity, 3) if behavior_continuity is not None else None,
+        "context_axis": "stable" if result["context_continuity"] >= 0.6 else "changed",
+        "behavior_axis": quadrant,  # the real quadrant carries more information than a binary stable/changed axis
+        "quadrant": quadrant,
+        "decision": decision,
+        "signals": signals,
+        "reasons": reasons,
+        "reason_vector": reason_vector,
+        "current_behavior": {},
+        "current_context": {"device_id": payload.device_id, "ip_subnet": payload.ip_subnet, "zone": payload.zone},
+        "model_status": "ml_real_trained_models",
+        "threshold_info": result.get("threshold_info"),
     }

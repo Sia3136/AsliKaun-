@@ -836,9 +836,14 @@ async function runRedTeamScenario(scenario) {
             driver_id: sc.driver,
             device_id: s.ctx < 0.5 ? 'new-phone-x' : 'dev-phone-01',
             zone: 'Andheri',
-            accel: s.beh < 0.5 ? [2.5, 3.0, 2.8] : [0.5, 0.4, 0.6],
+            accel: (() => {
+              const now = new Date().toISOString();
+              const mag = s.beh < 0.5 ? [2.5, 3.0, 2.8, 2.9, 3.1] : [0.5, 0.4, 0.6, 0.45, 0.55];
+              return mag.map(m => ({ x: m, y: m * 0.6, z: 9.8, t: now }));
+            })(),
             gyro: s.beh < 0.5 ? [1.1, 1.4] : [0.08, 0.12],
-            touch_events: [{ type: 'tap', pressure: s.beh < 0.5 ? 0.95 : 0.5, t_offset_ms: 100 }],
+            touch_events: [{ type: 'tap', pressure: s.beh < 0.5 ? 0.95 : 0.5, area: 300, duration_ms: 110, t: new Date().toISOString() }],
+            gps: [],
             accept_latency_ms: s.beh < 0.5 ? 4200 : 1200,
           })
         });

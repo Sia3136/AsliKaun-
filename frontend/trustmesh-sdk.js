@@ -47,10 +47,12 @@
       accelBuffer: [],
       gyroBuffer: [],
       touchBuffer: [],
+      gpsBuffer: [],
       lastTouchStart: null,
       orderOfferTimestamp: null,
       lastAcceptLatencyMs: null,
       timerId: null,
+      geoWatchId: null,
     },
 
     /**
@@ -89,17 +91,46 @@
     startListeners: function () {
       if (this.state.isListening || typeof window === 'undefined') return;
 
-      // 1. Device Motion (Accelerometer)
+      // 1. Device Motion (Accelerometer) — raw x/y/z + timestamp, matching
+      // the ML pipeline's windowed feature extractor (ml/features/motion_features.py),
+      // not a single collapsed magnitude.
       window.addEventListener('devicemotion', (event) => {
         if (event.accelerationIncludingGravity) {
           const a = event.accelerationIncludingGravity;
-          const mag = Math.sqrt((a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2);
-          this.state.accelBuffer.push(Number(mag.toFixed(3)));
+          this.state.accelBuffer.push({
+            x: Number((a.x || 0).toFixed(4)),
+            y: Number((a.y || 0).toFixed(4)),
+            z: Number((a.z || 0).toFixed(4)),
+            t: new Date().toISOString(),
+          });
           if (this.state.accelBuffer.length > this.config.maxBufferSamples) {
             this.state.accelBuffer.shift();
           }
         }
       }, { passive: true });
+
+      // 1b. Geolocation — coarse GPS pings for the (basic, classical) GPS
+      // signal; see ml/inference/schema_adapters.py's gps_features_from_schema.
+      if (typeof navigator !== 'undefined' && navigator.geolocation) {
+        try {
+          this.state.geoWatchId = navigator.geolocation.watchPosition(
+            (pos) => {
+              this.state.gpsBuffer.push({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                t: new Date().toISOString(),
+              });
+              if (this.state.gpsBuffer.length > this.config.maxBufferSamples) {
+                this.state.gpsBuffer.shift();
+              }
+            },
+            (err) => { this.log('Geolocation unavailable or denied:', err.message); },
+            { enableHighAccuracy: false, maximumAge: 5000, timeout: 5000 }
+          );
+        } catch (e) {
+          this.log('Geolocation not supported:', e.message);
+        }
+      }
 
       // 2. Device Orientation (Gyroscope)
       window.addEventListener('deviceorientation', (event) => {
@@ -199,15 +230,17 @@
       }
 
       // Ensure minimal default samples if sensors are inactive (e.g. desktop testing)
+      const now = new Date().toISOString();
       const accel = this.state.accelBuffer.length > 0
         ? [...this.state.accelBuffer]
-        : [0.22, 0.28, 0.25, 0.24, 0.30];
+        : [{ x: 0.2, y: 0.2, z: 9.8, t: now }, { x: 0.25, y: 0.18, z: 9.7, t: now }];
       const gyro = this.state.gyroBuffer.length > 0
         ? [...this.state.gyroBuffer]
         : [0.11, 0.12, 0.10, 0.14];
       const touch = this.state.touchBuffer.length > 0
         ? [...this.state.touchBuffer]
         : [{ type: 'tap', x: 180, y: 420, pressure: 0.5, area: 300, duration_ms: 120, t: Date.now() }];
+      const gps = this.state.gpsBuffer.length > 0 ? [...this.state.gpsBuffer] : [];
       const latency = this.state.lastAcceptLatencyMs || 820;
 
       const payload = {
@@ -218,8 +251,9 @@
         accel: accel,
         gyro: gyro,
         touch_events: touch,
+        gps: gps,
         accept_latency_ms: latency,
-        timestamp: new Date().toISOString(),
+        timestamp: now,
       };
 
       const headers = { 'Content-Type': 'application/json' };
@@ -246,6 +280,7 @@
         this.state.accelBuffer = [];
         this.state.gyroBuffer = [];
         this.state.touchBuffer = [];
+        this.state.gpsBuffer = [];
 
         // Dispatch custom event for client host app
         if (typeof window !== 'undefined') {

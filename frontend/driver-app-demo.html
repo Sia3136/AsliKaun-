@@ -383,10 +383,12 @@
     const currentDriver = 'rider-001';
     TrustMesh.init({
       driverId: currentDriver,
+      deviceId: 'phone-A',
+      zone: 'Andheri West',
+      ipSubnet: '192.168.1.0/24',
       endpoint: window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
         ? (window.location.port === '8000' ? '' : 'http://127.0.0.1:8000')
         : '',
-      zone: 'Bandra-West',
       autoFlushIntervalMs: 15000,
       debug: true
     });
@@ -432,9 +434,16 @@
     function updateVerdict(data) {
       verdictBanner.className = 'verdict-banner ' + (
         data.quadrant === 'handoff_signature' ? 'challenged' :
+        data.quadrant === 'ambiguous' ? 'challenged' :
         data.quadrant === 'legit_change' ? 'rebaseline' : 'stable'
       );
-      verdictText.textContent = `Continuous Trust: ${data.quadrant.toUpperCase().replace('_', ' ')}`;
+      if (data.quadrant === 'handoff_signature') {
+        verdictText.textContent = `⚠️ Continuous Trust: HANDOFF DETECTED (Different Person Using Account)`;
+      } else if (data.quadrant === 'legit_change') {
+        verdictText.textContent = `Continuous Trust: LEGIT CHANGE (New Phone / Same Rider)`;
+      } else {
+        verdictText.textContent = `Continuous Trust: VERIFIED (${data.quadrant.toUpperCase().replace('_', ' ')})`;
+      }
       verdictDecision.textContent = data.decision;
     }
 
@@ -447,6 +456,8 @@
     document.getElementById('btn-sim-honest').onclick = () => {
       TrustMesh.config.driverId = 'rider-001';
       TrustMesh.config.deviceId = 'phone-A';
+      TrustMesh.config.zone = 'Andheri West';
+      TrustMesh.config.ipSubnet = '192.168.1.0/24';
       TrustMesh.recordTelemetry({
         accel: [0.22, 0.25, 0.23, 0.24],
         gyro: [0.11, 0.12, 0.10],
@@ -459,6 +470,8 @@
     document.getElementById('btn-sim-handoff').onclick = () => {
       TrustMesh.config.driverId = 'rider-001';
       TrustMesh.config.deviceId = 'phone-A'; // Same phone, strange behavior
+      TrustMesh.config.zone = 'Andheri West';
+      TrustMesh.config.ipSubnet = '192.168.1.0/24';
       TrustMesh.recordTelemetry({
         accel: [2.8, 3.2, 2.9, 3.4],
         gyro: [1.8, 2.1, 1.9],
@@ -471,6 +484,8 @@
     document.getElementById('btn-sim-newphone').onclick = () => {
       TrustMesh.config.driverId = 'rider-001';
       TrustMesh.config.deviceId = 'phone-NEW-IPHONE15'; // New phone, normal behavior
+      TrustMesh.config.zone = 'Andheri West';
+      TrustMesh.config.ipSubnet = '192.168.1.0/24';
       TrustMesh.recordTelemetry({
         accel: [0.22, 0.25, 0.23],
         gyro: [0.11, 0.12],

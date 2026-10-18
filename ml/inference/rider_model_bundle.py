@@ -1,14 +1,39 @@
 """The production inference surface backend calls. Wires together, per
-rider: the winning model for each signal (IsolationForest for
-operational/motion/GPS, the triplet encoder for touch — see
-ml/README.md's Phase 2 summary for why each was chosen), conformal
-calibration, Fisher fusion, the two-axis combiner, and the reason
-vector.
+rider: a model per signal, conformal calibration, Fisher fusion, the
+two-axis combiner, the per-rider threshold, and the reason vector.
 
 One `RiderModelBundle` per rider, built once from their enrollment +
 calibration history (e.g. a nightly batch job, or once enough sessions
 accumulate for a new rider) and reused to score incoming sessions in
 real time. Rebuild periodically as a rider's history grows.
+
+Per-signal model choice, and an honest caveat on GPS:
+- Operational: IsolationForest (never needed a deep-learning attempt).
+- Touch: the triplet encoder (confirmed winner on held-out H-MOG
+  data, EER 0.352 vs 0.408 classical) — BUT it's running on a
+  degraded feature set here, because the frozen session schema's
+  touch_events only carries one point per gesture, not the raw
+  per-sample path the model was trained on (see
+  ml/inference/schema_adapters.py's docstring). Flagged to the team;
+  waiting on a schema extension.
+- Motion: IsolationForest by default; see ml/README.md's Phase 2
+  motion section for whether the triplet encoder won and should
+  replace it (that evaluation was still running when this was
+  written — check the README before assuming either way).
+- GPS: IsolationForest, and NEITHER validated GPS model (classical
+  OR the triplet encoder, which won on real ODIDMob courier data)
+  can be honestly claimed to work in production as configured. Both
+  were trained/evaluated on ODIDMob's per-wave summary (23 hand-
+  crafted features, or a leg-by-leg sequence, both needing
+  ASSIGN/PICKUP/DELIVERY wave segmentation). The frozen schema's
+  `gps` field is just a flat, unsegmented list of (lat, lng, t)
+  points — no wave structure at all. `gps_features_from_schema`
+  computes a different, smaller, UNVALIDATED feature set (4 GeoLife-
+  style speed/turn stats) as a stopgap. Swapping to the triplet
+  encoder here would not fix this — it's equally mismatched. Real
+  fix: either get wave/stop segmentation into the schema, or
+  retrain/re-evaluate a model on the GeoLife-style features before
+  trusting any GPS number from this production path.
 """
 from pathlib import Path
 
@@ -17,22 +42,30 @@ from ml.calibration.fusion import fisher_combine
 from ml.calibration.per_rider_threshold import compute_calib_fused_p_values, per_rider_threshold
 from ml.combiner.two_axis import ContextBaseline, classify
 from ml.inference.schema_adapters import (
-    gps_features_from_schema, motion_features_from_schema,
+    gps_features_from_schema, motion_window_sequence_from_schema,
     operational_features_from_schema, touch_stroke_sequence_from_schema,
 )
 from ml.llm.reason_vector import explain
 from ml.models.isolation_baseline import IsolationBaseline
+from ml.models.motion_triplet_encoder import MotionTripletScorer
 from ml.models.touch_triplet_encoder import TouchTripletScorer
 
 TOUCH_WEIGHTS_PATH = str(Path(__file__).resolve().parents[1] / "weights" / "touch_triplet_encoder.pt")
+MOTION_WEIGHTS_PATH = str(Path(__file__).resolve().parents[1] / "weights" / "motion_triplet_encoder.pt")
 
 CONTEXT_THRESHOLD = 0.6
 TARGET_FAR = 0.01  # the product's "~1% false challenge" promise
 
-EXTRACTORS = {
+# Classical signals only (operational, gps) — motion and touch use their
+# triplet encoders (ml/README.md's Phase 2: both won decisively, 0.277 vs
+# 0.440 for motion, 0.352 vs 0.408 for touch).
+CLASSICAL_EXTRACTORS = {
     "operational": operational_features_from_schema,
-    "motion": motion_features_from_schema,
     "gps": gps_features_from_schema,
+}
+EXTRACTORS = {
+    **CLASSICAL_EXTRACTORS,
+    "motion": motion_window_sequence_from_schema,
     "touch": touch_stroke_sequence_from_schema,
 }
 
@@ -53,8 +86,7 @@ class RiderModelBundle:
         bundle = cls()
         bundle.context_baseline = ContextBaseline.from_history(enroll_sessions + calib_sessions)
 
-        for signal in ("operational", "motion", "gps"):
-            extract = EXTRACTORS[signal]
+        for signal, extract in CLASSICAL_EXTRACTORS.items():
             enroll_vecs = [v for s in enroll_sessions if (v := extract(s)) is not None]
             calib_vecs = [v for s in calib_sessions if (v := extract(s)) is not None]
             if len(enroll_vecs) < 5 or len(calib_vecs) < 5:
@@ -62,12 +94,16 @@ class RiderModelBundle:
             model = IsolationBaseline(contamination=contamination).fit(enroll_vecs)
             bundle.scorers[signal] = ConformalScorer(model).calibrate(calib_vecs)
 
-        touch_extract = EXTRACTORS["touch"]
-        touch_enroll = [v for s in enroll_sessions if (v := touch_extract(s)) is not None]
-        touch_calib = [v for s in calib_sessions if (v := touch_extract(s)) is not None]
-        if len(touch_enroll) >= 5 and len(touch_calib) >= 5:
-            touch_model = TouchTripletScorer(weights_path=TOUCH_WEIGHTS_PATH).fit(touch_enroll)
-            bundle.scorers["touch"] = ConformalScorer(touch_model).calibrate(touch_calib)
+        for signal, scorer_cls, weights_path in (
+            ("touch", TouchTripletScorer, TOUCH_WEIGHTS_PATH),
+            ("motion", MotionTripletScorer, MOTION_WEIGHTS_PATH),
+        ):
+            extract = EXTRACTORS[signal]
+            enroll_vecs = [v for s in enroll_sessions if (v := extract(s)) is not None]
+            calib_vecs = [v for s in calib_sessions if (v := extract(s)) is not None]
+            if len(enroll_vecs) >= 5 and len(calib_vecs) >= 5:
+                model = scorer_cls(weights_path=weights_path).fit(enroll_vecs)
+                bundle.scorers[signal] = ConformalScorer(model).calibrate(calib_vecs)
 
         # Per-rider threshold (ml/calibration/per_rider_threshold.py): falls
         # back to the population value when this rider doesn't yet have

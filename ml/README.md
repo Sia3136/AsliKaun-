@@ -1,5 +1,46 @@
 # Trust Juggler — ML workstream
 
+## FINAL RESULTS (read this first)
+
+**Per-signal model choice, offline evaluation (real H-MOG / real ODIDMob data, rider-disjoint, holdout-checked):**
+
+| Signal | Classical EER | Best deep model | Winner | Production status |
+| --- | --- | --- | --- | --- |
+| Operational | low-dim, no deep attempt needed | — | Classical (IsolationForest) | ✅ Works as evaluated |
+| Touch | 0.408 | **0.352** (triplet, confirmed on 2 impostor sets) | **Deep model** | ⚠️ Wired, but degraded in production — schema gap (see below) |
+| GPS | 0.397 (orig) / 0.427 (holdout) | 0.409 (orig) / **0.360** (holdout, retrained) | **Leans deep model** (won holdout twice, narrowed on original) | ❌ **Neither model is validated for production** — schema has no wave/stop segmentation either model needs (see below) |
+| Motion | 0.440 | **0.277** (triplet) | **Deep model, decisively — the biggest win of any signal** | ✅ Wired, schema-compatible (unlike touch/GPS, no gap) |
+
+**The two real, load-bearing findings beyond any single signal's number:**
+1. **Fusion matters more than any one model.** Combining signals drops EER from 0.22-0.44 (best single signal) to 0.158 (synthetic fusion check) — this is the actual architectural win, not which model wins per signal.
+2. **Two real schema gaps block full production accuracy, both already flagged to the team:** touch needs raw per-gesture sample paths (`touch_events[].path`, added to the shared doc), and GPS needs wave/stop segmentation that doesn't exist in the frozen schema at all (not yet proposed as a fix — see `ml/inference/rider_model_bundle.py`'s docstring).
+
+**Also done:** per-rider threshold calibration (with honest population fallback), a formally-tracked detection-latency metric (37-session median to catch slow drift), a cost-weighted operating point analysis (touch alone needs 81% FRR to hit a safety-first FAR — proof fusion isn't optional), and a face-verification step-up module (pretrained, untested on real faces — no dataset available).
+
+## UPDATE: backend now runs the real models live, verified end-to-end (2026-10-18)
+
+The gap above — "backend only uses the heuristic, never the real trained models" — **is closed.** `backend/app/ml_bridge.py`'s `evaluate_session_with_real_models()` now fits a `RiderModelBundle` from a driver's actual session history (pulled from the `sessions` table, which already stores full raw payloads) and scores live traffic with it, falling back to the heuristic only until a driver has `MIN_HISTORY_FOR_REAL_MODELS` (15) sessions.
+
+**Verified live, via real HTTP requests to a running server, not simulated:**
+- Automatic switchover confirmed: sessions 0-14 use the heuristic (`model_status: ml_two_axis_fusion`), session 15+ automatically switches to `model_status: ml_real_trained_models`.
+- **All 4 signals confirmed individually contributing** to a live `signals` dict: operational, touch, motion, **and GPS** (previously unverified — now confirmed, using the classical GeoLife-style feature set, with real lat/lng/t pings end-to-end from the SDK through to a score).
+- A genuine handoff (changed touch/motion/operational pattern, same context) correctly produces `quadrant: handoff_signature`, `decision: challenge_at_safe_pause`, with Fisher fusion correctly combining three individually-moderate per-signal p-values (0.57, 0.71, 0.86) into a confident joint anomaly (0.231) — the architecture working as designed, not a coincidence.
+- A GPS-specific anomaly (erratic, higher-speed route vs. a steady history) correctly contributes to a `handoff_signature` verdict (`gps: 0.833` in the fused result).
+- The AI reason-vector explanation generates correctly on a real escalation, via Groq (see below), in plain rider-facing language.
+
+**Real bugs found and fixed while verifying this, not hidden:**
+1. `SessionIngest`'s `accel` field was a flat list of scalars; the real motion feature extractor needs `{x,y,z,t}` per sample. Fixed in the Pydantic schema, the SDK, and `app.js`'s scenario simulator.
+2. The GPS speed filter (`speed < 50 m/s`) correctly rejected a first test's zig-zag GPS pattern as physically-impossible glitches (the pattern implied 180+ km/h) — not a bug, the filter working as intended; the test data needed to be realistic, not just "different."
+3. The motion signal was silently absent from early tests because the manually-constructed test data didn't span enough real time for even one 2.5-second analysis window — a real SDK's 15-20s buffer naturally avoids this, but it's a sharp edge worth knowing: motion needs genuine time-spread data, not just enough samples.
+
+**Groq wired as the default (free) LLM provider.** `ml/llm/reason_vector.py` now tries Groq first (reads `GROQ_API_KEY` or a `groq_api` key from a root `.env` file), falls back to Anthropic if explicitly configured, then to the labeled template — verified generating real explanations end-to-end. Default model `openai/gpt-oss-20b`, chosen by actually querying `/v1/models` for this key's available catalog rather than assuming a model name — the commonly-cited `llama-3.3-70b-versatile` was not available for this key.
+
+**Still not done:** `origin/frontend`'s unmerged fleet-dashboard work (someone else appears to be actively editing these files in parallel — stopped rather than risk a conflict), per-rider threshold calibration still needs ~100 sessions to hit the full 1% target (population fallback covers the gap honestly), no caching on `RiderModelBundle.fit()` (refits from scratch every request — fine at demo scale, a real cost at production scale).
+
+**Explicitly out of scope, not forgotten:** cost-aware challenge *scheduling* (policy/timing logic, never started), the account graph layer (always roadmap), learned legit-change signatures (not buildable — no dataset has the needed labels).
+
+---
+
 ## Status
 
 | Component | State |

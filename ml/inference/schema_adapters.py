@@ -58,20 +58,35 @@ def operational_features_from_schema(session: dict) -> np.ndarray:
     ])
 
 
-def motion_features_from_schema(session: dict):
-    """Returns the raw array shape ml/features/motion_features.py's
-    session_motion_features() expects (Systime, _, _, X, Y, Z, _), or
-    None if there's not enough accel data."""
-    from ml.features.motion_features import session_motion_features
-
+def _motion_rows_from_schema(session: dict) -> np.ndarray | None:
     accel = session.get("accel", [])
     if len(accel) < 20:
         return None
-    rows = np.array([
+    return np.array([
         [_parse_ts(a["t"]), 0.0, 0.0, a["x"], a["y"], a["z"], 0.0]
         for a in accel
     ])
-    return session_motion_features(rows)
+
+
+def motion_features_from_schema(session: dict):
+    """Aggregated summary for the classical IsolationForest baseline.
+    Unlike GPS, the frozen schema's flat `accel` list is sufficient here
+    — windowing a continuous stream needs no wave/stop segmentation, so
+    this one isn't blocked by the schema gap GPS and touch have."""
+    from ml.features.motion_features import session_motion_features
+
+    rows = _motion_rows_from_schema(session)
+    return None if rows is None else session_motion_features(rows)
+
+
+def motion_window_sequence_from_schema(session: dict):
+    """Per-window SEQUENCE for the motion triplet encoder (if it wins —
+    see ml/README.md), not the aggregated summary above. Same raw accel
+    data, just kept as a sequence instead of collapsed to mean/std."""
+    from ml.features.motion_features import session_motion_window_sequence
+
+    rows = _motion_rows_from_schema(session)
+    return None if rows is None else session_motion_window_sequence(rows)
 
 
 def touch_stroke_sequence_from_schema(session: dict) -> np.ndarray | None:
