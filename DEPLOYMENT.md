@@ -49,11 +49,12 @@ The repository does not currently ship trained `.pt` weights, and `main.py` does
 3. Add the environment variables above and deploy.
 4. Open `https://YOUR-RENDER-SERVICE.onrender.com/health`; expect `{"status":"ok","service":"trust-juggler-api"}`.
 5. Open `/dashboard/index.html` and confirm the built dashboard loads. Its HTML should reference `/dashboard/assets/...`, not `/src/main.tsx`.
-6. Open `/docs` and confirm Swagger loads.
-7. Confirm CORS with the browser frontend origin. Requests from an origin not listed in `TRUST_JUGGLER_FRONTEND_ORIGIN` should not receive an allowed CORS response.
-8. Log in with `POST /v1/admin/login` using the configured admin credentials and use the returned bearer token for `/v1/fleet/scores`.
-9. Use the provisioned driver token in `X-Driver-Token` and submit a test `POST /v1/sessions/ingest`. The first request should return `baseline_established`; a later request for the same driver should be scored.
-10. Confirm the review flow with an escalated test session if needed: `GET /v1/review-queue` and `POST /v1/review-queue/{session_id}/resolve` with the admin bearer token.
+6. Confirm `/dashboard/assets/...` and `/assets/...` image/video URLs return `200`, then open `/auth?mode=login` to confirm the client-side auth screen loads.
+7. Open `/docs` and confirm Swagger loads.
+8. Confirm CORS with the browser frontend origin. Requests from an origin not listed in `TRUST_JUGGLER_FRONTEND_ORIGIN` should not receive an allowed CORS response.
+9. Log in with `POST /v1/admin/login` using the configured admin credentials and use the returned bearer token for `/v1/fleet/scores`.
+10. Use the provisioned driver token in `X-Driver-Token` and submit a test `POST /v1/sessions/ingest`. The first request should return `baseline_established`; a later request for the same driver should be scored.
+11. Confirm the review flow with an escalated test session if needed: `GET /v1/review-queue` and `POST /v1/review-queue/{session_id}/resolve` with the admin bearer token.
 
 Local regression check:
 

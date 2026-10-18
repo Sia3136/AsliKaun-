@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -1225,6 +1225,14 @@ def public_driver_status(driver_id: str) -> dict:
 _DASHBOARD_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if _DASHBOARD_DIR.exists():
     app.mount("/dashboard", StaticFiles(directory=str(_DASHBOARD_DIR), html=True), name="dashboard")
+    app.mount("/assets", StaticFiles(directory=str(_DASHBOARD_DIR / "assets")), name="dashboard-assets")
+
+
+@app.get("/auth", include_in_schema=False)
+def auth_page() -> Any:
+    if _DASHBOARD_DIR.exists():
+        return FileResponse(_DASHBOARD_DIR / "index.html")
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/", include_in_schema=False)
