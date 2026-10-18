@@ -1,0 +1,11 @@
+# Backend API
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+pydantic>=2.8,<3.0
+
+# Runtime ML bridge and two-axis scoring
+numpy>=1.24
+scipy>=1.10
+
+# Optional LLM Reason Vector; the bridge has a deterministic fallback.
+anthropic>=0.34
