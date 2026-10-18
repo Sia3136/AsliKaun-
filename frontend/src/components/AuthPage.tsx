@@ -35,7 +35,7 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
     }
     // The supplied design describes a simulated demo, so keep this handoff local.
     sessionStorage.setItem('tm-auth', 'true');
-    window.location.assign('/dashboard.html');
+    window.location.assign('/fleet-dashboard.html');
   }
 
   return (
