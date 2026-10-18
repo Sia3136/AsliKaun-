@@ -14,6 +14,7 @@ from pathlib import Path
 
 from ml.calibration.conformal import ConformalScorer
 from ml.calibration.fusion import fisher_combine
+from ml.calibration.per_rider_threshold import compute_calib_fused_p_values, per_rider_threshold
 from ml.combiner.two_axis import ContextBaseline, classify
 from ml.inference.schema_adapters import (
     gps_features_from_schema, motion_features_from_schema,
@@ -26,7 +27,7 @@ from ml.models.touch_triplet_encoder import TouchTripletScorer
 TOUCH_WEIGHTS_PATH = str(Path(__file__).resolve().parents[1] / "weights" / "touch_triplet_encoder.pt")
 
 CONTEXT_THRESHOLD = 0.6
-BEHAVIOR_ALPHA = 0.29  # see ml/combiner/two_axis.py's classify() docstring — measured, not assumed
+TARGET_FAR = 0.01  # the product's "~1% false challenge" promise
 
 EXTRACTORS = {
     "operational": operational_features_from_schema,
@@ -40,10 +41,11 @@ class RiderModelBundle:
     def __init__(self):
         self.context_baseline: ContextBaseline | None = None
         self.scorers: dict[str, ConformalScorer] = {}
+        self.threshold_info: dict | None = None
 
     @classmethod
     def fit(cls, enroll_sessions: list[dict], calib_sessions: list[dict],
-            contamination: float = 0.05) -> "RiderModelBundle":
+            contamination: float = 0.05, target_far: float = TARGET_FAR) -> "RiderModelBundle":
         """`enroll_sessions` and `calib_sessions` must be disjoint
         slices of the SAME rider's history, chronologically ordered —
         same discipline as ml/evaluation/splits.py, required to avoid
@@ -66,6 +68,12 @@ class RiderModelBundle:
         if len(touch_enroll) >= 5 and len(touch_calib) >= 5:
             touch_model = TouchTripletScorer(weights_path=TOUCH_WEIGHTS_PATH).fit(touch_enroll)
             bundle.scorers["touch"] = ConformalScorer(touch_model).calibrate(touch_calib)
+
+        # Per-rider threshold (ml/calibration/per_rider_threshold.py): falls
+        # back to the population value when this rider doesn't yet have
+        # enough calibration history to resolve target_far individually.
+        calib_fused_p = compute_calib_fused_p_values(bundle.scorers, calib_sessions, EXTRACTORS)
+        bundle.threshold_info = per_rider_threshold(calib_fused_p, target_far=target_far)
 
         return bundle
 
@@ -93,8 +101,10 @@ class RiderModelBundle:
                     "trust_score": None, "p_values": {}}
 
         beh = fisher_combine(p_values)
-        result = classify(ctx, beh, context_threshold=CONTEXT_THRESHOLD, behavior_alpha=BEHAVIOR_ALPHA)
+        behavior_alpha = self.threshold_info["threshold"] if self.threshold_info else 0.29
+        result = classify(ctx, beh, context_threshold=CONTEXT_THRESHOLD, behavior_alpha=behavior_alpha)
         result["p_values"] = p_values
+        result["threshold_info"] = self.threshold_info
 
         if generate_reason and result["decision"] != "continue":
             reason = explain(session, result, p_values)

@@ -11,3 +11,8 @@ pyod>=2.0
 
 # Optional LLM Reason Vector
 anthropic>=0.34
+
+# Deep models (Phase 2: touch/GPS encoders, face step-up verification)
+torch>=2.0
+torchvision>=0.15
+facenet-pytorch>=2.5

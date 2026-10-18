@@ -85,6 +85,8 @@ def evaluate_signal(
         "pooled_eer": pooled_eer,
         "pooled_auc": pooled_auc,
         "pooled_frr_at_far_1pct": pooled_frr1,
+        "pooled_genuine_scores": pooled_genuine,
+        "pooled_impostor_scores": pooled_impostor,
         "per_rider_mean_eer": mean_eer,
         "per_rider_eer_ci95": (lo, hi),
         "per_rider_results": per_rider,

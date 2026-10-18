@@ -102,3 +102,29 @@ def session_motion_features(accel_data: np.ndarray, min_windows: int = 3) -> np.
     for col in range(W.shape[1]):
         agg.extend([float(np.mean(W[:, col])), float(np.std(W[:, col]))])
     return np.array(agg)
+
+
+def session_motion_window_sequence(accel_data: np.ndarray, min_windows: int = 3) -> np.ndarray | None:
+    """The per-window SEQUENCE (not aggregated into a flat summary) — for
+    sequence models (ml/models/motion_triplet_encoder.py), the same
+    role extract_strokes() plays for touch. session_motion_features()
+    above collapses this into mean/std per feature, which is what the
+    classical per-rider IsolationForest baseline uses; this function
+    keeps the window-by-window shape instead."""
+    if accel_data.size == 0 or accel_data.ndim != 2 or accel_data.shape[0] < 20:
+        return None
+    order = np.argsort(accel_data[:, COL_SYSTIME])
+    data = accel_data[order]
+    t, x, y, z = data[:, COL_SYSTIME], data[:, COL_X], data[:, COL_Y], data[:, COL_Z]
+
+    window_vecs = []
+    for _start, mask in _windows(t):
+        if mask.sum() < 10:
+            continue
+        f = _window_features(t[mask], x[mask], y[mask], z[mask])
+        if f is not None:
+            window_vecs.append(f)
+
+    if len(window_vecs) < min_windows:
+        return None
+    return np.stack(window_vecs).astype(np.float32)

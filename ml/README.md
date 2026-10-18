@@ -116,6 +116,49 @@ Every result above the first few runs was measured against the *same* 18 H-MOG u
 
 **Action needed before backend wires real traffic through this:** either (a) extend `touch_events` so each entry carries a `path: [{x, y, pressure, t}, ...]` of raw samples during the gesture — what the mobile SDK would actually log — or (b) accept that touch effectively degrades to a near-useless signal in production until that extension happens. Similarly, GPS: the frozen schema's flat `gps` point list can't reproduce ODIDMob's per-wave summary fields (rider level, max load, weather), so `gps_features_from_schema` uses a different (GeoLife-style speed/turn-rate) feature set than the one actually evaluated — the measured 0.397 EER does not directly transfer to this path; re-evaluate once real production GPS data exists. Motion works as-is (the schema's flat `accel` list is sufficient once there are enough samples — H-MOG needs 20+, which real sessions should comfortably produce even though the synthetic simulator doesn't).
 
+## Face verification step-up (`ml/models/face_verification.py`)
+
+Pretrained FaceNet (`InceptionResnetV1`, VGGFace2 weights, via `facenet-pytorch`) + MTCNN face detection/alignment. **Not a continuous signal** — only fires when the two-axis combiner already decided to escalate and wants a decisive check, per the original plan's "optional selfie step-up check" (already scoped from day one; this just builds it). Pipeline confirmed working: pretrained weights load, and a no-face image correctly returns `None` rather than a false embedding.
+
+**No accuracy number is reported here, deliberately** — there's no real, consented face dataset in this project to evaluate against. `FaceStepUpVerifier.verify()` returns a similarity score and a **recommendation** (`pass` / `human_review`), never a final automated decision — a failed match must route to human review, never an automatic ban, per the fairness concerns already in the edge-case matrix (published research shows facial-verification accuracy varies by skin tone; never penalize on a failed match alone).
+
+## ML tradeoffs: real-time, latency, and evaluation-metric fit (full discussion in chat — summarized here for the record)
+
+- **Model inference is never the latency bottleneck** (microseconds to low-milliseconds for every model here). **Data availability per signal is the real constraint**: operational is instant, touch is near-real-time (the triplet encoder scores per-stroke, not per-session — an underrated advantage beyond its EER win), motion needs ~2.5s windows, but **GPS can only score after a full delivery wave completes** — it is structurally not a real-time signal in its current form, which conflicts with the plan's own "catch it within the session it happens in" goal. Not fixed; a real design decision for whoever builds the real-time path.
+- **Scalability tradeoff, in the deep model's favor:** the touch triplet encoder is one shared frozen model + a cheap per-rider centroid. The classical `IsolationForest` needs a separate fitted model per rider — fine at 18 riders, a real storage/refit cost at scale.
+- **EER is the standard metric but may be the wrong one to optimize for here**: it weighs a false-reject (friction) and false-accept (a missed handoff) equally, but the plan's own safety framing says a false-accept is the far costlier mistake. `FRR@FAR=1%` (already reported) is the more business-relevant number and should drive model choice over EER.
+- **Gaps in what's measured**: detection latency (named as a metric in the original plan) is spot-checked per red-team scenario but not formally tracked across the evaluation cohort; no cost-weighted operating point exists at all, despite differentiator #5 ("cost-aware challenge timing") implying one should.
+
+## Per-rider threshold calibration (`ml/calibration/per_rider_threshold.py`)
+
+Delivers on the plan's "calibrate each rider's challenge threshold on their own history" promise — `RiderModelBundle` now computes a genuinely per-rider operating threshold from each rider's own calibration sessions, instead of one pooled global value for everyone.
+
+**Honest constraint, stated rather than hidden:** resolving a target false-accept rate needs roughly `1/target_far` calibration sessions (99 for 1%, 19 for 5%). Real riders in our evaluation data (H-MOG, ODIDMob) typically have 10-20 calibration sessions — **not enough to individually resolve the plan's "~1% false challenge" promise yet.** Below the resolvable threshold, this falls back to the population-pooled value (0.29) with an explicit note explaining why, the same cold-start principle already in the edge-case matrix. Verified both paths work: tested with 20 calibration sessions (correctly falls back, explains the shortfall) and 150 (correctly resolves its own threshold). As real production history accumulates per rider, this automatically sharpens from the population default toward the individually-calibrated value — no code change needed, just more data.
+
+## Detection latency as a real metric (`ml/scripts/evaluate_detection_latency.py`)
+
+The original plan named detection latency as a metric to report; until now it was only spot-checked for one rider pair per scenario. Ran it across 15 synthetic rider pairs for both attacker types:
+
+| Scenario | Censored (never caught) | Median latency | IQR |
+| --- | --- | --- | --- |
+| Lazy renter (full handoff) | 0/15 | 0 sessions | [0, 0] |
+| Slow-drift renter | 0/15 | 37 sessions | [34, 47] |
+
+**A real bug caught building this:** the first version measured slow-drift latency using the single-session combiner, the same way as lazy-renter — and got a nonsense median of 1 session. That's not detection, it's noise: at session 0-1 a slow-drift attack is still ~100% owner behavior, so an early single-session flag is a false positive, not a catch. The frozen-anchor detector (`ml/redteam/detectors.py`) is the actual mechanism designed to catch cumulative drift, and measuring against it gives the 37-session median above — consistent with the single-pair spot-check (session 35/60) already in this README. **Lesson: always check which detection mechanism a scenario is actually designed to be caught by before measuring latency against it** — defaulting to "the combiner" for every scenario silently reports noise as a result.
+
+## Cost-weighted operating point (`ml/evaluation/cost_model.py`)
+
+EER treats a false-accept (missed handoff) and a false-reject (unnecessary challenge) as equally costly — not true per the plan's own safety framing. Ran a cost-weighted threshold search on the touch triplet encoder's real pooled scores (strongest model available):
+
+| Cost ratio (missed handoff : false challenge) | Threshold | FAR | FRR |
+| --- | --- | --- | --- |
+| 1:1 (≈ EER) | 0.201 | 0.438 | 0.208 |
+| 5:1 | 0.801 | 0.013 | **0.812** |
+| 10:1 | 0.801 | 0.013 | 0.812 |
+| 50:1 | 0.801 | 0.013 | 0.812 |
+
+**Real finding, not just a mechanical exercise:** once a missed handoff is weighted even moderately higher (5:1+), the optimal threshold jumps to catching nearly all impostors (FAR 1.3%) — but at the cost of challenging **81% of honest sessions**. That's not a usable product on touch alone, at any cost ratio past 1:1. This is the concrete, numeric reason fusion isn't optional: the synthetic fusion check already showed combining signals drops EER from ~0.22-0.44 (any single signal) to 0.158 — this cost analysis shows WHY that matters beyond the EER number itself: fusion is what makes a safety-prioritized operating point survivable for honest riders, not just a nicer summary statistic. Illustrative cost ratios only (not sourced from real incident/friction-cost data) — the direction of the finding is real, the exact ratio isn't.
+
 ## Known issues to fix next
 
 1. **Mahalanobis is unreliable for high-dimensional signals (touch, motion) at this enrollment-set size.** Confirmed by the touch result above (AUC 0.454). Use IsolationForest for those; Mahalanobis stays viable for GPS (23 features) and operational (3 features), where dimensionality is much lower relative to enrollment size.

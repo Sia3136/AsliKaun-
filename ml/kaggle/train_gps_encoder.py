@@ -41,10 +41,12 @@ EVAL_COHORT_IDS = {
 }
 
 MIN_WAVES_PER_COURIER = 10
-MAX_TRAINING_COURIERS = 400
+MAX_TRAINING_COURIERS = 800  # v2 retrain: was 400 — the first run's loss (GPS held-out
+# result was inconclusive, see ml/README.md) is suspected to be under-training, not a
+# wrong approach; bumped both training size and epoch count to test that directly.
 HIDDEN_DIM, EMBEDDING_DIM = 64, 32
 BATCH_COURIERS = 32  # couriers per training step -> 32 anchor/positive/negative triplets
-EPOCHS = 30
+EPOCHS = 80  # v2 retrain: was 30
 STEPS_PER_EPOCH = 100
 LR = 1e-3
 MARGIN = 0.2

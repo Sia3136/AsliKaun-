@@ -27,6 +27,7 @@ enroll, calib = history[:40], history[40:]
 print("Fitting RiderModelBundle...")
 bundle = RiderModelBundle.fit(enroll, calib)
 print(f"Signals that got a model: {list(bundle.scorers.keys())}")
+print(f"Per-rider threshold: {bundle.threshold_info}")
 assert "operational" in bundle.scorers, "operational signal should always be present for synthetic data"
 assert "touch" in bundle.scorers, "touch signal should be present (rider_sim provides pressure/area/duration)"
 assert "motion" not in bundle.scorers, "motion should be SKIPPED (rider_sim only gives 1 accel sample/session)"
