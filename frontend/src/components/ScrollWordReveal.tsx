@@ -3,28 +3,26 @@ import React, { useEffect, useRef, useState } from 'react';
 interface WordDef {
   text: string;
   isSpecial?: boolean;
+  breakAfter?: boolean;
 }
 
 const WORDS: WordDef[] = [
-  { text: 'Agents' },
-  { text: 'are' },
-  { text: 'getting' },
-  { text: 'smarter' },
-  { text: 'every' },
-  { text: 'month.' },
   { text: 'The' },
-  { text: 'gaps' },
-  { text: 'between', isSpecial: true },
-  { text: 'them' },
-  { text: 'are' },
-  { text: 'where' },
-  { text: 'work' },
-  { text: 'quietly' },
-  { text: 'breaks.' },
-  { text: 'TrustMesh' },
-  { text: 'closes' },
-  { text: 'those' },
-  { text: 'gaps.' },
+  { text: 'account' },
+  { text: 'is' },
+  { text: 'verified.' },
+  { text: 'The' },
+  { text: 'identity' },
+  { text: "isn't" },
+  { text: 'guaranteed.', isSpecial: true, breakAfter: true },
+  { text: 'Continuous' },
+  { text: 'identity' },
+  { text: 'intelligence' },
+  { text: 'for' },
+  { text: 'a' },
+  { text: 'world' },
+  { text: 'beyond' },
+  { text: 'passwords.' },
 ];
 
 export const ScrollWordReveal: React.FC = () => {
@@ -68,18 +66,21 @@ export const ScrollWordReveal: React.FC = () => {
               const isActive = wordActivation > 0.1 && wordActivation < 0.95;
 
               return (
-                <span
-                  key={i}
-                  className={`reveal-word ${w.isSpecial ? 'special-italic' : ''} ${isLit ? 'lit' : ''} ${isActive ? 'active' : ''}`}
-                  style={{
-                    opacity: 0.18 + wordActivation * 0.82,
-                    filter: isLit || isActive
-                      ? `drop-shadow(0 0 ${w.isSpecial ? 12 : 18}px ${w.isSpecial ? 'rgba(255, 122, 61, 0.65)' : 'rgba(255, 255, 255, 0.7)'})`
-                      : 'none',
-                  }}
-                >
-                  {w.text}{' '}
-                </span>
+                <React.Fragment key={i}>
+                  <span
+                    className={`reveal-word ${w.isSpecial ? 'special-italic' : ''} ${isLit ? 'lit' : ''} ${isActive ? 'active' : ''}`}
+                    style={{
+                      opacity: 0.18 + wordActivation * 0.82,
+                      filter: isLit || isActive
+                        ? `drop-shadow(0 0 ${w.isSpecial ? 12 : 18}px ${w.isSpecial ? 'rgba(255, 122, 61, 0.65)' : 'rgba(255, 255, 255, 0.7)'})`
+                        : 'none',
+                    }}
+                  >
+                    {w.text}
+                  </span>
+                  {i < WORDS.length - 1 ? ' ' : ''}
+                  {w.breakAfter && <br className="reveal-line-break" />}
+                </React.Fragment>
               );
             })}
           </p>

@@ -1988,6 +1988,12 @@ footer {
   padding: 0 0.04em;
 }
 
+.reveal-line-break {
+  display: block;
+  content: "";
+  margin-top: 0.35em;
+}
+
 [data-theme="light"] .scroll-reveal-text {
   color: #0c1527;
 }

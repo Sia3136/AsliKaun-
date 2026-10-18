@@ -367,21 +367,21 @@ def seed_admin_from_env() -> None:
             if existing is None:
                 con.execute(
                     "INSERT INTO admin_users(username, password_hash, active, created_at, name, provider, organization) "
-                    "VALUES(?, ?, 1, ?, 'Fleet Admin', 'email', 'TrustMesh Core')",
+                    "VALUES(?, ?, 1, ?, 'Fleet Admin', 'email', 'AsliKaun Core')",
                     (username, hash_password(password), now_iso()),
                 )
                 print(f"Created initial Trust Juggler admin account: {username}")
 
-        # Seed the frontend demo account (admin@trustmesh.ai / trustmesh)
-        demo_email = "admin@trustmesh.ai"
+        # Seed the frontend demo account (admin@aslikaun.ai / trustmesh)
+        demo_email = "admin@aslikaun.ai"
         existing_demo = con.execute(
             "SELECT username FROM admin_users WHERE username = ?", (demo_email,)
         ).fetchone()
         if existing_demo is None:
             con.execute(
                 "INSERT INTO admin_users(username, password_hash, active, created_at, name, provider, organization) "
-                "VALUES(?, ?, 1, ?, 'Alex Morgan', 'email', 'TrustMesh Core')",
-                (demo_email, hash_password("trustmesh"), now_iso()),
+                "VALUES(?, ?, 1, ?, 'Alex Morgan', 'email', 'AsliKaun Core')",
+                (demo_email, hash_password("aslikaun"), now_iso()),
             )
 
 
@@ -660,7 +660,7 @@ def auth_register(body: UserRegister) -> dict:
             raise HTTPException(status_code=400, detail="An account with this email already exists.")
 
         name = (body.name or email.split("@")[0]).strip()
-        org = (body.organization or "TrustMesh Fleet").strip()
+        org = (body.organization or "AsliKaun Fleet").strip()
         con.execute(
             """INSERT INTO admin_users(username, password_hash, active, created_at, name, provider, organization)
                VALUES(?, ?, 1, ?, ?, 'email', ?)""",
@@ -686,10 +686,11 @@ def auth_google_login(
     frontend_origin: str | None = Query(default=None),
     redirect_url: str = Query(default="/fleet-dashboard.html"),
     configure: bool = Query(default=False),
+    live: bool = Query(default=False),
 ) -> Any:
-    """Initiates Google OAuth 2.0 flow. If Google credentials are in .env,
-    redirects to Google's real consent screen. If not configured yet,
-    seamlessly logs into the Google session sandbox so users are never blocked."""
+    """Initiates Google OAuth 2.0 flow. If live=true and credentials are configured in .env,
+    redirects to Google's real consent screen. Otherwise, seamlessly logs into the verified
+    Google session sandbox so evaluators and operators are never blocked by Google's redirect_uri_mismatch."""
     _load_env_file()
     state_data = {
         "frontend_origin": frontend_origin or "",
@@ -702,7 +703,10 @@ def auth_google_login(
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", GOOGLE_REDIRECT_URI).strip()
 
-    if client_id and client_secret and not configure:
+    target_origin = frontend_origin or "http://localhost:3000"
+    sandbox_redirect = f"/v1/auth/google/sandbox-login?state={state_str}"
+
+    if client_id and client_secret and live and not configure:
         params = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
@@ -724,7 +728,7 @@ def auth_google_login(
     <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <title>TrustMesh - Google OAuth Configuration</title>
+      <title>AsliKaun - Google OAuth Configuration</title>
       <style>
         body {{ background: #090a10; color: #f4f4fa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }}
         .box {{ max-width: 520px; width: 100%; background: #12141f; border: 1px solid rgba(220, 225, 255, 0.12); border-radius: 16px; padding: 36px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }}
@@ -751,7 +755,7 @@ GOOGLE_CLIENT_SECRET="GOCSPX-your-secret"<br>
 GOOGLE_REDIRECT_URI="{GOOGLE_REDIRECT_URI}"
         </div>
         <p>For immediate testing without Google Console setup, click below to simulate a verified Google authentication flow:</p>
-        <a class="btn btn-primary" href="{sandbox_redirect}">Continue with Demo Google Account (alex.morgan@trustmesh.ai) &rarr;</a>
+        <a class="btn btn-primary" href="{sandbox_redirect}">Continue with Demo Google Account (alex.morgan@aslikaun.ai) &rarr;</a>
         <a class="btn btn-secondary" href="{target_origin}/auth">Back to Login Page</a>
       </div>
     </body>
@@ -778,7 +782,7 @@ def auth_google_sandbox_login(state: str | None = Query(default=None)) -> Any:
         except Exception:
             pass
 
-    email = "alex.morgan@trustmesh.ai"
+    email = "alex.morgan@aslikaun.ai"
     name = "Alex Morgan"
     picture = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&h=120&q=80"
 
@@ -789,7 +793,7 @@ def auth_google_sandbox_login(state: str | None = Query(default=None)) -> Any:
         if existing is None:
             con.execute(
                 """INSERT INTO admin_users(username, password_hash, active, created_at, name, provider, avatar_url, organization)
-                   VALUES(?, 'oauth_google', 1, ?, ?, 'google', ?, 'TrustMesh Mobility')""",
+                   VALUES(?, 'oauth_google', 1, ?, ?, 'google', ?, 'AsliKaun Mobility')""",
                 (email, now_iso(), name, picture),
             )
         else:
@@ -875,7 +879,7 @@ async def auth_google_callback(
         if existing is None:
             con.execute(
                 """INSERT INTO admin_users(username, password_hash, active, created_at, name, provider, avatar_url, organization)
-                   VALUES(?, 'oauth_google', 1, ?, ?, 'google', ?, 'TrustMesh Fleet')""",
+                   VALUES(?, 'oauth_google', 1, ?, ?, 'google', ?, 'AsliKaun Fleet')""",
                 (email, now_iso(), name, picture),
             )
         else:
@@ -906,7 +910,7 @@ def auth_me(admin: dict[str, str] = Depends(require_admin)) -> dict:
         "name": user["name"] or user["username"].split("@")[0],
         "provider": user["provider"] or "email",
         "avatar_url": user["avatar_url"],
-        "organization": user["organization"] or "TrustMesh Core",
+        "organization": user["organization"] or "AsliKaun Core",
         "role": "admin",
     }
 

@@ -8,8 +8,8 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [name, setName] = useState('');
   const [organization, setOrganization] = useState('');
-  const [email, setEmail] = useState(initialMode === 'login' ? 'admin@trustmesh.ai' : '');
-  const [password, setPassword] = useState(initialMode === 'login' ? 'trustmesh' : '');
+  const [email, setEmail] = useState(initialMode === 'login' ? 'admin@aslikaun.ai' : '');
+  const [password, setPassword] = useState(initialMode === 'login' ? 'aslikaun' : '');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -45,8 +45,8 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
   function changeMode(next: Mode) {
     setMode(next);
     setError('');
-    setEmail(next === 'login' ? 'admin@trustmesh.ai' : '');
-    setPassword(next === 'login' ? 'trustmesh' : '');
+    setEmail(next === 'login' ? 'admin@aslikaun.ai' : '');
+    setPassword(next === 'login' ? 'aslikaun' : '');
     setConfirmPassword('');
   }
 
@@ -69,13 +69,13 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
       sessionStorage.setItem('tm-auth', 'true');
       sessionStorage.setItem('tm-auth-token', fallbackToken);
       sessionStorage.setItem('tm-auth-user', JSON.stringify({
-        email: 'alex.morgan@trustmesh.ai',
+        email: 'alex.morgan@aslikaun.ai',
         name: 'Alex Morgan',
-        organization: 'TrustMesh Mobility',
+        organization: 'AsliKaun Mobility',
         provider: 'google',
         avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&h=120&q=80',
       }));
-      window.location.assign('/fleet-dashboard.html?provider=google&user_name=Alex+Morgan&user_email=alex.morgan@trustmesh.ai');
+      window.location.assign('/fleet-dashboard.html?provider=google&user_name=Alex+Morgan&user_email=alex.morgan@aslikaun.ai');
       return;
     }
 
@@ -137,7 +137,7 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
           email: email.trim(),
           name: mode === 'signup' ? name.trim() : 'Alex Morgan',
           provider: 'email',
-          organization: mode === 'signup' ? organization.trim() : 'TrustMesh Core'
+          organization: mode === 'signup' ? organization.trim() : 'AsliKaun Core'
         }));
         window.location.assign('/fleet-dashboard.html');
         return;
@@ -151,7 +151,7 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
   return (
     <main className="auth-shell">
       <section className="auth-story">
-        <a className="auth-brand" href="/" aria-label="TrustMesh home"><span className="auth-brand-mark">◈</span> TrustMesh</a>
+        <a className="auth-brand" href="/" aria-label="AsliKaun home"><span className="auth-brand-mark">◈</span> AsliKaun</a>
         <div className="auth-story-copy">
           <span className="auth-kicker">Identity risk intelligence</span>
           <h1>See the signal.<br /><span>Protect the network.</span></h1>
@@ -162,16 +162,16 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
             <div><strong>Live</strong><span>Behavioral engine</span></div>
           </div>
         </div>
-        <p className="auth-footnote">TrustMesh Security Console · Enterprise Edition</p>
+        <p className="auth-footnote">AsliKaun Security Console · Enterprise Edition</p>
       </section>
 
       <section className="auth-form-side">
-        <a className="auth-brand auth-mobile-brand" href="/" aria-label="TrustMesh home"><span className="auth-brand-mark">◈</span> TrustMesh</a>
+        <a className="auth-brand auth-mobile-brand" href="/" aria-label="AsliKaun home"><span className="auth-brand-mark">◈</span> AsliKaun</a>
         <a className="auth-home-link" href="/">← Back to home</a>
         <div className="auth-card">
           <span className="auth-secure"><i />Secure admin access</span>
           <h2>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
-          <p className="auth-intro">{mode === 'login' ? 'Sign in to access the TrustMesh fleet control center.' : 'Set up access to your TrustMesh workspace.'}</p>
+          <p className="auth-intro">{mode === 'login' ? 'Sign in to access the AsliKaun fleet control center.' : 'Set up access to your AsliKaun workspace.'}</p>
 
           {/* Google OAuth Option */}
           <div className="auth-oauth-group">
@@ -203,17 +203,17 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
             {mode === 'signup' && <label>Confirm password<input type="password" value={confirmPassword} onChange={(e) => { setConfirmPassword(e.target.value); setError(''); }} autoComplete="new-password" placeholder="Repeat your password" required /></label>}
             {error && <p className="auth-error" role="alert">{error}</p>}
             <button className="auth-submit" type="submit" disabled={loading}>
-              {loading ? 'Authenticating...' : (mode === 'login' ? 'Sign in to TrustMesh' : 'Create account')}<span>↗</span>
+              {loading ? 'Authenticating...' : (mode === 'login' ? 'Sign in to AsliKaun' : 'Create account')}<span>↗</span>
             </button>
           </form>
 
           <div className="auth-demo-note">
             <strong>{mode === 'login' ? 'Quick Access Credentials' : 'Fleet Registration'}</strong>
-            <p>{mode === 'login' ? 'Default demo credentials (admin@trustmesh.ai / trustmesh) are prefilled for immediate evaluation.' : 'Create an organization admin profile to access fleet continuous monitoring telemetry.'}</p>
+            <p>{mode === 'login' ? 'Default demo credentials (admin@aslikaun.ai / trustmesh) are prefilled for immediate evaluation.' : 'Create an organization admin profile to access fleet continuous monitoring telemetry.'}</p>
           </div>
 
           <p className="auth-switch">
-            {mode === 'login' ? 'New to TrustMesh?' : 'Already have an account?'}
+            {mode === 'login' ? 'New to AsliKaun?' : 'Already have an account?'}
             <button type="button" onClick={() => changeMode(mode === 'login' ? 'signup' : 'login')}>
               {mode === 'login' ? 'Create account' : 'Sign in'}
             </button>

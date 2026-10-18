@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Partner Delivery App — Powered by TrustMesh SDK</title>
-  <meta name="description" content="Simulated on-demand delivery partner app showing plug-and-play TrustMesh Telemetry SDK integration.">
+  <title>Partner Delivery App — Powered by AsliKaun SDK</title>
+  <meta name="description" content="Simulated on-demand delivery partner app showing plug-and-play AsliKaun Telemetry SDK integration.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -266,7 +266,7 @@
       <span>9:41 AM</span>
       <div class="sdk-badge">
         <span class="sdk-dot"></span>
-        TrustMesh SDK Active
+        AsliKaun SDK Active
       </div>
       <span>5G • 98%</span>
     </div>
@@ -318,7 +318,7 @@
       <!-- SDK Background Sensor Telemetry Tray -->
       <div class="telemetry-tray">
         <div class="tray-title">
-          <span>TrustMesh Telemetry Collector</span>
+          <span>AsliKaun Telemetry Collector</span>
           <span id="flush-counter">Auto-Flush in 15s</span>
         </div>
         <div class="telemetry-grid">
@@ -375,13 +375,13 @@
     </div>
   </div>
 
-  <!-- TrustMesh Embeddable SDK -->
+  <!-- AsliKaun Embeddable SDK -->
   <script src="trustmesh-sdk.js"></script>
 
   <script>
-    // Initialize the TrustMesh SDK as a third-party developer would
+    // Initialize the AsliKaun SDK as a third-party developer would
     const currentDriver = 'rider-001';
-    TrustMesh.init({
+    AsliKaun.init({
       driverId: currentDriver,
       endpoint: window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
         ? (window.location.port === '8000' ? '' : 'http://127.0.0.1:8000')
@@ -400,21 +400,21 @@
     const verdictDecision = document.getElementById('verdict-decision');
 
     // Start order offer timer when card appears
-    TrustMesh.recordOrderOffer();
+    AsliKaun.recordOrderOffer();
 
     // Accept Order button interaction
     btnAccept.addEventListener('click', async () => {
       // 1. SDK captures the exact reaction latency
-      const latency = TrustMesh.recordOrderAccept();
+      const latency = AsliKaun.recordOrderAccept();
       dispLatency.textContent = latency + ' ms';
-      dispTouch.textContent = (TrustMesh.state.touchBuffer.length) + ' gestures';
+      dispTouch.textContent = (AsliKaun.state.touchBuffer.length) + ' gestures';
 
       btnAccept.textContent = 'Order Accepted!';
       btnAccept.classList.add('accepted');
       orderCard.classList.remove('incoming');
 
       // 2. Immediately flush telemetry to backend API
-      const result = await TrustMesh.flush();
+      const result = await AsliKaun.flush();
       if (result) {
         updateVerdict(result);
       }
@@ -424,7 +424,7 @@
         btnAccept.textContent = 'Accept Order (Tap Now)';
         btnAccept.classList.remove('accepted');
         orderCard.classList.add('incoming');
-        TrustMesh.recordOrderOffer();
+        AsliKaun.recordOrderOffer();
       }, 4000);
     });
 
@@ -438,46 +438,46 @@
       verdictDecision.textContent = data.decision;
     }
 
-    // Listen for global TrustMesh events
+    // Listen for global AsliKaun events
     window.addEventListener('trustmesh:verdict', (e) => {
       updateVerdict(e.detail);
     });
 
     // Test scenario triggers
     document.getElementById('btn-sim-honest').onclick = () => {
-      TrustMesh.config.driverId = 'rider-001';
-      TrustMesh.config.deviceId = 'phone-A';
-      TrustMesh.recordTelemetry({
+      AsliKaun.config.driverId = 'rider-001';
+      AsliKaun.config.deviceId = 'phone-A';
+      AsliKaun.recordTelemetry({
         accel: [0.22, 0.25, 0.23, 0.24],
         gyro: [0.11, 0.12, 0.10],
         touch: [{ type: 'tap', pressure: 0.45, area: 280, duration_ms: 110, t: Date.now() }],
         acceptLatencyMs: 780
       });
-      TrustMesh.flush();
+      AsliKaun.flush();
     };
 
     document.getElementById('btn-sim-handoff').onclick = () => {
-      TrustMesh.config.driverId = 'rider-001';
-      TrustMesh.config.deviceId = 'phone-A'; // Same phone, strange behavior
-      TrustMesh.recordTelemetry({
+      AsliKaun.config.driverId = 'rider-001';
+      AsliKaun.config.deviceId = 'phone-A'; // Same phone, strange behavior
+      AsliKaun.recordTelemetry({
         accel: [2.8, 3.2, 2.9, 3.4],
         gyro: [1.8, 2.1, 1.9],
         touch: [{ type: 'tap', pressure: 0.95, area: 550, duration_ms: 380, t: Date.now() }],
         acceptLatencyMs: 4600
       });
-      TrustMesh.flush();
+      AsliKaun.flush();
     };
 
     document.getElementById('btn-sim-newphone').onclick = () => {
-      TrustMesh.config.driverId = 'rider-001';
-      TrustMesh.config.deviceId = 'phone-NEW-IPHONE15'; // New phone, normal behavior
-      TrustMesh.recordTelemetry({
+      AsliKaun.config.driverId = 'rider-001';
+      AsliKaun.config.deviceId = 'phone-NEW-IPHONE15'; // New phone, normal behavior
+      AsliKaun.recordTelemetry({
         accel: [0.22, 0.25, 0.23],
         gyro: [0.11, 0.12],
         touch: [{ type: 'tap', pressure: 0.48, area: 290, duration_ms: 115, t: Date.now() }],
         acceptLatencyMs: 810
       });
-      TrustMesh.flush();
+      AsliKaun.flush();
     };
   </script>
 </body>

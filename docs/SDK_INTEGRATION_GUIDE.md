@@ -1,4 +1,4 @@
-# TrustMesh Telemetry SDK — Developer Integration Guide
+# AsliKaun Telemetry SDK — Developer Integration Guide
 
 > **Continuous Behavioral Authentication for On-Demand Delivery & Gig Platforms**  
 > Embed continuous biometric verification into your driver-facing apps in minutes. Drop it in like Shopify Analytics or Stripe.js.
@@ -6,13 +6,13 @@
 ---
 
 ## 1. Overview & Value Proposition
-TrustMesh delivers background identity intelligence without disruptive, mid-ride facial recognition. When an authorized account is rented, sold, or shared with an unverified third party, TrustMesh detects the shift in behavioral biometrics (touch dynamics, order acceptance cadence, motion signatures) and alerts your operations team in real time.
+AsliKaun delivers background identity intelligence without disruptive, mid-ride facial recognition. When an authorized account is rented, sold, or shared with an unverified third party, AsliKaun detects the shift in behavioral biometrics (touch dynamics, order acceptance cadence, motion signatures) and alerts your operations team in real time.
 
 ```
 ┌─────────────────────────────────┐        ┌───────────────────────────────┐
 │     Driver App (iOS/Android)    │        │      Trust Juggler API        │
 │                                 │        │                               │
-│  [TrustMesh Driver SDK]         │───────>│  POST /v1/sessions/ingest     │
+│  [AsliKaun Driver SDK]         │───────>│  POST /v1/sessions/ingest     │
 │  - Motion & Vibration           │ Stream │  - Split-Conformal Scoring    │
 │  - Touch Pressure & Cadence     │        │  - Two-Axis Matrix Evaluation │
 │  - Order Latency Timers         │        │  - Dual-Timescale Baselines   │
@@ -32,15 +32,15 @@ TrustMesh delivers background identity intelligence without disruptive, mid-ride
 
 ## 2. Quickstart: 2-Line Embed (Shopify-Style)
 
-Add the TrustMesh collector script to your delivery partner web or hybrid mobile view:
+Add the AsliKaun collector script to your delivery partner web or hybrid mobile view:
 
 ```html
-<!-- 1. Include TrustMesh SDK -->
+<!-- 1. Include AsliKaun SDK -->
 <script src="https://cdn.trustjuggler.com/trustmesh-sdk.js"></script>
 
 <!-- 2. Initialize with your authenticated driver ID -->
 <script>
-  TrustMesh.init({
+  AsliKaun.init({
     driverId: "rider-9482",
     endpoint: "https://api.yourcompany.com",
     zone: "Mumbai-Andheri",
@@ -57,14 +57,14 @@ For high-confidence detection, hook into your app's order dispatch and acceptanc
 
 ```javascript
 // 1. When an incoming order is displayed on the rider's screen:
-TrustMesh.recordOrderOffer();
+AsliKaun.recordOrderOffer();
 
 // 2. When the rider taps to accept the order:
-const latencyMs = TrustMesh.recordOrderAccept();
+const latencyMs = AsliKaun.recordOrderAccept();
 console.log(`Accepted in ${latencyMs} ms`);
 
 // 3. Immediately transmit telemetry on order confirmation:
-await TrustMesh.flush();
+await AsliKaun.flush();
 ```
 
 ---
@@ -75,11 +75,11 @@ await TrustMesh.flush();
 ```typescript
 import { useEffect } from 'react';
 import { accelerometer, gyroscope } from 'react-native-sensors';
-import TrustMesh from '@trustmesh/react-native-sdk';
+import AsliKaun from '@trustmesh/react-native-sdk';
 
 export function useDriverTelemetry(driverId: string) {
   useEffect(() => {
-    TrustMesh.init({
+    AsliKaun.init({
       driverId,
       endpoint: 'https://api.yourcompany.com',
       autoFlushIntervalMs: 20000,
@@ -87,7 +87,7 @@ export function useDriverTelemetry(driverId: string) {
 
     const subAccel = accelerometer.subscribe(({ x, y, z }) => {
       const mag = Math.sqrt(x * x + y * y + z * z);
-      TrustMesh.recordTelemetry({ accel: [mag] });
+      AsliKaun.recordTelemetry({ accel: [mag] });
     });
 
     return () => {
@@ -189,10 +189,10 @@ Content-Type: application/json
 Allow riders to declare hardware upgrades or city relocations in advance to bypass false alerts:
 
 ```javascript
-await TrustMesh.declareChange({
+await AsliKaun.declareChange({
   device_id: "phone-new-iphone-15",
   zone: "Mumbai-BKC",
   reason: "Upgraded phone and moved delivery zones"
 });
 ```
-*Result*: When the new phone connects, TrustMesh verifies behavioral biometrics against the owner's profile and silently re-baselines without locking the rider out.
+*Result*: When the new phone connects, AsliKaun verifies behavioral biometrics against the owner's profile and silently re-baselines without locking the rider out.

@@ -10,7 +10,7 @@ export const ModelPerformanceScreen: React.FC = () => {
         </div>
         <h1 className="text-2xl font-bold text-[#0b1c30] mt-1">ML Inference Engine Health</h1>
         <p className="text-xs text-[#565e74] mt-1">
-          Real-time metrics on the TrustMesh neural classifier, biometric autoencoders, and geospatial edge anomaly gates.
+          Real-time metrics on the AsliKaun neural classifier, biometric autoencoders, and geospatial edge anomaly gates.
         </p>
       </div>
 

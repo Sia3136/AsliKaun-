@@ -10,7 +10,7 @@ export const Navbar: React.FC<NavbarProps> = ({ theme, onToggleTheme }) => {
     <header className="site-header" role="banner">
       <div className="site-header-inner">
         {/* Brand Left */}
-        <a className="brand-link" href="#top" aria-label="TrustMesh Home">
+        <a className="brand-link" href="#top" aria-label="AsliKaun Home">
           <div className="brand-mark" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="tm-ring-logo">
               <circle
@@ -30,15 +30,14 @@ export const Navbar: React.FC<NavbarProps> = ({ theme, onToggleTheme }) => {
               </defs>
             </svg>
           </div>
-          <span className="brand-name">TrustMesh</span>
+          <span className="brand-name">AsliKaun</span>
         </a>
 
         {/* Center Nav Links */}
         <nav className="nav-links" aria-label="Primary Navigation">
           <a href="#problem" className="nav-item">How it works</a>
           <a href="#approach" className="nav-item">Platform</a>
-          <a href="#pipeline" className="nav-item">Customers</a>
-          <a href="/dashboard.html" className="nav-item">Docs</a>
+          <a href="#pipeline" className="nav-item">Why AsliKaun?</a>
         </nav>
 
         {/* Right Action: Theme toggle + Pill Button */}
