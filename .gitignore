@@ -36,6 +36,14 @@ data/
 *.onnx
 *.bin
 
+# Node & Frontend dependencies and build artifacts
+node_modules/
+dist/
+*.log
+.env*
+!.env.example
+meridian-assets/
+
 # OS and Editor metadata
 .DS_Store
 Thumbs.db
@@ -47,4 +55,3 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
-

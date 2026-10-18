@@ -1,28 +1,34 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Trust Juggler — Multi-Modal Continuous Rider Trust Dashboard</title>
+  <title>TrustMesh — Continuous Identity & Fleet Operations Command</title>
   <meta name="description" content="Continuous behavioral authentication and account-sharing detection platform for delivery fleets. Two-axis trust fusion with explainable reason vectors.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2306192f'/%3E%3Cpath d='M9 23V9h3.6l7.4 9.6V9H23v14h-3.6L12 13.4V23H9z' fill='%2300e5ff'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script>
+    // Synchronize theme with TrustMesh landing page preference
+    (function() {
+      const saved = localStorage.getItem('tm_theme');
+      if (saved) {
+        document.documentElement.setAttribute('data-theme', saved);
+      }
+    })();
+  </script>
 </head>
 <body>
   <div class="app-layout">
     <!-- Sidebar Navigation -->
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-          </svg>
-        </div>
+        <div class="brand-icon">◈</div>
         <div class="brand-text">
-          <h1>Trust Juggler</h1>
-          <span class="badge-version">v0.2.0 • ML Fusion</span>
+          <h1>TrustMesh</h1>
+          <span class="badge-version">v2.4 • Two-Axis ML Engine</span>
         </div>
       </div>
 
@@ -63,11 +69,11 @@
           </svg>
           Cohort Fairness
         </button>
-        <a href="index.html" class="nav-item" style="text-decoration:none;margin-top:12px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">
+        <a href="index.html" class="nav-item nav-portal-link">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M19 12H5M12 19l-7-7 7-7"/>
           </svg>
-          TrustMesh Portal
+          TrustMesh Landing
         </a>
       </nav>
 
@@ -87,25 +93,48 @@
       <!-- Top Bar Header -->
       <header class="topbar">
         <div class="topbar-left">
+          <div class="topbar-breadcrumb">
+            <span class="beacon-dot"></span>
+            <span>TrustMesh / Fleet Operations Command</span>
+          </div>
           <h2 id="page-title">Fleet Trust Matrix</h2>
           <p id="page-subtitle">Real-time two-axis continuity mapping context versus multi-modal behavioral biometric signals.</p>
         </div>
         <div class="topbar-actions">
-          <div class="quick-stat">
+          <div class="quick-stat highlight-green">
             <span class="quick-val" id="stat-active-riders">0</span>
-            <span class="quick-lbl">Active Riders</span>
+            <span class="quick-lbl">Active Fleet</span>
           </div>
           <div class="quick-stat highlight-red">
             <span class="quick-val" id="stat-flagged-riders">0</span>
-            <span class="quick-lbl">Escalations</span>
+            <span class="quick-lbl">Handoff Flags</span>
           </div>
           <div class="quick-stat highlight-blue">
             <span class="quick-val" id="stat-legit-shifts">0</span>
             <span class="quick-lbl">Legit Shifts</span>
           </div>
+          <div class="quick-stat">
+            <span class="quick-val">99.2%</span>
+            <span class="quick-lbl">Pass Parity</span>
+          </div>
+
+          <button class="theme-switch-btn" id="btn-theme-toggle" title="Toggle Theme" aria-label="Toggle Light/Dark Theme">
+            <svg id="theme-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5"/>
+              <line x1="12" y1="1" x2="12" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/>
+              <line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+          </button>
+
           <button class="btn btn-primary" id="btn-quick-ingest" title="Simulate a live delivery session">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 5v14M5 12h14"/>
+              <polygon points="5 3 19 12 5 21 5 3"/>
             </svg>
             Stream Session
           </button>
@@ -136,19 +165,19 @@
               <!-- Quadrant Watermarks -->
               <div class="quad-label top-left">
                 <span class="quad-tag">LEGIT CHANGE</span>
-                <p>New phone or moved city, but biometric behavior matches history. Auto-rebaselined silently.</p>
+                <p>New phone or moved zone, but biometric rhythm verified. Auto-rebaselined silently.</p>
               </div>
               <div class="quad-label top-right">
                 <span class="quad-tag">STABLE FLEET</span>
-                <p>Same device & zone with verified habitual riding patterns. Full trust.</p>
+                <p>Verified hardware & zone with habitual touch cadence. Full continuity confirmed.</p>
               </div>
               <div class="quad-label bottom-left">
                 <span class="quad-tag">AMBIGUOUS</span>
-                <p>Both context and behavior shifted. Lightweight challenge recommended.</p>
+                <p>Concurrent context and behavior shifts. Non-disruptive safe-pause verification.</p>
               </div>
               <div class="quad-label bottom-right">
                 <span class="quad-tag">HANDOFF SIGNATURE</span>
-                <p>Same device/network but foreign driving & tap biometric. Illicit account rental flag.</p>
+                <p>Same device, but foreign motor biometrics. Potential illicit account rental detected.</p>
               </div>
 
               <!-- Tooltip element -->
@@ -410,7 +439,10 @@
           <!-- Live Attack Stream Output -->
           <div class="card">
             <div class="card-header">
-              <h3>Simulation Stream & Attack Console</h3>
+              <div>
+                <h3>Simulation Stream & Attack Console</h3>
+                <span class="subtext">Real-time telemetry event bus and ML anomaly attribution logger.</span>
+              </div>
               <button class="btn btn-secondary btn-sm" id="btn-clear-sim-logs">Clear Output</button>
             </div>
             <div class="terminal-container" id="sim-terminal">
@@ -426,8 +458,10 @@
         <div class="grid-2col">
           <div class="card">
             <div class="card-header">
-              <h3>Zone Anomaly Score Distribution</h3>
-              <span class="subtext">Monitors parity across geographic hubs (Andheri, Bandra, Dadar, Powai, Thane, Navi Mumbai).</span>
+              <div>
+                <h3>Zone Anomaly Score Distribution</h3>
+                <span class="subtext">Monitors parity across geographic hubs (Andheri, Bandra, Dadar, Powai, Thane, Navi Mumbai).</span>
+              </div>
             </div>
             <div class="fairness-chart-box">
               <canvas id="fairness-zone-canvas" width="500" height="280"></canvas>
@@ -436,8 +470,10 @@
 
           <div class="card">
             <div class="card-header">
-              <h3>Signal Independence & False-Positive Rates</h3>
-              <span class="subtext">Guarantees no single noisy modality unfairly triggers account suspension.</span>
+              <div>
+                <h3>Signal Independence & False-Positive Rates</h3>
+                <span class="subtext">Guarantees no single noisy modality unfairly triggers account suspension.</span>
+              </div>
             </div>
             <div class="fairness-stats-grid">
               <div class="fair-card">
