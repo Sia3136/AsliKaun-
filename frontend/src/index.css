@@ -1879,6 +1879,28 @@ footer {
   box-shadow: 0 4px 14px rgba(139, 92, 246, 0.16);
 }
 .auth-btn-oauth:active { transform: translateY(0); }
+.auth-btn-sandbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px dashed rgba(167, 139, 250, 0.4);
+  border-radius: 10px;
+  background: rgba(139, 92, 246, 0.08);
+  color: #c4b5fd;
+  font: 500 12px var(--sans);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.auth-btn-sandbox:hover {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(167, 139, 250, 0.7);
+  color: #f5f3ff;
+  transform: translateY(-1px);
+}
+.auth-btn-sandbox:active { transform: translateY(0); }
 .auth-divider {
   display: flex;
   align-items: center;

@@ -69,6 +69,12 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
     }
 
     // Backend offline: perform immediate fallback Google authentication so user is never stuck
+    handleGoogleSandbox();
+  }
+
+  function handleGoogleSandbox() {
+    setError('');
+    setLoading(true);
     const fallbackToken = 'google-oauth-session-' + Date.now();
     sessionStorage.setItem('tm-auth', 'true');
     sessionStorage.setItem('tm-auth-token', fallbackToken);
@@ -164,11 +170,6 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
           <span className="auth-kicker">Identity risk intelligence</span>
           <h1>See the signal.<br /><span>Protect the network.</span></h1>
           <p>Continuous multi-modal identity assurance across your fleet. Prevent account rentals, detect unauthorized driver handoffs, and manage access safely.</p>
-          <div className="auth-stats">
-            <div><strong>24/7</strong><span>Continuous monitoring</span></div>
-            <div><strong>OAuth 2.0</strong><span>Verified access</span></div>
-            <div><strong>Live</strong><span>Behavioral engine</span></div>
-          </div>
         </div>
         <p className="auth-footnote">AsliKaun Security Console · Enterprise Edition</p>
       </section>
@@ -197,6 +198,14 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
               </svg>
               <span>Continue with Google</span>
             </button>
+            <button
+              type="button"
+              className="auth-btn-sandbox"
+              onClick={handleGoogleSandbox}
+              title="Instant bypass without Google Cloud Console configuration"
+            >
+              <span>⚡ Quick Google Demo (Bypass Console Setup)</span>
+            </button>
           </div>
 
           <div className="auth-divider">or continue with email</div>
@@ -217,7 +226,7 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
 
           <div className="auth-demo-note">
             <strong>{mode === 'login' ? 'Quick Access Credentials' : 'Fleet Registration'}</strong>
-            <p>{mode === 'login' ? 'Default demo credentials (admin@aslikaun.ai / trustmesh) are prefilled for immediate evaluation.' : 'Create an organization admin profile to access fleet continuous monitoring telemetry.'}</p>
+            <p>{mode === 'login' ? 'Default demo credentials (admin@aslikaun.ai / aslikaun) are prefilled for immediate evaluation.' : 'Create an organization admin profile to access fleet continuous monitoring telemetry.'}</p>
           </div>
 
           <p className="auth-switch">
