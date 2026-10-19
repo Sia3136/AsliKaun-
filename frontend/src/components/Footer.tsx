@@ -13,8 +13,8 @@ export const Footer: React.FC = () => {
       <div className="wrap">
         <div className="fg" id="fg">
           <div>
-            <a className="logo" href="#top">
-              <span className="ring" aria-hidden="true"></span>
+            <a className="logo" href="#top" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+              <img src="/aslikaun-logo.png" alt="AsliKaun Logo" className="footer-logo-img" />
               AsliKaun
             </a>
             <p>

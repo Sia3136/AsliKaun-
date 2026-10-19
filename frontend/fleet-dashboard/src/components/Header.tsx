@@ -79,10 +79,10 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="w-full bg-white border-b border-[#e2e8f0] px-6 py-2.5 flex items-center justify-between sticky top-0 z-30">
       {/* Left zone: Brand, Version */}
       <div className="flex items-center gap-4 shrink-0">
-        <div className="flex items-center gap-2">
-          {/* AsliKaun Logo Shield */}
-          <div className="w-8 h-8 rounded-lg bg-[#0058be] flex items-center justify-center text-white shadow-xs">
-            <Shield className="w-5 h-5 fill-white/20 stroke-white stroke-[2.2]" />
+        <div className="flex items-center gap-2.5">
+          {/* AsliKaun Brand Logo */}
+          <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center shrink-0">
+            <img src="/aslikaun-logo.png" alt="AsliKaun Logo" className="w-full h-full object-contain" />
           </div>
           <span className="text-lg font-bold tracking-tight text-[#0b1c30]">
             AsliKaun
