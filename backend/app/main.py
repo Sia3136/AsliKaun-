@@ -41,6 +41,18 @@ except ImportError:
         face_similarity = None
         ML_FACE_AVAILABLE = False
 
+try:
+    # Importing ml_bridge above (if it succeeded even partially) already
+    # put the project root on sys.path, since that happens before any of
+    # ITS OWN optional imports — see ml_bridge.py's own comment. Safe to
+    # import ml.* directly here on that basis.
+    from ml.redteam.detectors import FrozenAnchorDetector, split_rental_check
+    ML_DETECTORS_AVAILABLE = True
+except ImportError:
+    FrozenAnchorDetector = None
+    split_rental_check = None
+    ML_DETECTORS_AVAILABLE = False
+
 logging.basicConfig(
     level=os.getenv("TRUST_JUGGLER_LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -629,6 +641,73 @@ def write_event(con: sqlite3.Connection, driver_id: str, event_type: str, detail
         "INSERT INTO events(driver_id, timestamp, event_type, details_json) VALUES(?,?,?,?)",
         (driver_id, now_iso(), event_type, json.dumps(details)),
     )
+
+
+def load_frozen_anchor(con: sqlite3.Connection, driver_id: str) -> "FrozenAnchorDetector | None":
+    """Rehydrates this driver's FrozenAnchorDetector (ml/redteam/detectors.py)
+    from its persisted state — the dual-timescale slow-drift defense.
+    Previously this detector only ran in offline test scripts; it needs
+    per-driver state carried across requests to do anything live."""
+    if not ML_DETECTORS_AVAILABLE:
+        return None
+    row = con.execute(
+        "SELECT anchor_mean, cumulative, buffer_json FROM driver_anchor_state WHERE driver_id = ?",
+        (driver_id,),
+    ).fetchone()
+    detector = FrozenAnchorDetector()
+    if row is not None:
+        detector.anchor_mean = row["anchor_mean"]
+        detector.cumulative = row["cumulative"]
+        detector._buffer = decode_json(row["buffer_json"], [])
+    return detector
+
+
+def save_frozen_anchor(con: sqlite3.Connection, driver_id: str, detector: "FrozenAnchorDetector") -> None:
+    con.execute(
+        """INSERT INTO driver_anchor_state(driver_id, anchor_mean, cumulative, buffer_json, updated_at)
+           VALUES(?, ?, ?, ?, ?)
+           ON CONFLICT(driver_id) DO UPDATE SET
+             anchor_mean = excluded.anchor_mean, cumulative = excluded.cumulative,
+             buffer_json = excluded.buffer_json, updated_at = excluded.updated_at""",
+        (driver_id, detector.anchor_mean, detector.cumulative, json.dumps(detector._buffer[-50:]), now_iso()),
+    )
+
+
+def reset_frozen_anchor(con: sqlite3.Connection, driver_id: str) -> None:
+    """Call after a real re-verification (admin clears a review, or a
+    driver passes a face challenge) — the anchor re-establishes itself
+    from the next `anchor_window` sessions rather than staying pinned
+    to pre-verification behavior."""
+    con.execute("DELETE FROM driver_anchor_state WHERE driver_id = ?", (driver_id,))
+
+
+def _session_payload_to_legacy_shape(payload: dict) -> dict:
+    """ml/redteam/detectors.py's split_rental_check() was written
+    against the OLD synthetic session shape (ml/sim/rider_sim.py):
+    flat `hour_of_day` float and touch_events with `pressure`/`area`/
+    `t_offset_ms`. The live SessionIngest schema has neither `hour_of_day`
+    (only `timestamp`) nor `area` (the real driver app doesn't capture
+    touch contact area at all). This adapts one real stored payload to
+    that legacy shape defensively, rather than modifying the shared
+    legacy scorer code other callers (test_combiner.py, test_redteam.py)
+    depend on behaving exactly as before."""
+    try:
+        ts = datetime.fromisoformat(payload.get("timestamp", "").replace("Z", "+00:00"))
+        hour_of_day = ts.hour + ts.minute / 60
+    except (ValueError, TypeError):
+        hour_of_day = 12.0
+    touch_events = []
+    for t in payload.get("touch_events", []) or []:
+        touch_events.append({
+            "pressure": t.get("pressure", 0.5) or 0.5,
+            "area": t.get("area", 300.0) or 300.0,  # not captured by the real app; constant placeholder
+            "t_offset_ms": t.get("t_offset_ms", 0.0) or 0.0,
+        })
+    return {
+        "hour_of_day": hour_of_day,
+        "accept_latency_ms": payload.get("accept_latency_ms") or 0.0,
+        "touch_events": touch_events,
+    }
 
 
 def mean_abs(values: list[float]) -> float | None:
@@ -1265,6 +1344,28 @@ def ingest_session(
             reason_vector = None
             model_status = "mock_behavior_scorer"
 
+        # Dual-timescale slow-drift defense (ml/redteam/detectors.py's
+        # FrozenAnchorDetector): a single session's behavior_score can
+        # look individually unremarkable while drifting steadily away
+        # from this driver's established baseline over many sessions —
+        # exactly what a boiling-frog slow handoff looks like, and what
+        # a fast-adapting-only baseline misses by design. Runs
+        # regardless of which scoring path produced behavior_score.
+        if behavior_score is not None and ML_DETECTORS_AVAILABLE:
+            anchor_detector = load_frozen_anchor(con, body.driver_id)
+            if anchor_detector is not None:
+                drift_flagged = anchor_detector.update(float(behavior_score))
+                save_frozen_anchor(con, body.driver_id, anchor_detector)
+                if drift_flagged and decision not in ("challenge_at_safe_pause", "step_up_check_at_safe_pause"):
+                    decision = "step_up_check_at_safe_pause"
+                    quadrant = "ambiguous"
+                    reasons = reasons + [
+                        f"Dual-timescale drift detector: cumulative behavioral drift "
+                        f"({round(anchor_detector.cumulative, 3)}) crossed the threshold over "
+                        f"{len(anchor_detector._buffer)} sessions since the last verified baseline — "
+                        f"no single session looked anomalous, but the slow trend does."
+                    ]
+
         # A declared or apparently legitimate context change with stable behavior gets
         # a context re-baseline. Keep the frozen anchor; update only the fast baseline.
         update_fast = decision in ("continue", "rebaseline")
@@ -1604,6 +1705,8 @@ def respond_to_challenge(
                    WHERE driver_id=? AND status='open'""",
                 (now_iso(), f"Auto-cleared: face similarity {round(similarity, 3)}", driver_id),
             )
+            if ML_DETECTORS_AVAILABLE:
+                reset_frozen_anchor(con, driver_id)
             write_event(con, driver_id, "challenge_passed", {"similarity": round(similarity, 4)})
         else:
             write_event(con, driver_id, "challenge_failed_or_inconclusive", {"similarity": round(similarity, 4)})
@@ -1773,6 +1876,45 @@ def list_driver_declarations(
             (driver_id, limit),
         ).fetchall()
     return {"driver_id": driver_id, "count": len(rows), "declarations": [dict(r) for r in rows]}
+
+
+@app.get("/v1/admin/drivers/{driver_id}/split-rental-check")
+def split_rental_audit(
+    driver_id: str,
+    admin: dict[str, str] = Depends(require_admin),
+) -> dict:
+    """On-demand audit (ml/redteam/detectors.py's split_rental_check):
+    fits a 2-component Gaussian mixture on this driver's own session
+    history and checks whether it splits into two clusters that
+    correlate with time of day — the signature of two people alternating
+    shifts on one account (morning driver / evening driver). Previously
+    this only ran in an offline test script; an admin can now trigger it
+    per driver instead of it running silently on every ingest (GMM
+    fitting is too expensive to run unconditionally on every session)."""
+    if not ML_DETECTORS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="split_rental_check is not available on this deployment (scikit-learn not installed)")
+
+    with connect() as con:
+        rows = con.execute(
+            "SELECT payload_json FROM sessions WHERE driver_id = ? ORDER BY id ASC LIMIT 200",
+            (driver_id,),
+        ).fetchall()
+
+    payloads = [decode_json(r["payload_json"], {}) for r in rows]
+    payloads = [p for p in payloads if p and not p.get("purged")]
+    if len(payloads) < 20:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Needs at least 20 sessions with intact payloads to run this check; this driver has {len(payloads)}.",
+        )
+
+    legacy_sessions = [_session_payload_to_legacy_shape(p) for p in payloads]
+    try:
+        result = split_rental_check(legacy_sessions)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"split_rental_check failed: {e}")
+
+    return {"driver_id": driver_id, "sessions_analyzed": len(legacy_sessions), **result}
 
 
 @app.get("/v1/drivers/{driver_id}/events")
@@ -2009,6 +2151,11 @@ def resolve_review(
                 "resolved_at": resolved_at,
             },
         )
+        if body.resolution == "cleared" and ML_DETECTORS_AVAILABLE:
+            # A human confirmed this driver, so the frozen anchor should
+            # re-establish from here rather than staying pinned to
+            # whatever behavior led to this review in the first place.
+            reset_frozen_anchor(con, review["driver_id"])
 
     return {
         "session_id": session_id,
