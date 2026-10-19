@@ -1,12 +1,13 @@
-# Trust Juggler — FastAPI backend starter
+# AsliKaun — FastAPI Backend Service
 
-This is a hackathon prototype scaffold for the Trust Juggler two-axis model:
-- **Context continuity:** device, IP subnet, zone.
-- **Behavioral continuity:** multi-modal derived motion, touch, and operational biometrics via `ml_bridge`.
-- **Decision quadrant:** `stable` (continue) / `legit_change` (re-baseline) / `handoff_signature` (challenge at safe pause) / `ambiguous` (step-up check).
-- **Dual baselines:** a slowly adapting fast baseline and a frozen identity anchor.
-- **Reason Vector:** Plain-language, rider-facing explanations powered by Claude (or fallback template).
-- **Admin Review Queue & Auth:** Token-based admin authentication and human review resolution workflow.
+This is the production-ready backend engine for the **AsliKaun** continuous identity intelligence platform:
+- **Context continuity:** Device ID, IP subnet, and delivery zone verification.
+- **Behavioral continuity:** Multi-modal derived motion, touch, GPS, and operational biometrics via `ml_bridge`.
+- **Decision quadrant:** `stable` (continue) / `legit_change` (silent rebaseline) / `handoff_signature` (challenge at safe pause) / `ambiguous` (step-up check).
+- **Dual baselines & Drift Tracking:** EWMA fast baseline, Frozen Identity Anchor, and time-series CUSUM drift detection.
+- **Reason Vector:** Plain-language, auditor-verifiable explanations powered by Groq Cloud LLM (`qwen/qwen3.8-27b`) or structured fallback.
+- **Safe-Pause Verification Gate:** Ensures verification challenges are only dispatched when the driver is at confirmed standstill ($v < 1.5\text{ m/s}$).
+- **Admin Review Queue & RBAC:** Token-based admin authentication and human review resolution workflow.
 
 ## 1. Setup (Windows PowerShell)
 
@@ -18,11 +19,11 @@ python -m uvicorn backend.app.main:app --reload --port 8000
 
 - API Docs: `http://127.0.0.1:8000/docs`
 - Interactive Dashboard: `http://127.0.0.1:8000/dashboard/`
-- SQLite database `trust_juggler.db` is initialized automatically.
+- SQLite database `trust_juggler.db` is initialized automatically with prewarmed model bundles.
 
-## 2. First request — establish a baseline
+## 2. Ingest Session
 
-In Swagger, open `POST /v1/sessions/ingest` and use:
+Open `POST /v1/sessions/ingest` in Swagger or curl:
 
 ```json
 {
@@ -38,29 +39,15 @@ In Swagger, open `POST /v1/sessions/ingest` and use:
 }
 ```
 
-The first session only establishes a baseline. It does **not** issue a risk verdict.
+The first session establishes baseline centroids and calibration sets. Subsequent sessions yield real-time 4-quadrant scoring and continuity metrics.
 
-## 3. Try a stable session
+## 3. Endpoints Overview
 
-Send another session with the same context and similar behavior values. Expected direction: stable context + stable behavior → `continue`.
-
-## 4. Try a context change
-
-Send a session with a different `device_id` and `zone`, but similar behavior values. Expected direction: changed context + stable behavior → `rebaseline` (no challenge).
-
-## 5. Try a behavior change
-
-Keep device/IP/zone the same but change behavior features substantially, e.g. `accel: [2.0, 2.5, 2.2]`, `gyro: [1.5, 1.8]`, `touch_events` with many more items, and `accept_latency_ms: 3500`. Expected direction: stable context + changed behavior → `challenge_at_safe_pause`.
-
-Thresholds are initial demo rules and must be tested/tuned against synthetic scenarios. A real mobile SDK should send derived features rather than raw sensor streams; this prototype accepts arrays only to make testing easy.
-
-## Endpoints
-
-- `GET /health`
-- `POST /v1/sessions/ingest`
-- `GET /v1/drivers/{driver_id}/score`
-- `GET /v1/fleet/scores`
-- `POST /v1/drivers/{driver_id}/declare-change`
-- `GET /v1/drivers/{driver_id}/events`
-
-The optional outbound webhook is not included yet; add it only after the core ingest/scoring loop works.
+- `GET /health` — Service health and active database status.
+- `POST /v1/sessions/ingest` — Ingest telemetry session and compute Two-Axis continuity.
+- `GET /v1/drivers/{driver_id}/score` — Retrieve latest continuity scores and quadrant status.
+- `GET /v1/fleet/scores` — Retrieve all active drivers for quadrant canvas visualization.
+- `POST /v1/drivers/{driver_id}/declare-change` — Driver self-declared device or zone update.
+- `GET /v1/drivers/{driver_id}/events` — Audit trail of session verdicts.
+- `GET /v1/reviews/pending` — Escalated sessions awaiting human auditor review.
+- `POST /v1/reviews/{review_id}/resolve` — Resolve review with verdict and notes.

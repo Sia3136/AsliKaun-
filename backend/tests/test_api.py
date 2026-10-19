@@ -1,4 +1,4 @@
-"""Regression tests for the Trust Juggler FastAPI prototype.
+"""Regression tests for the AsliKaun FastAPI prototype.
 
 Run from the backend project root after installing pytest and httpx:
     python -m pytest -q tests

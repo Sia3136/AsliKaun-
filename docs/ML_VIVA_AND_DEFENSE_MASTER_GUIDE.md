@@ -1,4 +1,4 @@
-# AsliKaun / Trust Juggler: Machine Learning, Biometrics & Defense Master Guide
+# AsliKaun: Machine Learning, Biometrics & Defense Master Guide
 
 > **Target Audience**: Hackathon Judges, Technical Evaluators, System Architects, and Viva Panels  
 > **Core Focus**: End-to-end Machine Learning, Statistical Mechanics, Real Datasets, Scalability, Edge-Cases, and Defense Strategy.

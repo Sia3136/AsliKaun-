@@ -40,14 +40,14 @@ def min_calib_for_target_far(target_far: float) -> int:
 
 def per_rider_threshold(calib_fused_p_values: list[float], target_far: float = 0.01) -> dict:
     """Returns the rider-specific threshold achieving (as closely as the
-    data allows) `target_far`, OR the population fallback with a flag
-    explaining why, if this rider doesn't have enough calibration
-    history yet.
+    data allows) `target_far`, using Empirical Bayes / credibility-weighted
+    shrinkage when sample size is moderate (5 <= n < required_n), full
+    per-rider calibration when n >= required_n, or population fallback when n < 5.
     """
     n = len(calib_fused_p_values)
     required_n = min_calib_for_target_far(target_far)
 
-    if n < required_n:
+    if n < 5:
         return {
             "threshold": POPULATION_FALLBACK_THRESHOLD,
             "source": "population_fallback",
@@ -55,23 +55,48 @@ def per_rider_threshold(calib_fused_p_values: list[float], target_far: float = 0
             "n_calib": n,
             "n_required_for_target": required_n,
             "note": (
-                f"only {n} calibration sessions available, need >= {required_n} to resolve "
-                f"a {target_far:.0%} false-accept rate individually — using the population "
-                f"threshold until more history accumulates"
+                f"insufficient calibration history (n={n} < 5) — using population "
+                f"threshold until more sessions accumulate"
             ),
         }
 
     sorted_p = np.sort(calib_fused_p_values)
-    idx = int(np.floor(target_far * (n + 1))) - 1
-    idx = max(0, min(idx, n - 1))
-    threshold = float(sorted_p[idx])
+
+    if n >= required_n:
+        idx = int(np.floor(target_far * (n + 1))) - 1
+        idx = max(0, min(idx, n - 1))
+        threshold = float(sorted_p[idx])
+        return {
+            "threshold": round(threshold, 4),
+            "source": "per_rider_calibrated",
+            "target_far": target_far,
+            "n_calib": n,
+            "achieved_resolution": 1.0 / (n + 1),
+            "note": f"fully calibrated from this rider's own {n} calibration sessions",
+        }
+
+    # Empirical Bayes / Credibility weighting for 5 <= n < required_n:
+    # Blend the rider's personal calibration empirical quantile with the population prior.
+    # Credibility weight w_n = n / (n + n_0), where n_0 = 10 (half-weight at 10 sessions).
+    n_0 = 10.0
+    weight_rider = float(n / (n + n_0))
+    # Minimum resolvable quantile for this n
+    effective_percentile = max(target_far * 100.0, (1.0 / (n + 1)) * 100.0)
+    raw_quantile = float(np.percentile(sorted_p, effective_percentile))
+    blended = float(weight_rider * raw_quantile + (1.0 - weight_rider) * POPULATION_FALLBACK_THRESHOLD)
+
     return {
-        "threshold": threshold,
-        "source": "per_rider_calibrated",
+        "threshold": round(blended, 4),
+        "source": "empirical_bayes_calibrated",
         "target_far": target_far,
         "n_calib": n,
+        "weight_rider": round(weight_rider, 3),
+        "raw_quantile": round(raw_quantile, 4),
         "achieved_resolution": 1.0 / (n + 1),
-        "note": f"calibrated from this rider's own {n} calibration sessions",
+        "note": (
+            f"empirically calibrated with {round(weight_rider*100, 1)}% rider credibility weight "
+            f"over {n} sessions blended with population prior"
+        ),
     }
 
 

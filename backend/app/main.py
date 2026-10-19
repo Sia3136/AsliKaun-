@@ -26,26 +26,30 @@ from pydantic import BaseModel, Field
 try:
     from backend.app.ml_bridge import (
         ML_FACE_AVAILABLE, embed_face_image, evaluate_session_ml,
-        evaluate_session_with_real_models, face_similarity,
+        evaluate_session_with_real_models, face_similarity, warmup_bundles,
     )
 except ImportError:
     try:
         from app.ml_bridge import (
             ML_FACE_AVAILABLE, embed_face_image, evaluate_session_ml,
-            evaluate_session_with_real_models, face_similarity,
+            evaluate_session_with_real_models, face_similarity, warmup_bundles,
         )
     except ImportError:
         evaluate_session_ml = None
         evaluate_session_with_real_models = None
         embed_face_image = None
         face_similarity = None
+        warmup_bundles = None
         ML_FACE_AVAILABLE = False
 
 try:
-    # Importing ml_bridge above (if it succeeded even partially) already
-    # put the project root on sys.path, since that happens before any of
-    # ITS OWN optional imports — see ml_bridge.py's own comment. Safe to
-    # import ml.* directly here on that basis.
+    from ml.timeseries.driver_timeseries import DriverTimeSeriesProfiler
+    ML_TIMESERIES_AVAILABLE = True
+except ImportError:
+    DriverTimeSeriesProfiler = None
+    ML_TIMESERIES_AVAILABLE = False
+
+try:
     from ml.redteam.detectors import FrozenAnchorDetector, split_rental_check
     ML_DETECTORS_AVAILABLE = True
 except ImportError:
@@ -324,6 +328,13 @@ def init_db() -> None:
             con.execute("ALTER TABLE admin_users ADD COLUMN avatar_url TEXT")
         if "organization" not in admin_columns:
             con.execute("ALTER TABLE admin_users ADD COLUMN organization TEXT")
+        driver_columns = {
+            row["name"] for row in con.execute("PRAGMA table_info(drivers)").fetchall()
+        }
+        if "timeseries_json" not in driver_columns:
+            con.execute("ALTER TABLE drivers ADD COLUMN timeseries_json TEXT NOT NULL DEFAULT '{}'")
+        if "threshold_json" not in driver_columns:
+            con.execute("ALTER TABLE drivers ADD COLUMN threshold_json TEXT NOT NULL DEFAULT '{}'")
 
 
 def hash_password(password: str, salt: bytes | None = None) -> str:
@@ -496,7 +507,7 @@ def seed_admin_from_env() -> None:
                     "VALUES(?, ?, 1, ?, 'Fleet Admin', 'email', 'AsliKaun Core')",
                     (username, hash_password(password), now_iso()),
                 )
-                logger.info("Created initial Trust Juggler admin account: %s", username)
+                logger.info("Created initial AsliKaun admin account: %s", username)
 
         # Seed the frontend demo account (admin@aslikaun.ai / trustmesh)
         demo_email = "admin@aslikaun.ai"
@@ -623,6 +634,13 @@ def startup() -> None:
     init_db()
     seed_admin_from_env()
     seed_demo_fleet()
+    if warmup_bundles is not None:
+        try:
+            warmed = warmup_bundles()
+            if warmed > 0:
+                logger.info("[startup] pre-warmed %s persistent model bundle(s)", warmed)
+        except Exception as e:
+            logger.warning("[startup] warmup_bundles failed: %s", e)
     purged = purge_stale_session_payloads()
     if purged:
         logger.info("[retention] purged raw payloads for %s session(s) older than %s days", purged, DATA_RETENTION_DAYS)
@@ -1250,9 +1268,9 @@ def ingest_session(
             if driver is None:
                 con.execute(
                     """INSERT INTO drivers(driver_id, anchor_json, fast_json, latest_json,
-                       latest_result_json, updated_at) VALUES(?,?,?,?,?,?)""",
+                       latest_result_json, timeseries_json, threshold_json, updated_at) VALUES(?,?,?,?,?,?,?,?)""",
                     (body.driver_id, json.dumps(initial_behavior), json.dumps(initial_behavior),
-                     json.dumps(current_context), "{}", now_iso()),
+                     json.dumps(current_context), "{}", "{}", "{}", now_iso()),
                 )
             else:
                 # The admin may have provisioned this driver before its first session.
@@ -1337,6 +1355,10 @@ def ingest_session(
         previous_context = decode_json(driver["latest_json"], {})
         anchor_behavior = decode_json(driver["anchor_json"], {})
         fast_behavior = decode_json(driver["fast_json"], {})
+        driver_keys = driver.keys() if driver is not None else []
+        threshold_data = decode_json(driver["threshold_json"], {}) if (driver is not None and "threshold_json" in driver_keys) else {}
+        timeseries_data = decode_json(driver["timeseries_json"], {}) if (driver is not None and "timeseries_json" in driver_keys) else {}
+        calibrated_alpha = float(threshold_data["threshold"]) if (threshold_data and "threshold" in threshold_data) else None
 
         # Try the REAL trained models first (ml/inference/rider_model_bundle.py
         # — the ones that actually won on real data, see ml/README.md). Falls
@@ -1369,13 +1391,16 @@ def ingest_session(
             reason_vector = real_model_eval.get("reason_vector")
             current_behavior = real_model_eval["current_behavior"]
             model_status = real_model_eval["model_status"]
+            if real_model_eval.get("threshold_info"):
+                threshold_data = real_model_eval["threshold_info"]
+                calibrated_alpha = float(threshold_data.get("threshold", 0.29))
         elif evaluate_session_ml is not None:
-            # Full ML Two-Axis evaluation with reason-vector explainability
+            # Full ML Two-Axis evaluation with reason-vector explainability and adaptive threshold
             ml_eval = evaluate_session_ml(body, {
                 "fast_behavior": fast_behavior,
                 "anchor_behavior": anchor_behavior,
                 "known_contexts": [previous_context],
-            })
+            }, calibrated_alpha=calibrated_alpha)
             context_score = ml_eval["context_score"]
             behavior_score = ml_eval["behavior_score"]
             context_axis = ml_eval["context_axis"]
@@ -1469,6 +1494,34 @@ def ingest_session(
                     f"escalated straight to priority human review instead."
                 ]
 
+        # Time-Series Adaptation and Anomaly Profiling
+        timeseries_diagnostics = None
+        if ML_TIMESERIES_AVAILABLE and DriverTimeSeriesProfiler is not None:
+            profiler = DriverTimeSeriesProfiler.from_dict({"driver_id": body.driver_id, **timeseries_data})
+            ts_res = profiler.update(
+                behavior_score=behavior_score,
+                context_score=context_score,
+                quadrant=quadrant,
+                decision=decision,
+                signals=signals,
+                timestamp=body.timestamp.isoformat(),
+            )
+            timeseries_diagnostics = ts_res
+            timeseries_data = profiler.to_dict()
+            if ts_res.get("adaptive_rebaselined"):
+                reasons.append(
+                    f"Online adaptation: gradual behavioral shift ({ts_res.get('drift_state')}) "
+                    f"silently assimilated into updated baseline"
+                )
+            elif ts_res.get("drift_state") == "sudden_shift_detected":
+                if decision == "continue":
+                    decision = "challenge_at_safe_pause"
+                    quadrant = "handoff_signature"
+                    reasons.append(
+                        f"Time-series anomaly detector: abrupt statistical jump (step_delta={ts_res.get('step_delta')}) "
+                        f"detected relative to rolling history — potential handoff"
+                    )
+
         result = {
             "driver_id": body.driver_id,
             "context_score": context_score,
@@ -1483,6 +1536,8 @@ def ingest_session(
             "model_status": model_status,
             "fatigue_capped": fatigue_capped,
             "baseline_status": "fast_baseline_updated" if update_fast else "fast_baseline_frozen",
+            "timeseries_diagnostics": timeseries_diagnostics,
+            "threshold_info": threshold_data if threshold_data else None,
             "timestamp": body.timestamp.isoformat(),
         }
 
@@ -1525,9 +1580,11 @@ def ingest_session(
             send_ops_webhook_alert(body.driver_id, decision, quadrant, reasons, fatigue_capped)
 
         con.execute(
-            """UPDATE drivers SET fast_json=?, latest_json=?, latest_result_json=?, updated_at=?
+            """UPDATE drivers SET fast_json=?, latest_json=?, latest_result_json=?,
+               timeseries_json=?, threshold_json=?, updated_at=?
                WHERE driver_id=?""",
             (json.dumps(fast_behavior), json.dumps(current_context), json.dumps(result),
+             json.dumps(timeseries_data), json.dumps(threshold_data),
              now_iso(), body.driver_id),
         )
         write_event(con, body.driver_id, "session_scored", result)

@@ -1,4 +1,4 @@
-# Trust Juggler — ML Explainability Report
+# AsliKaun — ML Explainability Report
 
 One page: for every signal, the research basis → the real dataset → the train/validation/test protocol → the actual measured accuracy → production status. No claim here is unmeasured; where something isn't validated, it says so.
 

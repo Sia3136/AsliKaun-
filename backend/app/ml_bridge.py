@@ -51,6 +51,7 @@ except ImportError:
 
 try:
     from ml.inference.rider_model_bundle import RiderModelBundle
+    from ml.inference.bundle_store import save_bundle, load_bundle, has_persisted_bundle, list_persisted_bundles
     ML_RIDER_BUNDLE_AVAILABLE = True
 except ImportError:
     ML_RIDER_BUNDLE_AVAILABLE = False
@@ -305,6 +306,7 @@ def compute_signal_anomalies(
 def evaluate_session_ml(
     payload: Any,
     driver_history: dict[str, Any],
+    calibrated_alpha: float | None = None,
 ) -> dict[str, Any]:
     """Execute end-to-end ML evaluation on an incoming session payload.
     
@@ -387,34 +389,19 @@ def evaluate_session_ml(
         behavior_score = None
         behavior_axis = "insufficient_evidence"
 
-    # 4. Two-Axis Decision Matrix
-    # Single source of truth: ml/combiner/two_axis.py's classify(), not a
-    # hand-duplicated copy of its if/elif logic (the two had already drifted —
-    # this file's decision STRINGS differ from two_axis.py's, e.g.
-    # "challenge_at_safe_pause" vs. two_axis.py's "escalate_challenge" — so we
-    # take classify()'s QUADRANT as authoritative and translate it to this
-    # backend's own decision vocabulary, which main.py's review-queue routing
-    # already depends on in several places; the quadrant NAMES already match
-    # exactly between both systems, only the decision strings differ).
-    #
-    # behavior_alpha=0.6 here, NOT the 0.29 measured in ml/README.md for real
-    # conformal p-values from trained per-rider models: that calibration is
-    # specific to a true p-value's uniform-under-null distribution.
-    # `behavior_score` here comes from compute_signal_anomalies() — a mean of
-    # ad-hoc relative differences against two flat fast/anchor snapshots, a
-    # structurally different, uncalibrated score. 0.6 matches the scale this
-    # heuristic actually produces; swapping in 0.29 without re-deriving it for
-    # this specific formula would silently make the heuristic far too
-    # permissive (it flags almost nothing as changed), not more correct.
+    # 4. Two-Axis Decision Matrix with Adaptive Per-Rider Threshold
     if behavior_axis == "insufficient_evidence":
         quadrant = "baseline_established"
         decision = "continue"
         reasons = ["Session recorded; initializing multi-modal behavioral baseline"]
     elif ML_COMBINER_AVAILABLE:
-        combiner_result = ml_classify(context_score, behavior_score, context_threshold=0.6, behavior_alpha=0.6)
+        effective_alpha = calibrated_alpha if calibrated_alpha is not None else 0.6
+        combiner_result = ml_classify(context_score, behavior_score, context_threshold=0.6, behavior_alpha=effective_alpha)
         quadrant = combiner_result["quadrant"]
         decision = _QUADRANT_TO_BACKEND_DECISION[quadrant]
         reasons = [combiner_result["meaning"]]
+        if calibrated_alpha is not None:
+            reasons.append(f"Per-rider adaptive threshold applied: alpha={round(calibrated_alpha, 3)}")
     elif context_axis == "stable" and behavior_axis == "stable":
         quadrant = "stable"
         decision = "continue"
@@ -528,22 +515,40 @@ def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict]
 
     driver_id = getattr(payload, "driver_id", None)
     cached = _BUNDLE_CACHE.get(driver_id) if driver_id else None
+    bundle = None
+
     if cached is not None and len(history_payloads) - cached[0] < BUNDLE_REFIT_EVERY_N_SESSIONS:
         bundle = cached[1]
     else:
-        split = int(len(history_payloads) * 0.7)
-        enroll, calib = history_payloads[:split], history_payloads[split:]
-        if len(enroll) < 5 or len(calib) < 5:
-            return None
+        # Check disk cache if not in memory
+        loaded_disk = load_bundle(driver_id) if (driver_id and ML_RIDER_BUNDLE_AVAILABLE) else None
+        if loaded_disk is not None and len(history_payloads) - loaded_disk[0] < BUNDLE_REFIT_EVERY_N_SESSIONS:
+            bundle = loaded_disk[1]
+            if driver_id:
+                _BUNDLE_CACHE[driver_id] = (loaded_disk[0], bundle)
+        else:
+            split = int(len(history_payloads) * 0.7)
+            enroll, calib = history_payloads[:split], history_payloads[split:]
+            if len(enroll) < 5 or len(calib) < 5:
+                if loaded_disk is not None:
+                    bundle = loaded_disk[1]
+                    if driver_id:
+                        _BUNDLE_CACHE[driver_id] = (loaded_disk[0], bundle)
+                else:
+                    return None
+            else:
+                try:
+                    bundle = RiderModelBundle.fit(enroll, calib)
+                except Exception as e:
+                    logger.warning("RiderModelBundle.fit failed (%s), falling back to heuristic", e)
+                    return None
 
-        try:
-            bundle = RiderModelBundle.fit(enroll, calib)
-        except Exception as e:
-            logger.warning("RiderModelBundle.fit failed (%s), falling back to heuristic", e)
-            return None
-
-        if driver_id:
-            _BUNDLE_CACHE[driver_id] = (len(history_payloads), bundle)
+                if driver_id:
+                    _BUNDLE_CACHE[driver_id] = (len(history_payloads), bundle)
+                    try:
+                        save_bundle(driver_id, bundle, len(history_payloads), {"fitted_at": datetime.now(timezone.utc).isoformat()})
+                    except Exception as save_err:
+                        logger.warning("Failed to save bundle to disk: %s", save_err)
 
     current_session = {
         "driver_id": getattr(payload, "driver_id", None),
@@ -620,3 +625,19 @@ def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict]
         "model_status": "ml_real_trained_models",
         "threshold_info": result.get("threshold_info"),
     }
+
+
+def warmup_bundles() -> int:
+    """Preloads all persisted driver bundles from disk into the in-memory bundle cache on server startup."""
+    if not ML_RIDER_BUNDLE_AVAILABLE:
+        return 0
+    warmed = 0
+    for driver_id in list_persisted_bundles():
+        loaded = load_bundle(driver_id)
+        if loaded is not None:
+            n_sessions, bundle, _ = loaded
+            _BUNDLE_CACHE[driver_id] = (n_sessions, bundle)
+            warmed += 1
+    if warmed > 0:
+        logger.info("[ml_bridge] Prewarmed %d persisted RiderModelBundles into memory cache", warmed)
+    return warmed

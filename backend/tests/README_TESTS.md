@@ -1,4 +1,4 @@
-# Trust Juggler regression tests
+# AsliKaun regression tests
 
 Copy `tests/test_api.py` into the backend project as `tests/test_api.py`.
 

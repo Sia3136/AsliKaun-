@@ -8,24 +8,22 @@
 ## 1. Overview & Value Proposition
 AsliKaun delivers background identity intelligence without disruptive, mid-ride facial recognition. When an authorized account is rented, sold, or shared with an unverified third party, AsliKaun detects the shift in behavioral biometrics (touch dynamics, order acceptance cadence, motion signatures) and alerts your operations team in real time.
 
-```
-┌─────────────────────────────────┐        ┌───────────────────────────────┐
-│     Driver App (iOS/Android)    │        │      Trust Juggler API        │
-│                                 │        │                               │
-│  [AsliKaun Driver SDK]         │───────>│  POST /v1/sessions/ingest     │
-│  - Motion & Vibration           │ Stream │  - Split-Conformal Scoring    │
-│  - Touch Pressure & Cadence     │        │  - Two-Axis Matrix Evaluation │
-│  - Order Latency Timers         │        │  - Dual-Timescale Baselines   │
-└─────────────────────────────────┘        └──────────────┬────────────────┘
-                                                          │ Real-Time
-                                                          ▼
-                                           ┌───────────────────────────────┐
-                                           │   Admin Operations Console    │
-                                           │  - Live 2D Quadrant Matrix    │
-                                           │  - Rider Trust Timeline       │
-                                           │  - Explainable Reason Vectors │
-                                           │  - One-Click Review Actions   │
-                                           └───────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph DriverApp["Driver App (iOS / Android / Web)"]
+        SDK["AsliKaun Driver SDK<br/>• Motion & Vibration<br/>• Touch Kinematics<br/>• Dispatch Latency"]
+    end
+
+    subgraph API["AsliKaun Control Plane"]
+        INGEST["POST /v1/sessions/ingest<br/>• Split-Conformal Scoring<br/>• Two-Axis Matrix Evaluation<br/>• Dual-Timescale Baselines"]
+    end
+
+    subgraph Console["Fleet Operations Console"]
+        OPS["Admin Command Dashboard<br/>• Live 2D Quadrant Matrix<br/>• Driver Trust Timeline<br/>• Explainable Reason Vectors"]
+    end
+
+    SDK -->|Stream Telemetry| INGEST
+    INGEST -->|Real-Time Escalations| OPS
 ```
 
 ---

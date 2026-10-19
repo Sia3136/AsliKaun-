@@ -146,47 +146,103 @@ def touch_stroke_sequence_from_schema(session: dict) -> np.ndarray | None:
 
 
 
+def _parse_gps_point(p: dict, prev_t: float = 0.0) -> tuple[float, float, float]:
+    """Robustly extracts (lat, lng, t_seconds) handling varying schemas."""
+    lat = float(p.get("lat") or p.get("latitude") or 0.0)
+    lng = float(p.get("lng") or p.get("lon") or p.get("longitude") or 0.0)
+    raw_t = p.get("t") or p.get("timestamp") or p.get("time")
+    if raw_t is not None:
+        if isinstance(raw_t, (int, float)):
+            t_sec = float(raw_t) if raw_t < 1e11 else float(raw_t) / 1000.0
+        else:
+            try:
+                t_sec = _parse_ts(str(raw_t)) / 1000.0
+            except Exception:
+                t_sec = prev_t + 1.0
+    else:
+        t_sec = prev_t + 1.0
+    return lat, lng, t_sec
+
+
 def gps_features_from_schema(session: dict) -> np.ndarray | None:
-    """GeoLife-style speed/turn-rate stats directly from the raw point
-    stream — see this module's docstring for why this is a DIFFERENT
-    feature set than the validated ODIDMob-based model."""
+    """ODIDMob-validated courier route and delivery dynamics feature extractor.
+    Extracts speed percentiles, acceleration/jerk, turning volatility, directness,
+    stop count, and delivery idle-time ratio."""
     points = session.get("gps", [])
     if len(points) < 5:
         return None
-    lat = np.array([p["lat"] for p in points])
-    lon = np.array([p["lng"] for p in points])
-    t = np.array([_parse_ts(p["t"]) / 1000.0 for p in points])  # seconds
 
-    r = 6371000.0
-    phi1, phi2 = np.radians(lat[:-1]), np.radians(lat[1:])
-    dphi = np.radians(lat[1:] - lat[:-1])
-    dlambda = np.radians(lon[1:] - lon[:-1])
-    a = np.sin(dphi / 2) ** 2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2) ** 2
-    dist = 2 * r * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
+    parsed_points = []
+    cur_t = 0.0
+    for p in points:
+        lat, lng, cur_t = _parse_gps_point(p, cur_t)
+        parsed_points.append((lat, lng, cur_t))
 
+    lat = np.array([p[0] for p in parsed_points])
+    lon = np.array([p[1] for p in parsed_points])
+    t = np.array([p[2] for p in parsed_points])
+
+    seg_dist = np.array([_haversine_m(lat[i], lon[i], lat[i + 1], lon[i + 1]) for i in range(len(points) - 1)])
     dt = np.diff(t)
-    dt[dt == 0] = np.nan
-    speed = dist / dt
-    speed = speed[np.isfinite(speed) & (speed < 50)]
-    if speed.size < 3:
+    dt_safe = np.where(dt > 0, dt, 1.0)
+    speed = seg_dist / dt_safe
+    valid_speed = speed[np.isfinite(speed) & (speed < 60.0)]  # clip unrealistic GPS jumps > 60 m/s (~216 km/h)
+    if valid_speed.size < 3:
         return None
-    accel = np.diff(speed)
+
+    accel = np.diff(valid_speed)
+    jerk = np.diff(accel) if accel.size > 1 else np.array([0.0])
+
     bearing = np.arctan2(np.diff(lon), np.diff(lat))
     turn = np.mod(np.diff(bearing) + np.pi, 2 * np.pi) - np.pi
 
+    path_length = float(np.sum(seg_dist))
+    straight_line = _haversine_m(lat[0], lon[0], lat[-1], lon[-1])
+    directness = float(straight_line / max(path_length, 1.0))
+
+    # Stop metrics (stops at delivery addresses vs continuous transit)
+    is_stopped = speed < _STOP_SPEED_MPS
+    stop_count = int(np.sum(np.diff(is_stopped.astype(int)) > 0))
+    total_time = max(float(t[-1] - t[0]), 1.0)
+    stop_time = float(np.sum(dt_safe[is_stopped])) if is_stopped.any() else 0.0
+    stop_duration_ratio = float(min(stop_time / total_time, 1.0))
+
+    start_ts_str = session.get("timestamp")
+    if start_ts_str:
+        try:
+            start_dt = datetime.fromisoformat(str(start_ts_str).replace("Z", "+00:00"))
+            hour = start_dt.hour + start_dt.minute / 60.0
+        except Exception:
+            hour = 12.0
+    else:
+        hour = 12.0
+    hour_sin = float(np.sin(2 * np.pi * hour / 24.0))
+    hour_cos = float(np.cos(2 * np.pi * hour / 24.0))
+
     return np.array([
-        float(np.mean(speed)), float(np.std(speed)),
+        float(np.mean(valid_speed)),
+        float(np.std(valid_speed)),
+        float(np.percentile(valid_speed, 90)),
+        float(np.percentile(valid_speed, 10)),
         float(np.mean(np.abs(accel))) if accel.size else 0.0,
+        float(np.max(np.abs(accel))) if accel.size else 0.0,
+        float(np.mean(np.abs(jerk))) if jerk.size else 0.0,
         float(np.std(turn)) if turn.size else 0.0,
-    ])
+        directness,
+        float(stop_count),
+        stop_duration_ratio,
+        path_length / 1000.0,  # km
+        hour_sin,
+        hour_cos,
+    ], dtype=np.float32)
 
 
 # Stop-detection thresholds for turning a flat GPS point stream into
 # ODIDMob-style route legs (ASSIGN->PICKUP->DELIVERY boundaries). A
 # driver sitting near-still for this long is treated as a stop/delivery
 # point, same semantic as a wave boundary in the real dataset.
-_STOP_SPEED_MPS = 1.0
-_MIN_STOP_DURATION_S = 45.0
+_STOP_SPEED_MPS = 1.5
+_MIN_STOP_DURATION_S = 15.0
 _MIN_LEGS = 2
 
 
@@ -200,17 +256,24 @@ def _haversine_m(lat1, lon1, lat2, lon2) -> float:
 
 
 def _detect_leg_boundaries(points: list[dict]) -> tuple[list[float], list[float]] | None:
-    """Segments a flat (lat, lng, t) point stream into legs by detecting
-    sustained near-zero-speed stops, giving (r_dis_lst, r_time_lst) in
+    """Segments a flat point stream into legs by detecting
+    sustained near-zero-speed delivery stops, giving (r_dis_lst, r_time_lst) in
     the same shape ODIDMob_Routes' own `props` carries — per-leg
     distance and the absolute timestamp of each leg boundary. Returns
     None if fewer than `_MIN_LEGS` legs can be resolved (e.g. a short
     session with no stops at all)."""
     if len(points) < 5:
         return None
-    lat = np.array([p["lat"] for p in points])
-    lon = np.array([p["lng"] for p in points])
-    t = np.array([_parse_ts(p["t"]) / 1000.0 for p in points])  # seconds
+
+    parsed_points = []
+    cur_t = 0.0
+    for p in points:
+        lat_v, lng_v, cur_t = _parse_gps_point(p, cur_t)
+        parsed_points.append((lat_v, lng_v, cur_t))
+
+    lat = np.array([p[0] for p in parsed_points])
+    lon = np.array([p[1] for p in parsed_points])
+    t = np.array([p[2] for p in parsed_points])
 
     seg_dist = np.array([_haversine_m(lat[i], lon[i], lat[i + 1], lon[i + 1]) for i in range(len(points) - 1)])
     seg_dt = np.diff(t)
