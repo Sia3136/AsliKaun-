@@ -59,7 +59,7 @@ export const TwoAxisQuadrantView: React.FC<TwoAxisQuadrantViewProps> = ({
             <span className="text-xs text-[#727785]">·</span>
             <span className="text-xs text-[#565e74] font-medium">Context vs. Behavioral Biometrics</span>
           </div>
-          <h2 className="text-lg font-bold text-[#0b1c30] mt-1">Trust Juggler Decision Quadrant</h2>
+          <h2 className="text-lg font-bold text-[#0b1c30] mt-1">AsliKaun Decision Quadrant</h2>
           <p className="text-xs text-[#565e74] mt-0.5 max-w-xl">
             Live evaluation plane plotting fleet scores from the ML fusion engine. Proves account rental separation (same context with anomalous motor gestures) vs. authentic device upgrades.
           </p>

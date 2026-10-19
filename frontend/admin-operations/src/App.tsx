@@ -1208,16 +1208,18 @@ export default function App() {
   const fetchLiveScores = async () => {
     setIsRefreshing(true);
     try {
-      const token = sessionStorage.getItem("tm-auth-token") || "demo-admin-session-token";
+      const token = sessionStorage.getItem("aslikaun-auth-token") || sessionStorage.getItem("tm-auth-token") || "demo-admin-session-token";
       const [scoresRes, queueRes] = await Promise.all([
         fetch("/v1/fleet/scores", { headers: { Authorization: `Bearer ${token}` } }),
         fetch("/v1/review-queue?status=all", { headers: { Authorization: `Bearer ${token}` } }),
       ]);
 
       if (scoresRes.status === 401 || queueRes.status === 401) {
-        sessionStorage.removeItem("tm-auth");
-        sessionStorage.removeItem("tm-auth-token");
-        window.location.assign("/auth?mode=login&error=Session+expired.+Please+sign+in+again.");
+        if (!token.startsWith("demo-") && !token.startsWith("google-oauth-session-")) {
+          ['aslikaun-auth', 'aslikaun-auth-token', 'aslikaun-auth-user', 'tm-auth', 'tm-auth-token', 'tm-auth-user'].forEach((k) => sessionStorage.removeItem(k));
+          window.location.assign("/auth?mode=login&error=Session+expired.+Please+sign+in+again.");
+          return;
+        }
         return;
       }
 

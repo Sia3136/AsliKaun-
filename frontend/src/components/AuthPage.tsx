@@ -34,14 +34,15 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
 
 
     if (token) {
-      sessionStorage.setItem('tm-auth', 'true');
-      sessionStorage.setItem('tm-auth-token', token);
+      ['aslikaun-auth', 'tm-auth'].forEach((k) => sessionStorage.setItem(k, 'true'));
+      ['aslikaun-auth-token', 'tm-auth-token'].forEach((k) => sessionStorage.setItem(k, token));
       if (userEmail) {
-        sessionStorage.setItem('tm-auth-user', JSON.stringify({
+        const u = JSON.stringify({
           email: userEmail,
           name: userName || userEmail.split('@')[0],
           provider: provider,
-        }));
+        });
+        ['aslikaun-auth-user', 'tm-auth-user'].forEach((k) => sessionStorage.setItem(k, u));
       }
       window.history.replaceState({}, document.title, window.location.pathname);
       window.location.assign('/fleet-dashboard.html');
@@ -105,15 +106,16 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
     }
 
     const fallbackToken = 'google-oauth-session-' + Date.now();
-    sessionStorage.setItem('tm-auth', 'true');
-    sessionStorage.setItem('tm-auth-token', fallbackToken);
-    sessionStorage.setItem('tm-auth-user', JSON.stringify({
+    ['aslikaun-auth', 'tm-auth'].forEach((k) => sessionStorage.setItem(k, 'true'));
+    ['aslikaun-auth-token', 'tm-auth-token'].forEach((k) => sessionStorage.setItem(k, fallbackToken));
+    const googleUser = JSON.stringify({
       email: email,
       name: name,
       organization: 'Google Workspace',
       provider: 'google',
       avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&h=120&q=80',
-    }));
+    });
+    ['aslikaun-auth-user', 'tm-auth-user'].forEach((k) => sessionStorage.setItem(k, googleUser));
     window.location.assign(`/fleet-dashboard.html?provider=google&user_name=${encodeURIComponent(name)}&user_email=${encodeURIComponent(email)}`);
   }
 
@@ -155,13 +157,14 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
       }
 
       // Save credentials in session
-      sessionStorage.setItem('tm-auth', 'true');
-      sessionStorage.removeItem('tm-auth-fallback');
+      ['aslikaun-auth', 'tm-auth'].forEach((k) => sessionStorage.setItem(k, 'true'));
+      ['aslikaun-auth-fallback', 'tm-auth-fallback'].forEach((k) => sessionStorage.removeItem(k));
       if (data.access_token) {
-        sessionStorage.setItem('tm-auth-token', data.access_token);
+        ['aslikaun-auth-token', 'tm-auth-token'].forEach((k) => sessionStorage.setItem(k, data.access_token));
       }
       if (data.user) {
-        sessionStorage.setItem('tm-auth-user', JSON.stringify(data.user));
+        const u = JSON.stringify(data.user);
+        ['aslikaun-auth-user', 'tm-auth-user'].forEach((k) => sessionStorage.setItem(k, u));
       }
 
       window.location.assign('/fleet-dashboard.html');
@@ -176,15 +179,17 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
         [404, 500, 502, 503, 504].some((c) => msg.includes(String(c)));
 
       if (isUnreachable) {
-        sessionStorage.setItem('tm-auth', 'true');
-        sessionStorage.setItem('tm-auth-token', 'demo-local-fallback-' + Date.now());
-        sessionStorage.setItem('tm-auth-fallback', 'true');
-        sessionStorage.setItem('tm-auth-user', JSON.stringify({
+        ['aslikaun-auth', 'tm-auth'].forEach((k) => sessionStorage.setItem(k, 'true'));
+        const fbToken = 'demo-local-fallback-' + Date.now();
+        ['aslikaun-auth-token', 'tm-auth-token'].forEach((k) => sessionStorage.setItem(k, fbToken));
+        ['aslikaun-auth-fallback', 'tm-auth-fallback'].forEach((k) => sessionStorage.setItem(k, 'true'));
+        const fbUser = JSON.stringify({
           email: email.trim(),
           name: mode === 'signup' ? name.trim() : (email.split('@')[0] || 'Alex Morgan'),
           provider: 'email',
           organization: mode === 'signup' ? organization.trim() : 'AsliKaun Core'
-        }));
+        });
+        ['aslikaun-auth-user', 'tm-auth-user'].forEach((k) => sessionStorage.setItem(k, fbUser));
         window.location.assign('/fleet-dashboard.html');
         return;
       }

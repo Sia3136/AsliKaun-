@@ -19,9 +19,13 @@ ADMIN_PASSWORD = "test-password-long-enough-123"
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory: pytest.TempPathFactory):
-    db_path = tmp_path_factory.mktemp("trust_juggler_tests") / "test.db"
+    db_path = tmp_path_factory.mktemp("aslikaun_tests") / "test.db"
     import os
 
+    os.environ["ASLIKAUN_DB"] = str(db_path)
+    os.environ["ASLIKAUN_ADMIN_USERNAME"] = ADMIN_USERNAME
+    os.environ["ASLIKAUN_ADMIN_PASSWORD"] = ADMIN_PASSWORD
+    os.environ["ASLIKAUN_TOKEN_SECRET"] = "test-only-secret-that-is-long-enough-for-regression-tests"
     os.environ["TRUST_JUGGLER_DB"] = str(db_path)
     os.environ["TRUST_JUGGLER_ADMIN_USERNAME"] = ADMIN_USERNAME
     os.environ["TRUST_JUGGLER_ADMIN_PASSWORD"] = ADMIN_PASSWORD
@@ -77,6 +81,7 @@ def test_health_endpoint(client: TestClient):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert response.json()["service"] == "aslikaun-api"
 
 
 def test_first_session_establishes_baseline_and_stable_session_continues(client: TestClient):

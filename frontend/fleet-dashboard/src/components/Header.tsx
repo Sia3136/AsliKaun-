@@ -27,16 +27,14 @@ export const Header: React.FC<HeaderProps> = ({
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [userProfile] = useState<{ name: string; email: string; provider?: string }>(() => {
     try {
-      const stored = sessionStorage.getItem('tm-auth-user') || localStorage.getItem('tm-auth-user');
+      const stored = sessionStorage.getItem('aslikaun-auth-user') || sessionStorage.getItem('tm-auth-user') || localStorage.getItem('aslikaun-auth-user') || localStorage.getItem('tm-auth-user');
       if (stored) return JSON.parse(stored);
     } catch {}
-    return { name: 'Elena Vance', email: 'elena.vance@defense.trustmesh.io', provider: 'email' };
+    return { name: 'Elena Vance', email: 'elena.vance@aslikaun.ai', provider: 'email' };
   });
 
   const handleLogout = () => {
-    sessionStorage.removeItem('tm-auth');
-    sessionStorage.removeItem('tm-auth-token');
-    sessionStorage.removeItem('tm-auth-user');
+    ['aslikaun-auth', 'aslikaun-auth-token', 'aslikaun-auth-user', 'tm-auth', 'tm-auth-token', 'tm-auth-user'].forEach((k) => sessionStorage.removeItem(k));
     window.location.assign('/auth?mode=login');
   };
 

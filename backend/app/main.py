@@ -58,13 +58,16 @@ except ImportError:
     ML_DETECTORS_AVAILABLE = False
 
 logging.basicConfig(
-    level=os.getenv("TRUST_JUGGLER_LOG_LEVEL", "INFO"),
+    level=os.getenv("ASLIKAUN_LOG_LEVEL", os.getenv("TRUST_JUGGLER_LOG_LEVEL", "INFO")),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
-logger = logging.getLogger("trust_juggler")
+logger = logging.getLogger("aslikaun")
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = os.getenv("TRUST_JUGGLER_DB", str(_PROJECT_ROOT / "trust_juggler.db"))
+_default_db = _PROJECT_ROOT / "aslikaun.db"
+if not _default_db.exists() and (_PROJECT_ROOT / "trust_juggler.db").exists():
+    _default_db = _PROJECT_ROOT / "trust_juggler.db"
+DB_PATH = os.getenv("ASLIKAUN_DB", os.getenv("TRUST_JUGGLER_DB", str(_default_db)))
 app = FastAPI(
     title="AsliKaun API",
     description="Continuous Identity Intelligence: two-axis context and behavioral continuity.",
@@ -78,7 +81,8 @@ _default_cors_origins = (
 CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
-        "TRUST_JUGGLER_FRONTEND_ORIGIN", _default_cors_origins
+        "ASLIKAUN_FRONTEND_ORIGIN",
+        os.getenv("TRUST_JUGGLER_FRONTEND_ORIGIN", _default_cors_origins),
     ).split(",")
     if origin.strip()
 ]
@@ -107,20 +111,14 @@ async def log_requests(request: Request, call_next):
     )
     return response
 
-# Set TRUST_JUGGLER_TOKEN_SECRET to a long random value before deployment.
-# This fallback is only for local development and must not be used in production.
+# Set ASLIKAUN_TOKEN_SECRET (or legacy TRUST_JUGGLER_TOKEN_SECRET) before deployment.
 TOKEN_SECRET = os.getenv(
-    "TRUST_JUGGLER_TOKEN_SECRET",
-    "local-development-only-change-this-secret-before-deployment",
+    "ASLIKAUN_TOKEN_SECRET",
+    os.getenv("TRUST_JUGGLER_TOKEN_SECRET", "local-development-only-change-this-secret-before-deployment"),
 ).encode("utf-8")
 TOKEN_TTL_SECONDS = 8 * 60 * 60
 PASSWORD_HASH_ITERATIONS = 310_000
 CONSENT_VERSION = "2026-10-19"
-# Raw per-session biometric payloads (accel/touch/gps) are purged after
-# this many days; the scored summary row (scores, quadrant, decision,
-# reasons) is kept indefinitely for graphs/audit history. Matches the
-# product's stated policy: don't retain raw behavioral data long-term,
-# keep aggregated outcomes for trend reporting.
 DATA_RETENTION_DAYS = 30
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -144,8 +142,8 @@ def _load_env_file():
                     if k:
                         os.environ[k] = v
                 TOKEN_SECRET = os.getenv(
-                    "TRUST_JUGGLER_TOKEN_SECRET",
-                    "local-development-only-change-this-secret-before-deployment",
+                    "ASLIKAUN_TOKEN_SECRET",
+                    os.getenv("TRUST_JUGGLER_TOKEN_SECRET", "local-development-only-change-this-secret-before-deployment"),
                 ).encode("utf-8")
             except Exception:
                 pass
@@ -155,8 +153,8 @@ _load_env_file()
 
 # Reload the token secret after reading the repository .env file.
 TOKEN_SECRET = os.getenv(
-    "TRUST_JUGGLER_TOKEN_SECRET",
-    "local-development-only-change-this-secret-before-deployment",
+    "ASLIKAUN_TOKEN_SECRET",
+    os.getenv("TRUST_JUGGLER_TOKEN_SECRET", "local-development-only-change-this-secret-before-deployment"),
 ).encode("utf-8")
 
 # Google OAuth 2.0 Credentials & Redirect URI
@@ -546,8 +544,8 @@ def require_driver_token(driver_id: str, token: str | None) -> None:
 
 def seed_admin_from_env() -> None:
     """Create the first admin only when credentials are configured or using dev defaults."""
-    username = os.getenv("TRUST_JUGGLER_ADMIN_USERNAME", "admin")
-    password = os.getenv("TRUST_JUGGLER_ADMIN_PASSWORD", "admin-trustjuggler-2026")
+    username = os.getenv("ASLIKAUN_ADMIN_USERNAME", os.getenv("TRUST_JUGGLER_ADMIN_USERNAME", "admin"))
+    password = os.getenv("ASLIKAUN_ADMIN_PASSWORD", os.getenv("TRUST_JUGGLER_ADMIN_PASSWORD", "admin-aslikaun-2026"))
     with connect() as con:
         if username and password and len(password) >= 8:
             existing = con.execute(
@@ -561,7 +559,7 @@ def seed_admin_from_env() -> None:
                 )
                 logger.info("Created initial AsliKaun admin account: %s", username)
 
-        # Seed the frontend demo account (admin@aslikaun.ai / trustmesh)
+        # Seed the frontend demo account (admin@aslikaun.ai / aslikaun)
         demo_email = "admin@aslikaun.ai"
         existing_demo = con.execute(
             "SELECT username FROM admin_users WHERE username = ?", (demo_email,)
@@ -711,7 +709,7 @@ def decode_json(value: str | None, default: Any) -> Any:
         return default
 
 
-OPS_WEBHOOK_URL = os.getenv("TRUST_JUGGLER_OPS_WEBHOOK_URL")
+OPS_WEBHOOK_URL = os.getenv("ASLIKAUN_OPS_WEBHOOK_URL", os.getenv("TRUST_JUGGLER_OPS_WEBHOOK_URL"))
 
 
 def send_ops_webhook_alert(driver_id: str, decision: str, quadrant: str, reasons: list[str], fatigue_capped: bool = False) -> bool:
@@ -946,7 +944,7 @@ def public_result(row: sqlite3.Row) -> dict:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "trust-juggler-api"}
+    return {"status": "ok", "service": "aslikaun-api"}
 
 
 @app.post("/v1/admin/login")
@@ -2150,7 +2148,7 @@ def webhook_test(admin: dict[str, str] = Depends(require_admin)) -> dict:
     admin can verify the integration without waiting for a real
     escalation."""
     if not OPS_WEBHOOK_URL:
-        raise HTTPException(status_code=503, detail="No ops webhook configured (set TRUST_JUGGLER_OPS_WEBHOOK_URL)")
+        raise HTTPException(status_code=503, detail="No ops webhook configured (set ASLIKAUN_OPS_WEBHOOK_URL)")
     delivered = send_ops_webhook_alert(
         driver_id="test-driver", decision="challenge_at_safe_pause", quadrant="handoff_signature",
         reasons=[f"Test alert triggered manually by admin '{admin['username']}'"], fatigue_capped=False,
@@ -2466,10 +2464,6 @@ elif (_FRONTEND_DIST / "assets").exists():
 if _STATIC_DIR.exists():
     app.mount("/dashboard", StaticFiles(directory=str(_STATIC_DIR), html=True), name="dashboard")
 
-
-@app.get("/health")
-def health() -> dict:
-    return {"status": "ok", "service": "aslikaun-api"}
 
 
 @app.get("/favicon.svg", include_in_schema=False)

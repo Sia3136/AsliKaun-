@@ -34,7 +34,7 @@ Add the AsliKaun collector script to your delivery partner web or hybrid mobile 
 
 ```html
 <!-- 1. Include AsliKaun SDK -->
-<script src="https://cdn.trustjuggler.com/trustmesh-sdk.js"></script>
+<script src="https://cdn.aslikaun.ai/aslikaun-sdk.js"></script>
 
 <!-- 2. Initialize with your authenticated driver ID -->
 <script>

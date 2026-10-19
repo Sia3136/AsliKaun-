@@ -1,4 +1,4 @@
-/** TrustMesh browser telemetry. Collects only after explicit in-app consent and while online. */
+/** AsliKaun browser telemetry. Collects only after explicit in-app consent and while online. */
 type TouchPathPoint = { x: number; y: number; pressure: number; t_offset_ms: number };
 type TouchEventSummary = {
   type: "tap" | "swipe";
@@ -11,12 +11,13 @@ type TouchEventSummary = {
 };
 type IngestResponse = { driver_id?: string; decision?: string; quadrant?: string; model_status?: string; [key: string]: unknown };
 const API_BASE = (
+  import.meta.env.VITE_ASLIKAUN_API_URL ||
   import.meta.env.VITE_TRUSTMESH_API_URL ||
   (typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://127.0.0.1:8000")
 ).replace(/\/$/, "");
-const DRIVER_ID = import.meta.env.VITE_TRUSTMESH_DRIVER_ID || "rider-001";
-const DRIVER_TOKEN = import.meta.env.VITE_TRUSTMESH_DRIVER_TOKEN || "demo-driver-token-2026";
-const ZONE_STORAGE_KEY = "trustmesh_coarse_zone_v1";
+const DRIVER_ID = import.meta.env.VITE_ASLIKAUN_DRIVER_ID || import.meta.env.VITE_TRUSTMESH_DRIVER_ID || "rider-001";
+const DRIVER_TOKEN = import.meta.env.VITE_ASLIKAUN_DRIVER_TOKEN || import.meta.env.VITE_TRUSTMESH_DRIVER_TOKEN || "demo-driver-token-2026";
+const ZONE_STORAGE_KEY = "aslikaun_coarse_zone_v1";
 type GpsPoint = { lat: number; lng: number; t: string };
 const state = {
   online: false, listenersStarted: false, accel: [] as number[], gyro: [] as number[], touches: [] as TouchEventSummary[],
@@ -59,11 +60,13 @@ export async function recordPrecisionConsent(granted: boolean): Promise<boolean>
   }
 }
 function status(signal: string, available: boolean, detail?: string) {
+  window.dispatchEvent(new CustomEvent("aslikaun:signal-status", { detail: { signal, available, detail } }));
   window.dispatchEvent(new CustomEvent("trustmesh:signal-status", { detail: { signal, available, detail } }));
 }
 function pushLimited(list: number[], value: number, max = 120) { if (Number.isFinite(value)) { list.push(Number(value.toFixed(3))); if (list.length > max) list.shift(); } }
 function makeDeviceId() {
-  const key = "trustmesh_device_id_v1"; let id = localStorage.getItem(key);
+  const key = "aslikaun_device_id_v1";
+  let id = localStorage.getItem(key) || localStorage.getItem("trustmesh_device_id_v1");
   if (!id) { id = `web-${crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`; localStorage.setItem(key, id); }
   return id;
 }

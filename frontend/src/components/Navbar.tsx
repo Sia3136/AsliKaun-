@@ -10,7 +10,10 @@ export const Navbar: React.FC<NavbarProps> = ({ theme, onToggleTheme }) => {
 
   React.useEffect(() => {
     try {
-      setIsLoggedIn(sessionStorage.getItem('tm-auth') === 'true');
+      setIsLoggedIn(
+        sessionStorage.getItem('aslikaun-auth') === 'true' ||
+        sessionStorage.getItem('tm-auth') === 'true'
+      );
     } catch {}
   }, []);
 

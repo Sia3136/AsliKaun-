@@ -19,7 +19,7 @@ python -m uvicorn backend.app.main:app --reload --port 8000
 
 - API Docs: `http://127.0.0.1:8000/docs`
 - Interactive Dashboard: `http://127.0.0.1:8000/dashboard/`
-- SQLite database `trust_juggler.db` is initialized automatically with prewarmed model bundles.
+- SQLite database `aslikaun.db` is initialized automatically with prewarmed model bundles.
 
 ## 2. Ingest Session
 

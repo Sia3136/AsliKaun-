@@ -306,6 +306,7 @@
 
         // Dispatch custom event for client host app
         if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('aslikaun:verdict', { detail: data }));
           window.dispatchEvent(new CustomEvent('trustmesh:verdict', { detail: data }));
         }
 

@@ -389,7 +389,7 @@
   </div>
 
   <!-- AsliKaun Embeddable SDK -->
-  <script src="trustmesh-sdk.js"></script>
+  <script src="aslikaun-sdk.js"></script>
 
   <script>
     // Initialize the AsliKaun SDK as a third-party developer would
@@ -469,6 +469,9 @@
     }
 
     // Listen for global AsliKaun events
+    window.addEventListener('aslikaun:verdict', (e) => {
+      updateVerdict(e.detail);
+    });
     window.addEventListener('trustmesh:verdict', (e) => {
       updateVerdict(e.detail);
     });

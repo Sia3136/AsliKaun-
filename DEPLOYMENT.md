@@ -20,15 +20,15 @@ No `render.yaml` is included. The database storage decision requires an explicit
 
 Set these in Render. Use real values only in Render's environment settings, never in Git:
 
-- `TRUST_JUGGLER_FRONTEND_ORIGIN`: the exact deployed Vercel origin, for example `https://your-app.vercel.app`. For more than one origin, provide a comma-separated list.
-- `TRUST_JUGGLER_TOKEN_SECRET`: a long random secret used to sign admin bearer tokens.
-- `TRUST_JUGGLER_ADMIN_USERNAME`: the initial admin username.
-- `TRUST_JUGGLER_ADMIN_PASSWORD`: the initial admin password; it must be at least 12 characters.
-- `TRUST_JUGGLER_DB`: set to `/var/data/trust_juggler.db` when using a Render persistent disk mounted at `/var/data`. If omitted, the service writes `trust_juggler.db` under the repository root.
+- `ASLIKAUN_FRONTEND_ORIGIN` (or `TRUST_JUGGLER_FRONTEND_ORIGIN`): the exact deployed Vercel origin, for example `https://your-app.vercel.app`. For more than one origin, provide a comma-separated list.
+- `ASLIKAUN_TOKEN_SECRET` (or `TRUST_JUGGLER_TOKEN_SECRET`): a long random secret used to sign admin bearer tokens.
+- `ASLIKAUN_ADMIN_USERNAME` (or `TRUST_JUGGLER_ADMIN_USERNAME`): the initial admin username.
+- `ASLIKAUN_ADMIN_PASSWORD` (or `TRUST_JUGGLER_ADMIN_PASSWORD`): the initial admin password; it must be at least 12 characters.
+- `ASLIKAUN_DB` (or `TRUST_JUGGLER_DB`): set to `/var/data/aslikaun.db` when using a Render persistent disk mounted at `/var/data`. If omitted, the service writes `aslikaun.db` under the repository root.
 - `ANTHROPIC_API_KEY`: optional. Without it, escalated sessions use the clearly labeled deterministic reason-vector fallback.
 - `REASON_VECTOR_MODEL`: optional model name used with `ANTHROPIC_API_KEY`.
-- `TRUST_JUGGLER_OPS_WEBHOOK_URL`: optional. When set, every `challenge_at_safe_pause`/`step_up_check_at_safe_pause` escalation is POSTed to this URL (Slack incoming webhook, PagerDuty, or any generic endpoint) so ops doesn't have to poll the dashboard. Verify with `POST /v1/admin/webhook-test` (admin bearer token required) after deploying. Failures are logged and never block ingest.
-- `TRUST_JUGGLER_LOG_LEVEL`: optional, defaults to `INFO`. Set to `DEBUG` for noisier request/decision logging while diagnosing an issue.
+- `ASLIKAUN_OPS_WEBHOOK_URL` (or `TRUST_JUGGLER_OPS_WEBHOOK_URL`): optional. When set, every `challenge_at_safe_pause`/`step_up_check_at_safe_pause` escalation is POSTed to this URL (Slack incoming webhook, PagerDuty, or any generic endpoint) so ops doesn't have to poll the dashboard. Verify with `POST /v1/admin/webhook-test` (admin bearer token required) after deploying. Failures are logged and never block ingest.
+- `ASLIKAUN_LOG_LEVEL`: optional, defaults to `INFO`. Set to `DEBUG` for noisier request/decision logging while diagnosing an issue.
 
 The repository's `.env.example` contains placeholders only. Do not upload `.env`, the local SQLite database, or the Windows `.venv`.
 
@@ -70,8 +70,8 @@ python -m pytest -q backend/tests
 
 In the Vercel project settings, add these build-time variables and redeploy:
 
-- `VITE_TRUSTMESH_API_URL=https://YOUR-RENDER-SERVICE.onrender.com`
-- `VITE_TRUSTMESH_DRIVER_ID=the-driver-id-provisioned-by-the-backend`
-- `VITE_TRUSTMESH_DRIVER_TOKEN=the-driver-token-issued-by-the-admin-endpoint`
+- `VITE_ASLIKAUN_API_URL=https://YOUR-RENDER-SERVICE.onrender.com` (or `VITE_TRUSTMESH_API_URL`)
+- `VITE_ASLIKAUN_DRIVER_ID=the-driver-id-provisioned-by-the-backend` (or `VITE_TRUSTMESH_DRIVER_ID`)
+- `VITE_ASLIKAUN_DRIVER_TOKEN=the-driver-token-issued-by-the-admin-endpoint` (or `VITE_TRUSTMESH_DRIVER_TOKEN`)
 
 The Vite telemetry client sends `POST /v1/sessions/ingest` with `X-Driver-Token`, JSON sensor summaries, a coarse zone, and the driver ID. Never put an admin bearer token or an Anthropic API key in a `VITE_` variable; Vite exposes those values to browser users.

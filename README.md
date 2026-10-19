@@ -108,7 +108,7 @@ flowchart TD
   - `GET /v1/reviews/pending`: Administrative human escalation queue.
   - `POST /v1/reviews/{review_id}/resolve`: Auditor resolution endpoint.
 - **State Store & Resilience**:
-  - SQLite persistence (`trust_juggler.db`) tracking sessions, baseline states, audit trails, and drift time-series (`drivers.timeseries_json`).
+  - SQLite persistence (`aslikaun.db`) tracking sessions, baseline states, audit trails, and drift time-series (`drivers.timeseries_json`).
   - Safe-pause gate suppressing challenges when vehicle velocity exceeds $1.5\text{ m/s}$.
   - Token-based RBAC security protecting driver declarations and administrative operations.
   - 100% regression and unit test coverage in `backend/tests/test_api.py`.
@@ -119,7 +119,7 @@ flowchart TD
   - **Driver Profile Modal**: Deep-dive telemetry inspection with multi-modal radar, drift charts, and historical p-value distributions.
   - **Live Alert Drawer**: Urgent escalated handoffs with plain-language Reason Vectors and one-click resolution.
   - **Interactive Threat Simulator**: Live simulation of immediate handoffs, boiling-frog attacks, split-shift rentals, and legitimate phone upgrades.
-- **Client Telemetry SDK** (`frontend/trustmesh-sdk.js`):
+- **Client Telemetry SDK** (`frontend/aslikaun-sdk.js`):
   - In-browser and mobile-friendly telemetry buffer gathering stroke vectors, device orientation, and delivery stop intervals with zero sensitive PII leakage.
 
 ---

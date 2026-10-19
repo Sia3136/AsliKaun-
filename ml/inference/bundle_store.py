@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("trust_juggler.bundle_store")
+logger = logging.getLogger("aslikaun.bundle_store")
 
 BUNDLES_DIR = Path(__file__).resolve().parents[1] / "weights" / "bundles"
 BUNDLES_DIR.mkdir(parents=True, exist_ok=True)

@@ -19,7 +19,7 @@ from typing import Any
 
 import numpy as np
 
-logger = logging.getLogger("trust_juggler.ml_bridge")
+logger = logging.getLogger("aslikaun.ml_bridge")
 
 # Ensure project root (containing `ml/`) is on sys.path
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]

@@ -208,7 +208,7 @@ export default function App() {
   // 2. Fetch fleet scores and review queue from backend (Item 1)
   const fetchFleetData = useCallback(async () => {
     setIsRefreshing(true);
-    const token = sessionStorage.getItem('tm-auth-token') || 'demo-admin-session-token';
+    const token = sessionStorage.getItem('aslikaun-auth-token') || sessionStorage.getItem('tm-auth-token') || 'demo-admin-session-token';
     const headers: Record<string, string> = {
       'Authorization': `Bearer ${token}`
     };
@@ -219,9 +219,12 @@ export default function App() {
 
       if (scoresRes.status === 401) {
         // Token expired or invalid
-        sessionStorage.removeItem('tm-auth');
-        sessionStorage.removeItem('tm-auth-token');
-        window.location.assign('/auth?mode=login&error=Session+expired.+Please+sign+in+again.');
+        if (!token.startsWith('demo-') && !token.startsWith('google-oauth-session-')) {
+          ['aslikaun-auth', 'aslikaun-auth-token', 'aslikaun-auth-user', 'tm-auth', 'tm-auth-token', 'tm-auth-user'].forEach((k) => sessionStorage.removeItem(k));
+          window.location.assign('/auth?mode=login&error=Session+expired.+Please+sign+in+again.');
+          return;
+        }
+        setIsBackendConnected(false);
         return;
       }
 

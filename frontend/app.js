@@ -1,4 +1,4 @@
-// Trust Juggler Frontend Dashboard Application
+// AsliKaun Frontend Dashboard Application
 const API_BASE = window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
   ? (window.location.port === '8000' ? '' : 'http://127.0.0.1:8000')
   : '';
@@ -140,11 +140,16 @@ function initThemeToggle() {
 // Backend Health, Admin Auth & Data Sync
 async function ensureAdminAuth() {
   if (state.adminToken) return state.adminToken;
+  const userToken = sessionStorage.getItem('aslikaun-auth-token') || sessionStorage.getItem('tm-auth-token');
+  if (userToken && !userToken.startsWith('demo-')) {
+    state.adminToken = userToken;
+    return userToken;
+  }
   try {
     const res = await fetch(`${API_BASE}/v1/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin-trustjuggler-2026' })
+      body: JSON.stringify({ username: 'admin', password: 'admin-aslikaun-2026' })
     });
     if (res.ok) {
       const data = await res.json();

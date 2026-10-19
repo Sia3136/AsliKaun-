@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: trust-juggler-backend
+    name: aslikaun-backend
     runtime: python
     plan: free
     branch: backend

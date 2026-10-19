@@ -1,4 +1,4 @@
-# Machine Learning Development Log — Trust Juggler ML
+# Machine Learning Development Log — AsliKaun ML
 
 This log documents all machine learning models, statistical calibration methods, deep neural representations, adversarial red-teaming benchmarks, and production inference harnesses established in the `ml/` module.
 

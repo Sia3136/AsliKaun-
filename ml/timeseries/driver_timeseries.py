@@ -17,7 +17,7 @@ from typing import Any
 
 import numpy as np
 
-logger = logging.getLogger("trust_juggler.driver_timeseries")
+logger = logging.getLogger("aslikaun.driver_timeseries")
 
 
 @dataclass

@@ -1,11 +1,11 @@
-# Backend Development Log — Trust Juggler API
+# Backend Development Log — AsliKaun API
 
 This log documents all architectural milestones, completed components, API contracts, security implementations, and verification suites established in the `backend/` module.
 
 ---
 
 ## 1. Module Overview & Responsibilities
-The `backend/` service is built on **FastAPI** with **SQLite** persistence (`trust_juggler.db`). It serves as the operational core of Trust Juggler, responsible for:
+The `backend/` service is built on **FastAPI** with **SQLite** persistence (`aslikaun.db`). It serves as the operational core of AsliKaun, responsible for:
 - Continuous driver session telemetry ingestion.
 - Evaluating context and behavioral signals via the two-axis intelligence engine (`ml_bridge.py`).
 - Managing the dual-timescale baseline for registered drivers (fast adaptive baseline vs. frozen anchor baseline).

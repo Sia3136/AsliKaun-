@@ -1,11 +1,11 @@
-# Frontend Development Log — Trust Juggler & AsliKaun UI
+# Frontend Development Log — AsliKaun UI
 
 This log documents all visual interfaces, WebGL shaders, client-side state engines, dashboard capabilities, and API integrations established in the `frontend/` module.
 
 ---
 
 ## 1. Module Overview & Responsibilities
-The `frontend/` module delivers the user experience for Trust Juggler across two primary interfaces:
+The `frontend/` module delivers the user experience for AsliKaun across two primary interfaces:
 1. **AsliKaun Landing Platform** (`frontend/index.html`): High-impact product showcase, biometric continuity explainer, interactive driver portal, and scenario simulation trigger.
 2. **Fleet Operations Dashboard** (`frontend/dashboard.html`): Real-time operations center for trust operations teams, displaying two-axis fleet distributions, live sensor telemetry, driver review queues, and incident resolution workflows.
 

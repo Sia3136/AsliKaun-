@@ -56,7 +56,7 @@ TOUCH_WEIGHTS_PATH = str(Path(__file__).resolve().parents[1] / "weights" / "touc
 MOTION_WEIGHTS_PATH = str(Path(__file__).resolve().parents[1] / "weights" / "motion_triplet_encoder.pt")
 GPS_WEIGHTS_PATH = str(Path(__file__).resolve().parents[1] / "weights" / "gps_encoder.pt")
 
-logger = logging.getLogger("trust_juggler.rider_model_bundle")
+logger = logging.getLogger("aslikaun.rider_model_bundle")
 
 CONTEXT_THRESHOLD = 0.6
 TARGET_FAR = 0.01  # the product's "~1% false challenge" promise
