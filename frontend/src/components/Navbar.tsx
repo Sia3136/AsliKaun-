@@ -12,23 +12,7 @@ export const Navbar: React.FC<NavbarProps> = ({ theme, onToggleTheme }) => {
         {/* Brand Left */}
         <a className="brand-link" href="#top" aria-label="AsliKaun Home">
           <div className="brand-mark" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="tm-ring-logo">
-              <circle
-                cx="12"
-                cy="12"
-                r="7.5"
-                stroke="url(#tm-ring-grad)"
-                strokeWidth="3.2"
-                strokeLinecap="round"
-              />
-              <defs>
-                <linearGradient id="tm-ring-grad" x1="2" y1="22" x2="22" y2="2" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stopColor="#ff5e3a" />
-                  <stop offset="45%" stopColor="#c026d3" />
-                  <stop offset="100%" stopColor="#818cf8" />
-                </linearGradient>
-              </defs>
-            </svg>
+            <img src="/aslikaun-logo.png" alt="AsliKaun Logo" className="brand-logo-img" />
           </div>
           <span className="brand-name">AsliKaun</span>
         </a>

@@ -187,7 +187,10 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
   return (
     <main className="auth-shell">
       <section className="auth-story">
-        <a className="auth-brand" href="/" aria-label="AsliKaun home"><span className="auth-brand-mark">◈</span> AsliKaun</a>
+        <a className="auth-brand" href="/" aria-label="AsliKaun home">
+          <img src="/aslikaun-logo.png" alt="AsliKaun logo" className="auth-logo-img" />
+          <span>AsliKaun</span>
+        </a>
         <div className="auth-story-copy">
           <span className="auth-kicker">Identity risk intelligence</span>
           <h1>See the signal.<br /><span>Protect the network.</span></h1>
@@ -197,7 +200,10 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
       </section>
 
       <section className="auth-form-side">
-        <a className="auth-brand auth-mobile-brand" href="/" aria-label="AsliKaun home"><span className="auth-brand-mark">◈</span> AsliKaun</a>
+        <a className="auth-brand auth-mobile-brand" href="/" aria-label="AsliKaun home">
+          <img src="/aslikaun-logo.png" alt="AsliKaun logo" className="auth-logo-img" />
+          <span>AsliKaun</span>
+        </a>
         <a className="auth-home-link" href="/">← Back to home</a>
         <div className="auth-card">
           <span className="auth-secure"><i />Secure admin access</span>
