@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { goOffline, goOnlineAndIngest, recordOrderAccept, recordOrderOffer } from "./telemetry";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  getChallengeStatus, goOffline, goOnlineAndIngest, recordOrderAccept, recordOrderOffer,
+  recordPrecisionConsent, respondToChallenge,
+} from "./telemetry";
 
 type Tab = "home" | "orders" | "earnings" | "profile";
 type Page =
@@ -1329,6 +1332,7 @@ function Verification({
           ? "review"
           : "ready",
   );
+  const selfieInputRef = useRef<HTMLInputElement>(null);
 
   if (stage === "progress") {
     return (
@@ -1398,17 +1402,41 @@ function Verification({
           <Icon name="alert" size={27} />
           <h2>Pause before you verify.</h2>
           <p>
-            This demo uses a simple account confirmation. No camera, biometric,
-            or OTP service is connected.
+            We'll ask for a quick selfie, checked against your enrolled
+            reference photo. A clear match clears this automatically; anything
+            else is sent to a human reviewer — your account is never
+            auto-suspended on this alone.
           </p>
         </section>
-        <Button
-          onClick={() => {
+        <input
+          ref={selfieInputRef}
+          type="file"
+          accept="image/*"
+          capture="user"
+          style={{ display: "none" }}
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
             setStage("progress");
-            window.setTimeout(() => setStage("success"), 1100);
+            try {
+              const base64 = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+              });
+              const result = await respondToChallenge(base64);
+              if (result?.outcome === "cleared") setStage("success");
+              else if (result?.outcome === "human_review") setStage("review");
+              else setStage("failed");
+            } catch {
+              setStage("failed");
+            }
           }}
-        >
-          I'm safely stopped — continue
+        />
+        <Button onClick={() => selfieInputRef.current?.click()}>
+          I'm safely stopped — take selfie
         </Button>
         <Button variant="ghost" onClick={back}>
           Do this later
@@ -1429,9 +1457,9 @@ function Verification({
           <Icon name="phone" size={25} />
         </span>
         <div>
-          <small>Prototype method</small>
-          <h2>Demo account confirmation</h2>
-          <p>No biometric or OTP service is connected.</p>
+          <small>Selfie step-up</small>
+          <h2>Face match confirmation</h2>
+          <p>Checked against your enrolled reference photo on file.</p>
         </div>
       </section>
       <div className="privacy-panel">
@@ -1726,6 +1754,22 @@ export default function App() {
     if (online && requestVisible) recordOrderOffer();
   }, [online, requestVisible]);
 
+  // Poll the backend for a live mid-trip safe-pause escalation while
+  // online, independent of the local demo `scenario` picker. A real
+  // challenge routes the driver to the same Verification screen the
+  // demo scenarios use, but driven by an actual backend decision.
+  useEffect(() => {
+    if (!online) return;
+    const interval = setInterval(async () => {
+      const status = await getChallengeStatus();
+      if (status?.challenge_pending && page !== "verification") {
+        navigate("verification");
+      }
+    }, 15000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, page]);
+
   const handleAvailabilityChange = async (nextOnline: boolean) => {
     if (!nextOnline) {
       goOffline();
@@ -1734,12 +1778,19 @@ export default function App() {
     }
     // Obtain clear in-app consent before browser permissions or telemetry collection.
     const consent = window.confirm(
-      "AsliKaun collects a coarse location zone, supported device-motion readings, and tap/swipe timing (plus touch pressure only if your device exposes it) while you are online. Exact GPS coordinates and raw touch coordinates are not uploaded. You can stop collection by going offline. Continue?"
+      "AsliKaun collects a coarse location zone, supported device-motion readings, and tap/swipe timing (plus touch pressure only if your device exposes it) while you are online. You can stop collection by going offline. Continue?"
     );
     if (!consent) return;
+    // Separate, explicit opt-in for precise GPS + full touch-gesture paths
+    // (asked every time, not bundled into the step above, so declining it
+    // never blocks going online with standard coarse-only protection).
+    const wantsPrecision = window.confirm(
+      "Enable Enhanced Detection Mode? This sends your exact GPS location and full touch-gesture paths (not just coarse zone / tap timing) so account-handoff detection is more accurate. This data is used only for security scoring and is automatically purged after 30 days. You can decline and keep standard protection instead."
+    );
+    await recordPrecisionConsent(wantsPrecision);
     // Browser permission prompts are triggered only after the driver explicitly chooses Go Online.
     setOnline(true);
-    await goOnlineAndIngest();
+    await goOnlineAndIngest(wantsPrecision);
   };
 
   const navigate = (next: Page) => {

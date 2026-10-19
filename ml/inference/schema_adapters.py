@@ -179,3 +179,89 @@ def gps_features_from_schema(session: dict) -> np.ndarray | None:
         float(np.mean(np.abs(accel))) if accel.size else 0.0,
         float(np.std(turn)) if turn.size else 0.0,
     ])
+
+
+# Stop-detection thresholds for turning a flat GPS point stream into
+# ODIDMob-style route legs (ASSIGN->PICKUP->DELIVERY boundaries). A
+# driver sitting near-still for this long is treated as a stop/delivery
+# point, same semantic as a wave boundary in the real dataset.
+_STOP_SPEED_MPS = 1.0
+_MIN_STOP_DURATION_S = 45.0
+_MIN_LEGS = 2
+
+
+def _haversine_m(lat1, lon1, lat2, lon2) -> float:
+    r = 6371000.0
+    phi1, phi2 = np.radians(lat1), np.radians(lat2)
+    dphi = np.radians(lat2 - lat1)
+    dlambda = np.radians(lon2 - lon1)
+    a = np.sin(dphi / 2) ** 2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2) ** 2
+    return float(2 * r * np.arcsin(np.sqrt(np.clip(a, 0, 1))))
+
+
+def _detect_leg_boundaries(points: list[dict]) -> tuple[list[float], list[float]] | None:
+    """Segments a flat (lat, lng, t) point stream into legs by detecting
+    sustained near-zero-speed stops, giving (r_dis_lst, r_time_lst) in
+    the same shape ODIDMob_Routes' own `props` carries — per-leg
+    distance and the absolute timestamp of each leg boundary. Returns
+    None if fewer than `_MIN_LEGS` legs can be resolved (e.g. a short
+    session with no stops at all)."""
+    if len(points) < 5:
+        return None
+    lat = np.array([p["lat"] for p in points])
+    lon = np.array([p["lng"] for p in points])
+    t = np.array([_parse_ts(p["t"]) / 1000.0 for p in points])  # seconds
+
+    seg_dist = np.array([_haversine_m(lat[i], lon[i], lat[i + 1], lon[i + 1]) for i in range(len(points) - 1)])
+    seg_dt = np.diff(t)
+    seg_dt_safe = np.where(seg_dt > 0, seg_dt, np.nan)
+    speed = seg_dist / seg_dt_safe
+
+    boundary_idx = [0]
+    i = 0
+    n = len(speed)
+    while i < n:
+        if not (speed[i] < _STOP_SPEED_MPS):
+            i += 1
+            continue
+        j = i
+        while j < n and speed[j] < _STOP_SPEED_MPS:
+            j += 1
+        if t[j] - t[i] >= _MIN_STOP_DURATION_S:
+            mid = (i + j) // 2
+            if mid != boundary_idx[-1]:
+                boundary_idx.append(mid)
+        i = j
+    if boundary_idx[-1] != len(points) - 1:
+        boundary_idx.append(len(points) - 1)
+
+    if len(boundary_idx) - 1 < _MIN_LEGS:
+        return None
+
+    r_dis_lst = [
+        float(seg_dist[boundary_idx[k]:boundary_idx[k + 1]].sum())
+        for k in range(len(boundary_idx) - 1)
+    ]
+    r_time_lst = [float(t[idx]) for idx in boundary_idx]
+    return r_dis_lst, r_time_lst
+
+
+def gps_leg_sequence_from_schema(session: dict):
+    """The real fix for the GPS schema gap documented in
+    rider_model_bundle.py: derives ODIDMob-shaped route legs from the
+    flat point stream via stop-detection, then feeds the validated
+    triplet encoder's own `route_to_leg_sequence()` so the model that
+    actually won on real ODIDMob courier data (ml/README.md's Phase 2)
+    can run on live sessions instead of the unvalidated 4-feature
+    stopgap in `gps_features_from_schema`. Returns None (not a session
+    with too few detected stops to trust a leg segmentation) when the
+    stream doesn't have enough structure — callers fall back to the
+    classical stopgap in that case."""
+    from ml.models.gps_triplet_encoder import route_to_leg_sequence
+
+    points = session.get("gps", [])
+    boundaries = _detect_leg_boundaries(points)
+    if boundaries is None:
+        return None
+    r_dis_lst, r_time_lst = boundaries
+    return route_to_leg_sequence({"r_dis_lst": r_dis_lst, "r_time_lst": r_time_lst})

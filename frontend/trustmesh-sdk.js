@@ -336,6 +336,48 @@
       return await res.json();
     },
 
+    /**
+     * Poll whether the backend has escalated this driver to a
+     * mid-trip safe-pause challenge (see backend/app/main.py's
+     * /challenge-status). Call this on the same cadence as flush() —
+     * a 200/continue result does not by itself mean "no challenge",
+     * since an escalation can happen between flushes.
+     */
+    getChallengeStatus: async function () {
+      const url = `${this.config.endpoint.replace(/\/$/, '')}/v1/drivers/${this.config.driverId}/challenge-status`;
+      try {
+        const res = await fetch(url);
+        return await res.json();
+      } catch (e) {
+        this.log('getChallengeStatus failed:', e);
+        return null;
+      }
+    },
+
+    /**
+     * Respond to a pending challenge with a selfie (base64, no data:
+     * URI prefix). Backend runs it against the driver's enrolled face
+     * embedding; a clear match auto-clears the challenge, anything
+     * else leaves it for human review (see backend/app/main.py's
+     * /challenge/respond docstring on the fairness asymmetry).
+     * @param {string} imageBase64
+     */
+    respondToChallenge: async function (imageBase64) {
+      if (!this.config.driverToken) {
+        throw new Error('Driver token required to respond to a challenge.');
+      }
+      const url = `${this.config.endpoint.replace(/\/$/, '')}/v1/drivers/${this.config.driverId}/challenge/respond`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Driver-Token': this.config.driverToken,
+        },
+        body: JSON.stringify({ image_base64: imageBase64 }),
+      });
+      return await res.json();
+    },
+
     log: function (...args) {
       if (this.config.debug) {
         console.log('[AsliKaun SDK]', ...args);

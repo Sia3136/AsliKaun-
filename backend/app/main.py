@@ -4,16 +4,18 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote, urlencode
 
 import httpx
+import numpy as np
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -22,13 +24,28 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 try:
-    from backend.app.ml_bridge import evaluate_session_ml, evaluate_session_with_real_models
+    from backend.app.ml_bridge import (
+        ML_FACE_AVAILABLE, embed_face_image, evaluate_session_ml,
+        evaluate_session_with_real_models, face_similarity,
+    )
 except ImportError:
     try:
-        from app.ml_bridge import evaluate_session_ml, evaluate_session_with_real_models
+        from app.ml_bridge import (
+            ML_FACE_AVAILABLE, embed_face_image, evaluate_session_ml,
+            evaluate_session_with_real_models, face_similarity,
+        )
     except ImportError:
         evaluate_session_ml = None
         evaluate_session_with_real_models = None
+        embed_face_image = None
+        face_similarity = None
+        ML_FACE_AVAILABLE = False
+
+logging.basicConfig(
+    level=os.getenv("TRUST_JUGGLER_LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("trust_juggler")
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = os.getenv("TRUST_JUGGLER_DB", str(_PROJECT_ROOT / "trust_juggler.db"))
@@ -58,6 +75,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """One structured line per request: method, path, status, duration.
+    Deliberately omits query strings and bodies — those can carry
+    tokens/PII, and this is the one log line guaranteed to run for
+    every request, so it should never be a leak vector."""
+    start = time.monotonic()
+    response = await call_next(request)
+    duration_ms = round((time.monotonic() - start) * 1000, 1)
+    logger.info(
+        "%s %s -> %s (%sms)",
+        request.method, request.url.path, response.status_code, duration_ms,
+    )
+    return response
+
 # Set TRUST_JUGGLER_TOKEN_SECRET to a long random value before deployment.
 # This fallback is only for local development and must not be used in production.
 TOKEN_SECRET = os.getenv(
@@ -66,6 +99,13 @@ TOKEN_SECRET = os.getenv(
 ).encode("utf-8")
 TOKEN_TTL_SECONDS = 8 * 60 * 60
 PASSWORD_HASH_ITERATIONS = 310_000
+CONSENT_VERSION = "2026-10-19"
+# Raw per-session biometric payloads (accel/touch/gps) are purged after
+# this many days; the scored summary row (scores, quadrant, decision,
+# reasons) is kept indefinitely for graphs/audit history. Matches the
+# product's stated policy: don't retain raw behavioral data long-term,
+# keep aggregated outcomes for trend reporting.
+DATA_RETENTION_DAYS = 30
 bearer_scheme = HTTPBearer(auto_error=False)
 
 # Automatically load .env file from repository root if present
@@ -122,6 +162,10 @@ class DeclareChange(BaseModel):
     ip_subnet: str | None = None
     zone: str | None = None
     reason: str = Field(default="rider_declared_change", max_length=200)
+
+
+class FaceImage(BaseModel):
+    image_base64: str = Field(min_length=1, description="Raw base64 (no data: URI prefix) of a JPEG/PNG selfie")
 
 
 class ResolveReview(BaseModel):
@@ -225,6 +269,24 @@ def init_db() -> None:
             matched_session_id INTEGER,
             outcome_note TEXT
         );
+        CREATE TABLE IF NOT EXISTS driver_consent (
+            driver_id TEXT PRIMARY KEY,
+            consent_version TEXT NOT NULL,
+            given_at TEXT NOT NULL,
+            revoked_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS driver_face_enrollment (
+            driver_id TEXT PRIMARY KEY,
+            embedding_b64 TEXT NOT NULL,
+            enrolled_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS driver_anchor_state (
+            driver_id TEXT PRIMARY KEY,
+            anchor_mean REAL,
+            cumulative REAL NOT NULL DEFAULT 0,
+            buffer_json TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL
+        );
         """)
         # Migrate databases created by earlier prototype versions.
         review_columns = {
@@ -321,6 +383,32 @@ def decode_access_token(token: str) -> dict[str, Any]:
         )
 
 
+# In-memory sliding-window rate limiter for login endpoints — the actual
+# brute-force-sensitive surface, not a blanket rate limit on every route.
+# Deliberately not a new dependency (no slowapi/redis): a single-process
+# in-memory dict is fine for this deployment's current single-instance
+# SQLite setup (see DEPLOYMENT.md's storage-limitation note — the same
+# constraint already applies there). Swap for a shared store (Redis) if
+# this ever runs multi-instance.
+_LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+LOGIN_RATE_LIMIT = 10  # attempts
+LOGIN_RATE_WINDOW_SECONDS = 60
+
+
+def enforce_login_rate_limit(request: Request, key_suffix: str) -> None:
+    client_ip = request.client.host if request.client else "unknown"
+    key = f"{client_ip}:{key_suffix}"
+    now = time.time()
+    attempts = [t for t in _LOGIN_ATTEMPTS.get(key, []) if now - t < LOGIN_RATE_WINDOW_SECONDS]
+    if len(attempts) >= LOGIN_RATE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many login attempts. Try again in under {LOGIN_RATE_WINDOW_SECONDS} seconds.",
+        )
+    attempts.append(now)
+    _LOGIN_ATTEMPTS[key] = attempts
+
+
 def require_admin(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> dict[str, str]:
@@ -391,7 +479,7 @@ def seed_admin_from_env() -> None:
                     "VALUES(?, ?, 1, ?, 'Fleet Admin', 'email', 'AsliKaun Core')",
                     (username, hash_password(password), now_iso()),
                 )
-                print(f"Created initial Trust Juggler admin account: {username}")
+                logger.info("Created initial Trust Juggler admin account: %s", username)
 
         # Seed the frontend demo account (admin@aslikaun.ai / trustmesh)
         demo_email = "admin@aslikaun.ai"
@@ -495,11 +583,32 @@ def seed_demo_fleet() -> None:
             )
 
 
+def purge_stale_session_payloads(retention_days: int = DATA_RETENTION_DAYS) -> int:
+    """Nulls out `payload_json` (the raw accel/touch/gps biometric
+    payload) for sessions older than `retention_days`, keeping the
+    scored summary columns (scores, quadrant, decision, reasons)
+    intact. Real enforcement of the "don't retain raw behavioral data
+    long-term" policy, not just a stated intention. Returns the number
+    of rows purged. Safe to call repeatedly — already-purged rows are
+    skipped via the payload_json marker."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    with connect() as con:
+        cur = con.execute(
+            """UPDATE sessions SET payload_json = '{"purged": true}'
+               WHERE timestamp < ? AND payload_json != '{"purged": true}'""",
+            (cutoff,),
+        )
+        return cur.rowcount
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
     seed_admin_from_env()
     seed_demo_fleet()
+    purged = purge_stale_session_payloads()
+    if purged:
+        logger.info("[retention] purged raw payloads for %s session(s) older than %s days", purged, DATA_RETENTION_DAYS)
 
 
 def now_iso() -> str:
@@ -616,8 +725,9 @@ def health() -> dict:
 
 
 @app.post("/v1/admin/login")
-def admin_login(body: AdminLogin) -> dict:
+def admin_login(body: AdminLogin, request: Request) -> dict:
     """Authenticate an admin and return an expiring bearer token."""
+    enforce_login_rate_limit(request, "admin_login")
     with connect() as con:
         admin = con.execute(
             "SELECT username, password_hash, active FROM admin_users WHERE username = ?",
@@ -645,8 +755,9 @@ def admin_me(admin: dict[str, str] = Depends(require_admin)) -> dict:
 
 
 @app.post("/v1/auth/login")
-def auth_login(body: UserLogin) -> dict:
+def auth_login(body: UserLogin, request: Request) -> dict:
     """Authenticate via email/password and return bearer token + user profile."""
+    enforce_login_rate_limit(request, "auth_login")
     email = body.email.strip().lower()
     with connect() as con:
         user = con.execute(
@@ -676,8 +787,9 @@ def auth_login(body: UserLogin) -> dict:
 
 
 @app.post("/v1/auth/register")
-def auth_register(body: UserRegister) -> dict:
+def auth_register(body: UserRegister, request: Request) -> dict:
     """Register a new admin/fleet operator account via email and password."""
+    enforce_login_rate_limit(request, "auth_register")
     email = body.email.strip().lower()
     if "@" not in email or "." not in email:
         raise HTTPException(status_code=400, detail="Please provide a valid email address.")
@@ -1097,7 +1209,7 @@ def ingest_session(
             try:
                 real_model_eval = evaluate_session_with_real_models(body, history_payloads)
             except Exception as e:
-                print(f"[main] evaluate_session_with_real_models errored ({e}), falling back")
+                logger.warning("[main] evaluate_session_with_real_models errored (%s), falling back", e)
                 real_model_eval = None
 
         if real_model_eval is not None:
@@ -1295,6 +1407,212 @@ def fleet_scores(admin: dict[str, str] = Depends(require_admin)) -> dict:
                 "updated_at": row["updated_at"],
             })
         return {"count": len(drivers), "drivers": drivers}
+
+
+@app.post("/v1/drivers/{driver_id}/consent")
+def grant_consent(
+    driver_id: str,
+    x_driver_token: str | None = Header(default=None, alias="X-Driver-Token"),
+) -> dict:
+    """Driver explicitly consents to behavioral-biometric monitoring
+    (required before onboarding in a real deployment; currently
+    advisory — not yet enforced as a hard gate on /v1/sessions/ingest,
+    see data-retention/consent notes). Idempotent: re-granting just
+    refreshes the timestamp and version, clearing any prior revocation."""
+    require_driver_token(driver_id, x_driver_token)
+    timestamp = now_iso()
+    with connect() as con:
+        con.execute(
+            """INSERT INTO driver_consent(driver_id, consent_version, given_at, revoked_at)
+               VALUES(?, ?, ?, NULL)
+               ON CONFLICT(driver_id) DO UPDATE SET
+                 consent_version = excluded.consent_version,
+                 given_at = excluded.given_at,
+                 revoked_at = NULL""",
+            (driver_id, CONSENT_VERSION, timestamp),
+        )
+    return {"driver_id": driver_id, "consent_version": CONSENT_VERSION, "given_at": timestamp}
+
+
+@app.post("/v1/drivers/{driver_id}/consent/revoke")
+def revoke_consent(
+    driver_id: str,
+    x_driver_token: str | None = Header(default=None, alias="X-Driver-Token"),
+) -> dict:
+    """Driver withdraws consent. Does not retroactively delete past
+    sessions (those still age out under the normal retention policy)
+    but stops this driver from being counted as actively consented."""
+    require_driver_token(driver_id, x_driver_token)
+    timestamp = now_iso()
+    with connect() as con:
+        con.execute(
+            "UPDATE driver_consent SET revoked_at = ? WHERE driver_id = ?",
+            (timestamp, driver_id),
+        )
+    return {"driver_id": driver_id, "revoked_at": timestamp}
+
+
+@app.get("/v1/drivers/{driver_id}/consent")
+def get_consent_status(driver_id: str) -> dict:
+    with connect() as con:
+        row = con.execute(
+            "SELECT consent_version, given_at, revoked_at FROM driver_consent WHERE driver_id = ?",
+            (driver_id,),
+        ).fetchone()
+    if row is None:
+        return {"driver_id": driver_id, "consented": False, "consent_version": None, "given_at": None, "revoked_at": None}
+    return {
+        "driver_id": driver_id,
+        "consented": row["revoked_at"] is None,
+        "consent_version": row["consent_version"],
+        "given_at": row["given_at"],
+        "revoked_at": row["revoked_at"],
+    }
+
+
+FACE_MATCH_THRESHOLD = 0.6  # same uncalibrated threshold as ml/models/face_verification.py
+_ESCALATED_DECISIONS = ("challenge_at_safe_pause", "step_up_check_at_safe_pause")
+
+
+def _decode_face_image(image_base64: str):
+    """Returns a PIL.Image, or raises HTTPException(400) on bad input.
+    Local import — PIL/face deps are optional, see ML_FACE_AVAILABLE."""
+    import io as _io
+    from PIL import Image as _Image
+
+    try:
+        raw = base64.b64decode(image_base64, validate=False)
+        return _Image.open(_io.BytesIO(raw)).convert("RGB")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not decode image: {e}")
+
+
+@app.post("/v1/drivers/{driver_id}/face-enroll")
+def enroll_face(
+    driver_id: str,
+    body: FaceImage,
+    admin: dict[str, str] = Depends(require_admin),
+) -> dict:
+    """Admin-side onboarding step: store this driver's reference face
+    embedding (e.g. from the platform's existing verified ID photo),
+    used later by the mid-trip challenge step-up check. Admin-gated,
+    not driver-gated — a driver shouldn't be able to re-enroll their
+    own reference photo, that would defeat the point."""
+    if not ML_FACE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Face verification is not available on this deployment (facenet-pytorch not installed)")
+
+    image = _decode_face_image(body.image_base64)
+    embedding = embed_face_image(image)
+    if embedding is None:
+        raise HTTPException(status_code=422, detail="No face detected in the enrollment image")
+
+    embedding_b64 = base64.b64encode(embedding.astype("float32").tobytes()).decode("ascii")
+    timestamp = now_iso()
+    with connect() as con:
+        con.execute(
+            """INSERT INTO driver_face_enrollment(driver_id, embedding_b64, enrolled_at)
+               VALUES(?, ?, ?)
+               ON CONFLICT(driver_id) DO UPDATE SET embedding_b64 = excluded.embedding_b64, enrolled_at = excluded.enrolled_at""",
+            (driver_id, embedding_b64, timestamp),
+        )
+    return {"driver_id": driver_id, "enrolled_at": timestamp}
+
+
+@app.get("/v1/drivers/{driver_id}/challenge-status")
+def get_challenge_status(driver_id: str) -> dict:
+    """Polled by the driver app (same cadence as the SDK's session
+    flush). Tells the phone whether the backend's two-axis combiner has
+    escalated this driver to a safe-pause challenge, so the app can
+    show a liveness/selfie prompt instead of that escalation sitting
+    silently in the admin review queue until someone happens to look."""
+    with connect() as con:
+        row = con.execute(
+            "SELECT latest_result_json FROM drivers WHERE driver_id = ?", (driver_id,)
+        ).fetchone()
+    if row is None:
+        return {"driver_id": driver_id, "challenge_pending": False}
+    result = decode_json(row["latest_result_json"], {})
+    decision = result.get("decision")
+    return {
+        "driver_id": driver_id,
+        "challenge_pending": decision in _ESCALATED_DECISIONS,
+        "decision": decision,
+        "reasons": result.get("reasons", []),
+    }
+
+
+@app.post("/v1/drivers/{driver_id}/challenge/respond")
+def respond_to_challenge(
+    driver_id: str,
+    body: FaceImage,
+    x_driver_token: str | None = Header(default=None, alias="X-Driver-Token"),
+) -> dict:
+    """The driver's response to a mid-trip safe-pause challenge: a
+    selfie, checked against their enrolled reference face. This is the
+    actual enforcement action beyond "alert the admin and wait" — a
+    clear match auto-clears the challenge in real time; anything else
+    (no match, no face, no enrollment on file) leaves the escalation in
+    place for human review. Per ml/models/face_verification.py's
+    fairness note: NEVER auto-ban on a failed/inconclusive match here —
+    only auto-CLEAR on a clear pass, same asymmetry as the rest of the
+    product (biased toward a human in the loop for anything negative)."""
+    require_driver_token(driver_id, x_driver_token)
+
+    if not ML_FACE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Face verification is not available on this deployment")
+
+    with connect() as con:
+        enrollment = con.execute(
+            "SELECT embedding_b64 FROM driver_face_enrollment WHERE driver_id = ?", (driver_id,)
+        ).fetchone()
+
+    if enrollment is None:
+        with connect() as con:
+            write_event(con, driver_id, "challenge_inconclusive", {"reason": "no_face_enrollment_on_file"})
+        return {"driver_id": driver_id, "outcome": "human_review", "reason": "no_face_enrollment_on_file"}
+
+    image = _decode_face_image(body.image_base64)
+    challenge_embedding = embed_face_image(image)
+    if challenge_embedding is None:
+        with connect() as con:
+            write_event(con, driver_id, "challenge_inconclusive", {"reason": "no_face_detected"})
+        return {"driver_id": driver_id, "outcome": "human_review", "reason": "no_face_detected"}
+
+    enrolled_embedding = np.frombuffer(base64.b64decode(enrollment["embedding_b64"]), dtype="float32")
+    similarity = face_similarity(enrolled_embedding, challenge_embedding)
+    passed = similarity >= FACE_MATCH_THRESHOLD
+
+    with connect() as con:
+        if passed:
+            driver_row = con.execute(
+                "SELECT latest_result_json FROM drivers WHERE driver_id = ?", (driver_id,)
+            ).fetchone()
+            if driver_row is not None:
+                result = decode_json(driver_row["latest_result_json"], {})
+                if result.get("decision") in _ESCALATED_DECISIONS:
+                    result["decision"] = "continue"
+                    result.setdefault("reasons", []).append(
+                        f"Mid-trip challenge passed (face similarity {round(similarity, 3)}) — auto-cleared"
+                    )
+                    con.execute(
+                        "UPDATE drivers SET latest_result_json = ?, updated_at = ? WHERE driver_id = ?",
+                        (json.dumps(result), now_iso(), driver_id),
+                    )
+            con.execute(
+                """UPDATE review_queue SET status='resolved', resolved_at=?, resolution='cleared',
+                       reviewer_id='auto:face_challenge', reviewer_note=?
+                   WHERE driver_id=? AND status='open'""",
+                (now_iso(), f"Auto-cleared: face similarity {round(similarity, 3)}", driver_id),
+            )
+            write_event(con, driver_id, "challenge_passed", {"similarity": round(similarity, 4)})
+        else:
+            write_event(con, driver_id, "challenge_failed_or_inconclusive", {"similarity": round(similarity, 4)})
+
+    return {
+        "driver_id": driver_id,
+        "outcome": "cleared" if passed else "human_review",
+        "similarity": round(similarity, 4),
+    }
 
 
 @app.post("/v1/drivers/{driver_id}/declare-change")

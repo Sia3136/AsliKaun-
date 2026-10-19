@@ -38,9 +38,11 @@ Startup initializes the schema and seeds the configured admin account. The demo 
 
 ## ML and asset checks
 
-The deployed request path imports `backend.app.ml_bridge`, `ml.combiner.two_axis`, `ml.calibration.fusion`, and the reason-vector module. The root requirements include the runtime dependencies (`numpy`, `scipy`, FastAPI, Uvicorn, Pydantic, and optional `anthropic`). The request path performs the existing feature extraction and two-axis scoring; it does not require the ignored training datasets or the empty `ml/weights/` directory.
+The deployed request path imports `backend.app.ml_bridge`, `ml.combiner.two_axis`, `ml.calibration.fusion`, `ml.inference.rider_model_bundle`, and the reason-vector module. The root requirements include the runtime dependencies (`numpy`, `scipy`, FastAPI, Uvicorn, Pydantic, `torch`, and optional `anthropic`). It does not require the ignored training datasets.
 
-The repository does not currently ship trained `.pt` weights, and `main.py` does not invoke `RiderModelBundle`. Do not describe this deployment as serving the separate trained encoder bundle unless those weights and a wiring change are added deliberately. The live API reports `model_status: ml_two_axis_fusion` when the bridge loads successfully.
+`main.py` DOES invoke `RiderModelBundle` (via `evaluate_session_with_real_models` in `backend/app/ml_bridge.py`) once a driver has at least `MIN_HISTORY_FOR_REAL_MODELS` (15) stored sessions. The three small production inference weight files it needs — `ml/weights/touch_triplet_encoder.pt`, `motion_triplet_encoder.pt`, `gps_encoder.pt` (each under 100KB) — are committed to the repository (see `.gitignore`'s explicit exceptions to its broad `*.pt` rule) specifically so a fresh `git clone`-based Render deploy has them without any extra asset-download step. If a future weights retrain produces larger files, either keep committing them (fine up to a few MB) or set up Git LFS / a build-time download step — but don't silently let them fall out of the deploy, since `RiderModelBundle.fit()` fails soft (falls back to the heuristic scorer) when a weights file is missing, so a missing-weights deploy looks like it's working while quietly never using the real models.
+
+The live API reports `model_status: ml_real_trained_models` once a driver has enough history for the real pipeline to activate, and `model_status: ml_two_axis_fusion` (the heuristic fallback) before that or if `RiderModelBundle.fit()` fails for any reason.
 
 ## Deploy and verify
 

@@ -282,4 +282,40 @@ data/
   geolife/                  Microsoft GeoLife GPS trajectories (secondary/reference, 182 users)
   odidmobtraj/               old dead-end repo (viz + notebook only), kept for reference
   hmog/                      H-MOG per-user zips + data_description.pdf
+
+## UPDATE: GPS schema gap closed via live stop-segmentation (2026-10-19)
+
+The GPS gap flagged above and in `ml/inference/rider_model_bundle.py`'s
+docstring ("neither validated model can be honestly claimed to work in
+production, schema has no wave/stop segmentation") is fixed, not worked
+around. `ml/inference/schema_adapters.py` now has
+`gps_leg_sequence_from_schema()`, which detects stops directly from the
+flat `(lat, lng, t)` point stream (sustained speed below 1 m/s for
+≥45s = a leg boundary, the same semantic as an ODIDMob
+ASSIGN/PICKUP/DELIVERY wave boundary) and feeds the resulting
+`r_dis_lst`/`r_time_lst` into the GPS triplet encoder's own
+`route_to_leg_sequence()`. This lets the triplet model that actually
+won on real ODIDMob courier data run on live sessions instead of the
+unvalidated 4-feature GeoLife-style stopgap.
+
+`RiderModelBundle.fit()` now tries this per rider: if a rider's
+enrollment and calibration sessions each produce ≥5 valid leg
+sequences (i.e. their routes have real stops — which almost all
+delivery/rideshare driving does), it fits `GPSTripletScorer` on them.
+If not (e.g. a rider whose GPS history happens to be short or
+continuous with no detected stops), it falls back to the classical
+4-feature stopgap rather than dropping GPS from `signals` entirely.
+Verified with a synthetic multi-stop-route test: the leg-sequence
+extractor activates, the triplet path is selected over the classical
+fallback, and `bundle.score()` produces a correct `stable` verdict for
+a consistent rider.
+
+Still an honest caveat, not swept under the rug: this stop-detection
+heuristic (speed/duration thresholds) is a reasonable approximation of
+a real delivery wave boundary, not identical to ODIDMob's own
+ASSIGN/PICKUP/DELIVERY instrumentation — it has not been evaluated
+against real labeled ODIDMob routes the way the original 23-feature
+and leg-sequence models were. Treat it as "now running the validated
+architecture on a best-effort real segmentation" rather than "proven
+on live traffic."
 ```

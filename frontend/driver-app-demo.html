@@ -293,6 +293,19 @@
         <span id="verdict-decision">Continue</span>
       </div>
 
+      <!-- Mid-Trip Safe-Pause Challenge: shown when the backend escalates this driver -->
+      <div id="challenge-modal" style="display:none; margin: 12px 0; padding: 16px; border-radius: 12px; background: #2a1414; border: 1px solid #ff5050;">
+        <div style="font-weight: 700; color: #ff8080; margin-bottom: 6px;">⏸️ Safe-Pause Identity Check Required</div>
+        <div style="font-size: 13px; color: #ddd; margin-bottom: 10px;">
+          Unusual behavior was detected on this account. Take a quick selfie to confirm it's still you — this does not end your shift, it just confirms identity before you continue.
+        </div>
+        <input type="file" id="challenge-selfie-input" accept="image/*" capture="user" style="display:none;">
+        <button id="btn-take-selfie" style="padding: 10px 16px; border-radius: 8px; border: none; background: #ff5050; color: white; font-weight: 600; cursor: pointer;">
+          Take Selfie to Verify
+        </button>
+        <div id="challenge-outcome" style="font-size: 13px; margin-top: 8px;"></div>
+      </div>
+
       <!-- Active Delivery Offer -->
       <div class="order-card incoming" id="order-card">
         <div class="order-header">
@@ -386,6 +399,9 @@
       deviceId: 'phone-A',
       zone: 'Andheri West',
       ipSubnet: '192.168.1.0/24',
+      // Demo-only: in a real deployment this is provisioned per-driver by
+      // the admin (/v1/admin/drivers/{id}/driver-token), not hardcoded.
+      driverToken: 'demo-driver-token-2026',
       endpoint: window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
         ? (window.location.port === '8000' ? '' : 'http://127.0.0.1:8000')
         : '',
@@ -455,6 +471,53 @@
     // Listen for global AsliKaun events
     window.addEventListener('trustmesh:verdict', (e) => {
       updateVerdict(e.detail);
+    });
+
+    // --- Mid-trip safe-pause challenge: poll + selfie response ---
+    const challengeModal = document.getElementById('challenge-modal');
+    const challengeOutcome = document.getElementById('challenge-outcome');
+    const btnTakeSelfie = document.getElementById('btn-take-selfie');
+    const challengeSelfieInput = document.getElementById('challenge-selfie-input');
+
+    async function pollChallengeStatus() {
+      const status = await AsliKaun.getChallengeStatus();
+      if (status && status.challenge_pending) {
+        challengeModal.style.display = 'block';
+      } else if (status) {
+        challengeModal.style.display = 'none';
+        challengeOutcome.textContent = '';
+      }
+    }
+    setInterval(pollChallengeStatus, 15000);
+    pollChallengeStatus();
+
+    btnTakeSelfie.addEventListener('click', () => challengeSelfieInput.click());
+
+    challengeSelfieInput.addEventListener('change', async () => {
+      const file = challengeSelfieInput.files[0];
+      if (!file) return;
+      btnTakeSelfie.disabled = true;
+      challengeOutcome.textContent = 'Verifying…';
+      try {
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(',')[1]); // strip data: URI prefix
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const result = await AsliKaun.respondToChallenge(base64);
+        if (result && result.outcome === 'cleared') {
+          challengeOutcome.innerHTML = `✅ Identity confirmed (similarity ${result.similarity}). You're clear to continue.`;
+          setTimeout(() => { challengeModal.style.display = 'none'; }, 2500);
+        } else {
+          challengeOutcome.innerHTML = `⏳ Could not auto-confirm (${(result && result.reason) || 'inconclusive'}). Sent for human review — you may be contacted by fleet support.`;
+        }
+      } catch (e) {
+        challengeOutcome.textContent = 'Error submitting selfie: ' + e.message;
+      } finally {
+        btnTakeSelfie.disabled = false;
+        challengeSelfieInput.value = '';
+      }
     });
 
     // Test scenario triggers

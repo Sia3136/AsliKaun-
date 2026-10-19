@@ -29,12 +29,22 @@ data/
 *.pickle
 *.csv
 
-# Model weights and binaries
+# Model weights and binaries — EXCEPT the small production inference
+# weights RiderModelBundle actually loads at runtime (each <100KB; see
+# ml/README.md). Those are committed deliberately: without them, a
+# fresh deploy (Render builds from a git clone, no separate asset
+# step) silently falls back to the heuristic scorer forever, never the
+# real trained models. Large experimental/training checkpoints stay
+# ignored via the blanket *.pt below. (Negations MUST come after the
+# pattern they override — git applies .gitignore rules in file order.)
 *.weights
 *.pt
 *.pth
 *.onnx
 *.bin
+!ml/weights/touch_triplet_encoder.pt
+!ml/weights/motion_triplet_encoder.pt
+!ml/weights/gps_encoder.pt
 
 # Node & Frontend dependencies and build artifacts
 node_modules/

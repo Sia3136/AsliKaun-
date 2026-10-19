@@ -20,53 +20,61 @@ Per-signal model choice, and an honest caveat on GPS:
   motion section for whether the triplet encoder won and should
   replace it (that evaluation was still running when this was
   written — check the README before assuming either way).
-- GPS: IsolationForest, and NEITHER validated GPS model (classical
-  OR the triplet encoder, which won on real ODIDMob courier data)
-  can be honestly claimed to work in production as configured. Both
-  were trained/evaluated on ODIDMob's per-wave summary (23 hand-
-  crafted features, or a leg-by-leg sequence, both needing
-  ASSIGN/PICKUP/DELIVERY wave segmentation). The frozen schema's
-  `gps` field is just a flat, unsegmented list of (lat, lng, t)
-  points — no wave structure at all. `gps_features_from_schema`
-  computes a different, smaller, UNVALIDATED feature set (4 GeoLife-
-  style speed/turn stats) as a stopgap. Swapping to the triplet
-  encoder here would not fix this — it's equally mismatched. Real
-  fix: either get wave/stop segmentation into the schema, or
-  retrain/re-evaluate a model on the GeoLife-style features before
-  trusting any GPS number from this production path.
+- GPS: the triplet encoder, fed by `gps_leg_sequence_from_schema`,
+  which derives ODIDMob-shaped route legs from the flat point stream
+  via stop-detection (sustained near-zero speed = a leg boundary) —
+  the real fix for the gap this docstring used to flag: wave/stop
+  segmentation reconstructed from live data instead of requiring it
+  in the schema. Needs at least 2 detected legs (one real stop) to
+  resolve; sessions too short or continuous to detect any stop fall
+  back per-session to the unvalidated 4-feature GeoLife-style stopgap
+  in `gps_features_from_schema`. At FIT time, if neither a rider's
+  enrollment nor calibration sessions produce enough leg sequences,
+  the whole signal falls back to the classical extractor so GPS still
+  contributes something rather than going silent.
 """
 from pathlib import Path
+from typing import Any
+
+import logging
 
 from ml.calibration.conformal import ConformalScorer
 from ml.calibration.fusion import fisher_combine
 from ml.calibration.per_rider_threshold import compute_calib_fused_p_values, per_rider_threshold
 from ml.combiner.two_axis import ContextBaseline, classify
 from ml.inference.schema_adapters import (
-    gps_features_from_schema, motion_window_sequence_from_schema,
+    gps_features_from_schema, gps_leg_sequence_from_schema, motion_window_sequence_from_schema,
     operational_features_from_schema, touch_stroke_sequence_from_schema,
 )
 from ml.llm.reason_vector import explain
+from ml.models.gps_triplet_encoder import GPSTripletScorer
 from ml.models.isolation_baseline import IsolationBaseline
 from ml.models.motion_triplet_encoder import MotionTripletScorer
 from ml.models.touch_triplet_encoder import TouchTripletScorer
 
 TOUCH_WEIGHTS_PATH = str(Path(__file__).resolve().parents[1] / "weights" / "touch_triplet_encoder.pt")
 MOTION_WEIGHTS_PATH = str(Path(__file__).resolve().parents[1] / "weights" / "motion_triplet_encoder.pt")
+GPS_WEIGHTS_PATH = str(Path(__file__).resolve().parents[1] / "weights" / "gps_encoder.pt")
+
+logger = logging.getLogger("trust_juggler.rider_model_bundle")
 
 CONTEXT_THRESHOLD = 0.6
 TARGET_FAR = 0.01  # the product's "~1% false challenge" promise
 
-# Classical signals only (operational, gps) — motion and touch use their
-# triplet encoders (ml/README.md's Phase 2: both won decisively, 0.277 vs
-# 0.440 for motion, 0.352 vs 0.408 for touch).
+# Operational is the only signal with no deep-learning candidate; motion
+# and touch always use their triplet encoders (ml/README.md's Phase 2:
+# both won decisively, 0.277 vs 0.440 for motion, 0.352 vs 0.408 for
+# touch). GPS picks between the triplet encoder and the classical
+# stopgap PER BUNDLE at fit time (see fit()) since which one is usable
+# depends on whether this rider's sessions have enough detected stops.
 CLASSICAL_EXTRACTORS = {
     "operational": operational_features_from_schema,
-    "gps": gps_features_from_schema,
 }
 EXTRACTORS = {
     **CLASSICAL_EXTRACTORS,
     "motion": motion_window_sequence_from_schema,
     "touch": touch_stroke_sequence_from_schema,
+    "gps": gps_leg_sequence_from_schema,  # default/preferred; fit() may swap to the classical stopgap per bundle
 }
 
 
@@ -74,6 +82,7 @@ class RiderModelBundle:
     def __init__(self):
         self.context_baseline: ContextBaseline | None = None
         self.scorers: dict[str, ConformalScorer] = {}
+        self.extractors: dict[str, Any] = {}
         self.threshold_info: dict | None = None
 
     @classmethod
@@ -93,6 +102,7 @@ class RiderModelBundle:
                 continue  # insufficient data for this signal — see missing-signal policy
             model = IsolationBaseline(contamination=contamination).fit(enroll_vecs)
             bundle.scorers[signal] = ConformalScorer(model).calibrate(calib_vecs)
+            bundle.extractors[signal] = extract
 
         for signal, scorer_cls, weights_path in (
             ("touch", TouchTripletScorer, TOUCH_WEIGHTS_PATH),
@@ -104,11 +114,33 @@ class RiderModelBundle:
             if len(enroll_vecs) >= 5 and len(calib_vecs) >= 5:
                 model = scorer_cls(weights_path=weights_path).fit(enroll_vecs)
                 bundle.scorers[signal] = ConformalScorer(model).calibrate(calib_vecs)
+                bundle.extractors[signal] = extract
+
+        # GPS: try the real leg-sequence triplet model first (needs
+        # enough enroll/calib sessions with >=2 detected stops each);
+        # fall back to the unvalidated classical stopgap so the signal
+        # isn't silently dropped for riders whose routes rarely stop.
+        gps_enroll = [v for s in enroll_sessions if (v := gps_leg_sequence_from_schema(s)) is not None]
+        gps_calib = [v for s in calib_sessions if (v := gps_leg_sequence_from_schema(s)) is not None]
+        if len(gps_enroll) >= 5 and len(gps_calib) >= 5:
+            try:
+                model = GPSTripletScorer(weights_path=GPS_WEIGHTS_PATH).fit(gps_enroll)
+                bundle.scorers["gps"] = ConformalScorer(model).calibrate(gps_calib)
+                bundle.extractors["gps"] = gps_leg_sequence_from_schema
+            except Exception as e:
+                logger.warning("GPS triplet fit failed (%s), falling back to classical stopgap", e)
+        if "gps" not in bundle.scorers:
+            gps_enroll_classical = [v for s in enroll_sessions if (v := gps_features_from_schema(s)) is not None]
+            gps_calib_classical = [v for s in calib_sessions if (v := gps_features_from_schema(s)) is not None]
+            if len(gps_enroll_classical) >= 5 and len(gps_calib_classical) >= 5:
+                model = IsolationBaseline(contamination=contamination).fit(gps_enroll_classical)
+                bundle.scorers["gps"] = ConformalScorer(model).calibrate(gps_calib_classical)
+                bundle.extractors["gps"] = gps_features_from_schema
 
         # Per-rider threshold (ml/calibration/per_rider_threshold.py): falls
         # back to the population value when this rider doesn't yet have
         # enough calibration history to resolve target_far individually.
-        calib_fused_p = compute_calib_fused_p_values(bundle.scorers, calib_sessions, EXTRACTORS)
+        calib_fused_p = compute_calib_fused_p_values(bundle.scorers, calib_sessions, bundle.extractors)
         bundle.threshold_info = per_rider_threshold(calib_fused_p, target_far=target_far)
 
         return bundle
@@ -125,7 +157,7 @@ class RiderModelBundle:
         ctx = self._context_continuity(session)
         p_values = {}
         for signal, scorer in self.scorers.items():
-            vec = EXTRACTORS[signal](session)
+            vec = self.extractors[signal](session)
             if vec is not None:
                 p_values[signal] = scorer.p_value(vec)
         # missing-signal policy: signals that returned no vector are

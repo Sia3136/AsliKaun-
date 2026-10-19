@@ -10,6 +10,7 @@ Provides:
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from datetime import datetime, timezone
@@ -17,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+logger = logging.getLogger("trust_juggler.ml_bridge")
 
 # Ensure project root (containing `ml/`) is on sys.path
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -51,6 +54,25 @@ try:
     ML_RIDER_BUNDLE_AVAILABLE = True
 except ImportError:
     ML_RIDER_BUNDLE_AVAILABLE = False
+
+try:
+    from ml.models.face_verification import cosine_similarity as _face_cosine_similarity, embed_face as _embed_face
+    ML_FACE_AVAILABLE = True
+except ImportError:
+    ML_FACE_AVAILABLE = False
+
+
+def embed_face_image(image) -> np.ndarray | None:
+    """Thin passthrough so main.py doesn't need to import ml.* directly
+    (same optional-dependency isolation as the rest of this bridge).
+    `image` is a PIL.Image. Returns None if unavailable or no face found."""
+    if not ML_FACE_AVAILABLE:
+        return None
+    return _embed_face(image)
+
+
+def face_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    return _face_cosine_similarity(a, b)
 
 # Minimum raw session history (from the `sessions` table) before attempting
 # the REAL trained models — below this, RiderModelBundle.fit()'s own
@@ -469,6 +491,16 @@ def evaluate_session_ml(
         "model_status": "ml_two_axis_fusion",
     }
 
+# Per-driver fitted-bundle cache. A bundle is only as fresh as the history
+# it was fit from, so we key on (driver_id, len(history_payloads)) and
+# refit when enough NEW sessions have accumulated since the last fit
+# rather than on every single ingest call. Unbounded by design: one
+# fleet's driver count is small relative to memory, and each entry is
+# evicted implicitly by being overwritten on refit.
+_BUNDLE_CACHE: dict[str, tuple[int, "RiderModelBundle"]] = {}
+BUNDLE_REFIT_EVERY_N_SESSIONS = 5
+
+
 def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict]) -> dict[str, Any] | None:
     """Scores with the REAL validated trained models
     (ml/inference/rider_model_bundle.py — the ones that actually won on
@@ -483,26 +515,35 @@ def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict]
     `SessionIngest.model_dump(mode="json")`, which already matches the
     frozen schema RiderModelBundle expects.
 
-    Known, named limitations (not hidden): refits the bundle from
-    scratch on every call (no caching — fine at demo scale, a real cost
-    at production scale); GPS uses the unvalidated GeoLife-style
-    stopgap feature set, not the ODIDMob-validated one (see
-    rider_model_bundle.py's own docstring); touch runs on a degraded
-    feature set until the mobile SDK sends full per-gesture `path` data.
+    Caches the fitted bundle per driver_id (see `_BUNDLE_CACHE`) and only
+    refits once `BUNDLE_REFIT_EVERY_N_SESSIONS` new sessions have arrived
+    since the last fit, instead of refitting from scratch on every
+    request. Still-named limitations: GPS uses the unvalidated GeoLife-
+    style stopgap feature set, not the ODIDMob-validated one (see
+    rider_model_bundle.py's own docstring); touch now gets full per-
+    gesture `path` data from the SDK.
     """
     if not ML_RIDER_BUNDLE_AVAILABLE or len(history_payloads) < MIN_HISTORY_FOR_REAL_MODELS:
         return None
 
-    split = int(len(history_payloads) * 0.7)
-    enroll, calib = history_payloads[:split], history_payloads[split:]
-    if len(enroll) < 5 or len(calib) < 5:
-        return None
+    driver_id = getattr(payload, "driver_id", None)
+    cached = _BUNDLE_CACHE.get(driver_id) if driver_id else None
+    if cached is not None and len(history_payloads) - cached[0] < BUNDLE_REFIT_EVERY_N_SESSIONS:
+        bundle = cached[1]
+    else:
+        split = int(len(history_payloads) * 0.7)
+        enroll, calib = history_payloads[:split], history_payloads[split:]
+        if len(enroll) < 5 or len(calib) < 5:
+            return None
 
-    try:
-        bundle = RiderModelBundle.fit(enroll, calib)
-    except Exception as e:
-        print(f"[ml_bridge] RiderModelBundle.fit failed ({e}), falling back to heuristic")
-        return None
+        try:
+            bundle = RiderModelBundle.fit(enroll, calib)
+        except Exception as e:
+            logger.warning("RiderModelBundle.fit failed (%s), falling back to heuristic", e)
+            return None
+
+        if driver_id:
+            _BUNDLE_CACHE[driver_id] = (len(history_payloads), bundle)
 
     current_session = {
         "driver_id": getattr(payload, "driver_id", None),
@@ -520,7 +561,7 @@ def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict]
     try:
         result = bundle.score(current_session, generate_reason=False)
     except Exception as e:
-        print(f"[ml_bridge] RiderModelBundle.score failed ({e}), falling back to heuristic")
+        logger.warning("RiderModelBundle.score failed (%s), falling back to heuristic", e)
         return None
 
     quadrant = result["quadrant"]
@@ -548,6 +589,21 @@ def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict]
         except Exception as e:
             reasons.append(f"Reason vector failed: {e}")
 
+    # Pause-Aware Safety Timing Verification — same gate as
+    # evaluate_session_ml()'s heuristic path (ml_bridge.py's "6." block
+    # above). This was missing here before: the real-models path could
+    # escalate to a challenge while the driver was still moving, with no
+    # signal telling the frontend to defer the challenge to a safe stop.
+    v_speed = getattr(payload, "vehicle_speed_mph", None)
+    safe_pause_info = {
+        "is_moving": v_speed is not None and v_speed > 2.0,
+        "speed_mph": v_speed,
+        "safe_pause_scheduled": decision in ("challenge_at_safe_pause", "step_up_check_at_safe_pause") and (v_speed is not None and v_speed > 2.0),
+        "scheduled_state": "queued_for_stop" if (v_speed is not None and v_speed > 2.0) else "safe_stop_confirmed",
+    }
+    if safe_pause_info["safe_pause_scheduled"]:
+        reasons.append(f"Safe-pause timing gate: Active speed {v_speed:.1f} mph detected. Challenge deferred to verified standstill (speed = 0 mph) to guarantee rider safety.")
+
     return {
         "context_score": result["context_continuity"],
         "behavior_score": round(behavior_continuity, 3) if behavior_continuity is not None else None,
@@ -560,6 +616,7 @@ def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict]
         "reason_vector": reason_vector,
         "current_behavior": {},
         "current_context": {"device_id": payload.device_id, "ip_subnet": payload.ip_subnet, "zone": payload.zone},
+        "safe_pause_info": safe_pause_info,
         "model_status": "ml_real_trained_models",
         "threshold_info": result.get("threshold_info"),
     }
