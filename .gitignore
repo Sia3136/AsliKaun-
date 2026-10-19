@@ -46,11 +46,10 @@ data/
 !ml/weights/motion_triplet_encoder.pt
 !ml/weights/gps_encoder.pt
 
-# Node & Frontend dependencies and build artifacts
 node_modules/
 dist/
-!trustmesh_frontend_inspect/dist/
-!trustmesh_frontend_inspect/dist/**
+!frontend/mobile-app/dist/
+!frontend/mobile-app/dist/**
 *.log
 .env*
 !.env.example

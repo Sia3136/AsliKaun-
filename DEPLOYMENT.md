@@ -8,11 +8,11 @@ Create a new **Web Service** from this repository with:
 
 - Runtime: `Python 3`
 - Root directory: repository root (leave blank)
-- Build command: `pip install -r requirements.txt && npm install --prefix trustmesh_frontend_inspect && npm run build --prefix trustmesh_frontend_inspect`
+- Build command: `pip install -r requirements.txt && npm install --prefix frontend && npm run build --prefix frontend && npm install --prefix frontend/mobile-app && npm run build --prefix frontend/mobile-app`
 - Start command: `python -m uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT`
 - Health check path: `/health`
 
-Do not use the Windows virtual environment from `trust_juggler_backend/.venv`; Render creates its own Linux environment from `requirements.txt`.
+Do not use the local virtual environment from `.venv`; Render creates its own Linux environment from `requirements.txt`.
 
 No `render.yaml` is included. The database storage decision requires an explicit Render plan and disk choice, so the dashboard configuration is safer for this repository.
 

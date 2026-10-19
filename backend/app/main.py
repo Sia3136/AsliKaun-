@@ -2454,7 +2454,9 @@ def public_driver_status(driver_id: str) -> dict:
 _FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 _FRONTEND_DIST = _FRONTEND_DIR / "dist"
 _STATIC_DIR = _FRONTEND_DIST if _FRONTEND_DIST.exists() else _FRONTEND_DIR
-_PHONE_DIR = _PROJECT_ROOT / "trustmesh_frontend_inspect" / "dist"
+_PHONE_DIR = _FRONTEND_DIR / "mobile-app" / "dist"
+if not _PHONE_DIR.exists():
+    _PHONE_DIR = _PROJECT_ROOT / "trustmesh_frontend_inspect" / "dist"
 
 if _PHONE_DIR.exists() and (_PHONE_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(_PHONE_DIR / "assets")), name="phone-assets")
