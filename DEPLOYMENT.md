@@ -27,6 +27,8 @@ Set these in Render. Use real values only in Render's environment settings, neve
 - `TRUST_JUGGLER_DB`: set to `/var/data/trust_juggler.db` when using a Render persistent disk mounted at `/var/data`. If omitted, the service writes `trust_juggler.db` under the repository root.
 - `ANTHROPIC_API_KEY`: optional. Without it, escalated sessions use the clearly labeled deterministic reason-vector fallback.
 - `REASON_VECTOR_MODEL`: optional model name used with `ANTHROPIC_API_KEY`.
+- `TRUST_JUGGLER_OPS_WEBHOOK_URL`: optional. When set, every `challenge_at_safe_pause`/`step_up_check_at_safe_pause` escalation is POSTed to this URL (Slack incoming webhook, PagerDuty, or any generic endpoint) so ops doesn't have to poll the dashboard. Verify with `POST /v1/admin/webhook-test` (admin bearer token required) after deploying. Failures are logged and never block ingest.
+- `TRUST_JUGGLER_LOG_LEVEL`: optional, defaults to `INFO`. Set to `DEBUG` for noisier request/decision logging while diagnosing an issue.
 
 The repository's `.env.example` contains placeholders only. Do not upload `.env`, the local SQLite database, or the Windows `.venv`.
 

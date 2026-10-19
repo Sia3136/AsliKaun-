@@ -299,6 +299,11 @@ def init_db() -> None:
             buffer_json TEXT NOT NULL DEFAULT '[]',
             updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS driver_challenge_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            driver_id TEXT NOT NULL,
+            challenged_at TEXT NOT NULL
+        );
         """)
         # Migrate databases created by earlier prototype versions.
         review_columns = {
@@ -636,6 +641,40 @@ def decode_json(value: str | None, default: Any) -> Any:
         return default
 
 
+OPS_WEBHOOK_URL = os.getenv("TRUST_JUGGLER_OPS_WEBHOOK_URL")
+
+
+def send_ops_webhook_alert(driver_id: str, decision: str, quadrant: str, reasons: list[str], fatigue_capped: bool = False) -> bool:
+    """Proactively pushes high-risk escalations to an external ops
+    tool (Slack/PagerDuty/generic webhook) instead of relying on the
+    admin dashboard being polled/watched. No-op (not an error) when
+    TRUST_JUGGLER_OPS_WEBHOOK_URL isn't set — this is an optional
+    integration, not a hard dependency. Fire-and-forget from the
+    ingest path's perspective: a slow or failing webhook must never
+    block or fail the session that triggered it, so this always
+    swallows its own exceptions and just reports success as a bool."""
+    if not OPS_WEBHOOK_URL:
+        return False
+    try:
+        httpx.post(
+            OPS_WEBHOOK_URL,
+            json={
+                "event": "handoff_escalation",
+                "driver_id": driver_id,
+                "decision": decision,
+                "quadrant": quadrant,
+                "reasons": reasons,
+                "fatigue_capped": fatigue_capped,
+                "timestamp": now_iso(),
+            },
+            timeout=5.0,
+        )
+        return True
+    except Exception as e:
+        logger.warning("Ops webhook delivery failed for driver %s: %s", driver_id, e)
+        return False
+
+
 def write_event(con: sqlite3.Connection, driver_id: str, event_type: str, details: dict) -> None:
     con.execute(
         "INSERT INTO events(driver_id, timestamp, event_type, details_json) VALUES(?,?,?,?)",
@@ -671,6 +710,33 @@ def save_frozen_anchor(con: sqlite3.Connection, driver_id: str, detector: "Froze
              buffer_json = excluded.buffer_json, updated_at = excluded.updated_at""",
         (driver_id, detector.anchor_mean, detector.cumulative, json.dumps(detector._buffer[-50:]), now_iso()),
     )
+
+
+# Challenge fatigue cap (edge case: repeated step-ups push honest
+# drivers off the platform — explicitly a P0 in the product's own edge
+# case matrix). This does NOT suppress the underlying ML verdict or the
+# review-queue entry; it only stops showing the DRIVER another
+# disruptive challenge once they've already been challenged this often
+# in the window, routing straight to priority human review instead.
+CHALLENGE_FATIGUE_MAX = 3
+CHALLENGE_FATIGUE_WINDOW_HOURS = 24
+
+
+def check_and_log_challenge_fatigue(con: sqlite3.Connection, driver_id: str) -> bool:
+    """Logs this escalation attempt and returns True if the driver has
+    already hit the fatigue cap within the window (i.e. this one should
+    be suppressed driver-side)."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=CHALLENGE_FATIGUE_WINDOW_HOURS)).isoformat()
+    count = con.execute(
+        "SELECT COUNT(*) AS c FROM driver_challenge_log WHERE driver_id = ? AND challenged_at >= ?",
+        (driver_id, cutoff),
+    ).fetchone()["c"]
+    fatigued = count >= CHALLENGE_FATIGUE_MAX
+    con.execute(
+        "INSERT INTO driver_challenge_log(driver_id, challenged_at) VALUES (?, ?)",
+        (driver_id, now_iso()),
+    )
+    return fatigued
 
 
 def reset_frozen_anchor(con: sqlite3.Connection, driver_id: str) -> None:
@@ -1393,6 +1459,16 @@ def ingest_session(
                         new_fast[key] = 0.8 * float(old) + 0.2 * float(value)
                 fast_behavior = new_fast
 
+        fatigue_capped = False
+        if decision in ("challenge_at_safe_pause", "step_up_check_at_safe_pause"):
+            fatigue_capped = check_and_log_challenge_fatigue(con, body.driver_id)
+            if fatigue_capped:
+                reasons = reasons + [
+                    f"Challenge fatigue cap reached ({CHALLENGE_FATIGUE_MAX} challenges in "
+                    f"{CHALLENGE_FATIGUE_WINDOW_HOURS}h) — not showing the driver another step-up; "
+                    f"escalated straight to priority human review instead."
+                ]
+
         result = {
             "driver_id": body.driver_id,
             "context_score": context_score,
@@ -1405,6 +1481,7 @@ def ingest_session(
             "reason_vector": reason_vector,
             "reasons": reasons,
             "model_status": model_status,
+            "fatigue_capped": fatigue_capped,
             "baseline_status": "fast_baseline_updated" if update_fast else "fast_baseline_frozen",
             "timestamp": body.timestamp.isoformat(),
         }
@@ -1445,6 +1522,7 @@ def ingest_session(
                    VALUES (?, ?, ?, 'open', ?)""",
                 (session_id, body.driver_id, decision, now_iso()),
             )
+            send_ops_webhook_alert(body.driver_id, decision, quadrant, reasons, fatigue_capped)
 
         con.execute(
             """UPDATE drivers SET fast_json=?, latest_json=?, latest_result_json=?, updated_at=?
@@ -1634,9 +1712,13 @@ def get_challenge_status(driver_id: str) -> dict:
         return {"driver_id": driver_id, "challenge_pending": False}
     result = decode_json(row["latest_result_json"], {})
     decision = result.get("decision")
+    # A fatigue-capped escalation still exists in the audit trail and
+    # review queue (see check_and_log_challenge_fatigue's docstring) —
+    # it just isn't shown to the driver as another disruptive prompt.
+    challenge_pending = decision in _ESCALATED_DECISIONS and not result.get("fatigue_capped")
     return {
         "driver_id": driver_id,
-        "challenge_pending": decision in _ESCALATED_DECISIONS,
+        "challenge_pending": challenge_pending,
         "decision": decision,
         "reasons": result.get("reasons", []),
     }
@@ -1915,6 +1997,28 @@ def split_rental_audit(
         raise HTTPException(status_code=500, detail=f"split_rental_check failed: {e}")
 
     return {"driver_id": driver_id, "sessions_analyzed": len(legacy_sessions), **result}
+
+
+@app.get("/v1/admin/webhook-status")
+def webhook_status(admin: dict[str, str] = Depends(require_admin)) -> dict:
+    """Whether an outbound ops webhook is configured. Never returns the
+    URL itself — it may carry an auth token (common for Slack/PagerDuty
+    incoming-webhook URLs)."""
+    return {"configured": OPS_WEBHOOK_URL is not None}
+
+
+@app.post("/v1/admin/webhook-test")
+def webhook_test(admin: dict[str, str] = Depends(require_admin)) -> dict:
+    """Fires a test alert through the configured ops webhook so an
+    admin can verify the integration without waiting for a real
+    escalation."""
+    if not OPS_WEBHOOK_URL:
+        raise HTTPException(status_code=503, detail="No ops webhook configured (set TRUST_JUGGLER_OPS_WEBHOOK_URL)")
+    delivered = send_ops_webhook_alert(
+        driver_id="test-driver", decision="challenge_at_safe_pause", quadrant="handoff_signature",
+        reasons=[f"Test alert triggered manually by admin '{admin['username']}'"], fatigue_capped=False,
+    )
+    return {"sent": delivered}
 
 
 @app.get("/v1/drivers/{driver_id}/events")
