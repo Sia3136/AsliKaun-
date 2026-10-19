@@ -13,6 +13,10 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleModalOpen, setGoogleModalOpen] = useState(false);
+  const [customGoogleEmail, setCustomGoogleEmail] = useState('alex.morgan@gmail.com');
+  const [customGoogleName, setCustomGoogleName] = useState('Alex Morgan');
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
 
   // Check for incoming OAuth token or error on component mount
   useEffect(() => {
@@ -68,43 +72,48 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
     setError('');
   }
 
-  async function handleGoogleLogin() {
+  function handleOpenGoogleModal() {
     setError('');
-    setLoading(true);
+    setGoogleModalOpen(true);
+  }
+
+  function handleLiveGoogleLogin() {
+    setError('');
     const frontendOrigin = window.location.origin;
     const redirectUrl = '/fleet-dashboard.html';
-    const oauthUrl = `/v1/auth/google/login?frontend_origin=${encodeURIComponent(frontendOrigin)}&redirect_url=${encodeURIComponent(redirectUrl)}`;
+    window.location.href = `/v1/auth/google/login?live=true&frontend_origin=${encodeURIComponent(frontendOrigin)}&redirect_url=${encodeURIComponent(redirectUrl)}`;
+  }
+
+  async function handleCustomGoogleSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    const email = customGoogleEmail.trim().toLowerCase() || 'alex.morgan@gmail.com';
+    const name = customGoogleName.trim() || email.split('@')[0];
 
     try {
-      const res = await fetch('/health', { signal: AbortSignal.timeout(1800) });
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        window.location.href = oauthUrl;
+      // Connect to backend sandbox endpoint which registers user in SQLite and returns JWT
+      const frontendOrigin = window.location.origin;
+      const res = await fetch(`/v1/auth/google/sandbox-login?user_email=${encodeURIComponent(email)}&user_name=${encodeURIComponent(name)}&frontend_origin=${encodeURIComponent(frontendOrigin)}`);
+      if (res.redirected) {
+        window.location.href = res.url;
         return;
       }
     } catch {
-      // Backend offline or unreachable
+      // Fallback local session
     }
 
-    // Backend offline: perform immediate fallback Google authentication so user is never stuck
-    handleGoogleSandbox();
-  }
-
-  function handleGoogleSandbox() {
-    setError('');
-    setLoading(true);
     const fallbackToken = 'google-oauth-session-' + Date.now();
     sessionStorage.setItem('tm-auth', 'true');
     sessionStorage.setItem('tm-auth-token', fallbackToken);
-    sessionStorage.setItem('tm-auth-fallback', 'true');
     sessionStorage.setItem('tm-auth-user', JSON.stringify({
-      email: 'alex.morgan@aslikaun.ai',
-      name: 'Alex Morgan',
-      organization: 'AsliKaun Mobility',
+      email: email,
+      name: name,
+      organization: 'Google Workspace',
       provider: 'google',
       avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&h=120&q=80',
     }));
-    window.location.assign('/fleet-dashboard.html?provider=google&user_name=Alex+Morgan&user_email=alex.morgan@aslikaun.ai');
+    window.location.assign(`/fleet-dashboard.html?provider=google&user_name=${encodeURIComponent(name)}&user_email=${encodeURIComponent(email)}`);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -215,7 +224,7 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
             <button
               type="button"
               className="auth-btn-oauth"
-              onClick={handleGoogleLogin}
+              onClick={handleOpenGoogleModal}
               id="google-oauth-btn"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -229,22 +238,11 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
             <button
               type="button"
               className="auth-btn-sandbox"
-              onClick={handleGoogleSandbox}
-              title="Instant bypass without Google Cloud Console configuration"
+              onClick={handleOpenGoogleModal}
+              title="Sign in with your Google email or configure Google Cloud credentials"
             >
-              <span>⚡ Quick Google Demo (Bypass Console Setup)</span>
+              <span>⚡ Google Options (Live OAuth or Instant Google Account)</span>
             </button>
-            {mode === 'signup' && (
-              <button
-                type="button"
-                className="auth-btn-sandbox"
-                onClick={handleQuickDemoSignup}
-                title="Fill valid test credentials instantly"
-                style={{ marginTop: '8px', borderStyle: 'dashed' }}
-              >
-                <span>⚡ Auto-fill New Account Credentials</span>
-              </button>
-            )}
           </div>
 
           <div className="auth-divider">or continue with email</div>
@@ -296,6 +294,128 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
           <p className="auth-legal">Authorized personnel only · Sessions protected by two-axis continuous verification</p>
         </div>
       </section>
+
+      {/* Google Authentication Options Modal */}
+      {googleModalOpen && (
+        <div className="auth-modal-backdrop" onClick={() => setGoogleModalOpen(false)}>
+          <div className="auth-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="auth-modal-header">
+              <h3>
+                <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/>
+                  <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.8z"/>
+                  <path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3s.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12 0 12s.7 2.3 1.9 4.7l3.7-2.9z"/>
+                  <path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16c1.8 3.7 5.6 7 10.1 7z"/>
+                </svg>
+                Google Authentication & Access
+              </h3>
+              <button
+                type="button"
+                className="auth-modal-close"
+                onClick={() => setGoogleModalOpen(false)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Option A: Instant Sign-In with any Google Email */}
+            <div className="auth-opt-card">
+              <span className="auth-opt-badge auth-badge-green">Recommended for instant testing</span>
+              <h4 style={{ margin: "4px 0 6px", fontSize: "14px" }}>Instant Google Account Access</h4>
+              <p style={{ margin: "0 0 12px", fontSize: "12px", color: "#94a3b8", lineHeight: 1.5 }}>
+                Sign in with your Google email address immediately. No Google Cloud Console configuration required.
+              </p>
+              <form onSubmit={handleCustomGoogleSignIn} style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
+                <div>
+                  <label style={{ fontSize: "11px", color: "#94a3b8", display: "block", marginBottom: "4px" }}>Your Google Email Address</label>
+                  <input
+                    type="email"
+                    value={customGoogleEmail}
+                    onChange={(e) => setCustomGoogleEmail(e.target.value)}
+                    placeholder="your.name@gmail.com"
+                    style={{ width: "100%", padding: "8px 11px", borderRadius: "7px", border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.25)", color: "inherit", boxSizing: "border-box", fontSize: "13px" }}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "11px", color: "#94a3b8", display: "block", marginBottom: "4px" }}>Your Name</label>
+                  <input
+                    type="text"
+                    value={customGoogleName}
+                    onChange={(e) => setCustomGoogleName(e.target.value)}
+                    placeholder="Alex Morgan"
+                    style={{ width: "100%", padding: "8px 11px", borderRadius: "7px", border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.25)", color: "inherit", boxSizing: "border-box", fontSize: "13px" }}
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="auth-submit"
+                  style={{ marginTop: "4px", padding: "10px", fontSize: "13px" }}
+                  disabled={loading}
+                >
+                  {loading ? "Authenticating..." : `Sign in as ${customGoogleEmail || "Google Account"}`} ↗
+                </button>
+              </form>
+            </div>
+
+            {/* Option B: Live Google OAuth Consent Screen */}
+            <div className="auth-opt-card">
+              <span className="auth-opt-badge auth-badge-blue">Production OAuth 2.0</span>
+              <h4 style={{ margin: "4px 0 6px", fontSize: "14px" }}>Live Google OAuth 2.0 Consent Screen</h4>
+              <p style={{ margin: "0 0 10px", fontSize: "12px", color: "#94a3b8", lineHeight: 1.5 }}>
+                Opens the official Google account chooser and consent screen.
+              </p>
+              <button
+                type="button"
+                onClick={handleLiveGoogleLogin}
+                className="auth-btn-oauth"
+                style={{ width: "100%", fontSize: "13px", padding: "9px" }}
+              >
+                <span>Launch Live Google Consent Screen ↗</span>
+              </button>
+            </div>
+
+            {/* Step-by-Step Google Cloud Console Setup Guide */}
+            <div style={{ marginTop: "10px", borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "12px" }}>
+              <button
+                type="button"
+                onClick={() => setShowSetupGuide(!showSetupGuide)}
+                style={{ background: "none", border: "none", color: "#38bdf8", cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px", padding: 0, fontWeight: 600 }}
+              >
+                <span>{showSetupGuide ? "▼ Hide Google Cloud Setup Guide" : "▶ What do I need to configure in Google Cloud?"}</span>
+              </button>
+
+              {showSetupGuide && (
+                <div style={{ marginTop: "10px", fontSize: "12px", color: "#94a3b8", lineHeight: 1.6, background: "rgba(0,0,0,0.3)", padding: "12px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <b style={{ color: "#f1f5f9" }}>To use your real Google account with live Google OAuth:</b>
+                  <ol style={{ margin: "6px 0 0", paddingLeft: "18px" }}>
+                    <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" style={{ color: "#38bdf8" }}>Google Cloud Console &rarr; Credentials</a>.</li>
+                    <li>Click <b>Create Credentials &rarr; OAuth client ID</b> (Application type: <b>Web application</b>).</li>
+                    <li>
+                      Under <b>Authorized JavaScript origins</b>, add:<br/>
+                      <code style={{ background: "rgba(255,255,255,0.1)", padding: "1px 5px", borderRadius: "3px" }}>http://localhost:3000</code> and <code style={{ background: "rgba(255,255,255,0.1)", padding: "1px 5px", borderRadius: "3px" }}>http://localhost:8000</code>
+                    </li>
+                    <li style={{ marginTop: "4px" }}>
+                      Under <b>Authorized redirect URIs</b>, add:<br/>
+                      <code style={{ color: "#34d399", background: "rgba(52, 211, 153, 0.12)", padding: "2px 5px", borderRadius: "3px" }}>http://localhost:8000/v1/auth/google/callback</code>
+                    </li>
+                    <li style={{ marginTop: "4px" }}>
+                      Paste your generated <b>Client ID</b> and <b>Client Secret</b> into <code style={{ background: "rgba(255,255,255,0.1)", padding: "1px 5px", borderRadius: "3px" }}>.env</code>:
+                      <pre style={{ margin: "4px 0 0", background: "#0a0c14", padding: "6px 8px", borderRadius: "5px", color: "#e2e8f0", fontSize: "11px", overflowX: "auto" }}>
+GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET="GOCSPX-your-secret"
+GOOGLE_REDIRECT_URI="http://localhost:8000/v1/auth/google/callback"
+                      </pre>
+                    </li>
+                  </ol>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

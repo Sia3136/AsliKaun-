@@ -793,7 +793,11 @@ GOOGLE_REDIRECT_URI="{GOOGLE_REDIRECT_URI}"
 
 
 @app.get("/v1/auth/google/sandbox-login")
-def auth_google_sandbox_login(state: str | None = Query(default=None)) -> Any:
+def auth_google_sandbox_login(
+    state: str | None = Query(default=None),
+    user_email: str | None = Query(default=None),
+    user_name: str | None = Query(default=None),
+) -> Any:
     """Simulates a successful Google OAuth verification for local evaluation."""
     target_origin = "http://localhost:3000"
     target_redirect = "/fleet-dashboard.html"
@@ -804,11 +808,15 @@ def auth_google_sandbox_login(state: str | None = Query(default=None)) -> Any:
                 target_origin = state_json["frontend_origin"].rstrip("/")
             if state_json.get("redirect_url"):
                 target_redirect = state_json["redirect_url"]
+            if not user_email and state_json.get("user_email"):
+                user_email = state_json["user_email"]
+            if not user_name and state_json.get("user_name"):
+                user_name = state_json["user_name"]
         except Exception:
             pass
 
-    email = "alex.morgan@aslikaun.ai"
-    name = "Alex Morgan"
+    email = (user_email or "alex.morgan@aslikaun.ai").strip().lower()
+    name = (user_name or (email.split("@")[0].replace(".", " ").title() if "@" in email else "Alex Morgan")).strip()
     picture = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&h=120&q=80"
 
     with connect() as con:

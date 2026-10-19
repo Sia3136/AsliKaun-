@@ -2059,3 +2059,99 @@ footer {
   color: #ea580c;
 }
 
+/* Google OAuth Options Modal */
+.auth-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 15, 0.76);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.auth-modal-card {
+  background: #111422;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 530px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.7);
+  padding: 26px;
+  color: #f3f4f6;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+[data-theme="light"] .auth-modal-card {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
+  color: #0f172a;
+}
+
+.auth-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="light"] .auth-modal-header {
+  border-bottom-color: #f1f5f9;
+}
+
+.auth-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #94a3b8;
+  padding: 0 6px;
+  line-height: 1;
+}
+
+.auth-opt-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+[data-theme="light"] .auth-opt-card {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.auth-opt-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+
+.auth-badge-green {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+}
+
+.auth-badge-blue {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+}
+
