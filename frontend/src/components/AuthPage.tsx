@@ -43,6 +43,7 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
           provider: provider,
         }));
       }
+      window.history.replaceState({}, document.title, window.location.pathname);
       window.location.assign('/fleet-dashboard.html');
     }
   }, []);
@@ -80,7 +81,7 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
   function handleLiveGoogleLogin() {
     setError('');
     const frontendOrigin = window.location.origin;
-    const redirectUrl = '/fleet-dashboard.html';
+    const redirectUrl = '/auth';
     window.location.href = `/v1/auth/google/login?live=true&frontend_origin=${encodeURIComponent(frontendOrigin)}&redirect_url=${encodeURIComponent(redirectUrl)}`;
   }
 
@@ -224,7 +225,7 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
             <button
               type="button"
               className="auth-btn-oauth"
-              onClick={handleOpenGoogleModal}
+              onClick={handleLiveGoogleLogin}
               id="google-oauth-btn"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -237,11 +238,19 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
             </button>
             <button
               type="button"
-              className="auth-btn-sandbox"
               onClick={handleOpenGoogleModal}
-              title="Sign in with your Google email or configure Google Cloud credentials"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#64748b',
+                fontSize: '11px',
+                cursor: 'pointer',
+                textAlign: 'center',
+                padding: '4px',
+                textDecoration: 'underline',
+              }}
             >
-              <span>⚡ Google Options (Live OAuth or Instant Google Account)</span>
+              Need instant demo access or Google Cloud setup guide?
             </button>
           </div>
 

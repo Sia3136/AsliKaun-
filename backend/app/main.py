@@ -57,6 +57,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 # Automatically load .env file from repository root if present
 def _load_env_file():
+    global TOKEN_SECRET
     for candidate in [
         Path(__file__).resolve().parents[2] / ".env",
         Path(__file__).resolve().parent / ".env",
@@ -70,14 +71,24 @@ def _load_env_file():
                         continue
                     k, v = line.split("=", 1)
                     k = k.strip()
-                    v = v.strip().strip("'\"")
-                    if k and k not in os.environ:
+                    v = v.strip().strip("'\"").strip()
+                    if k:
                         os.environ[k] = v
+                TOKEN_SECRET = os.getenv(
+                    "TRUST_JUGGLER_TOKEN_SECRET",
+                    "local-development-only-change-this-secret-before-deployment",
+                ).encode("utf-8")
             except Exception:
                 pass
             break
 
 _load_env_file()
+
+# Reload the token secret after reading the repository .env file.
+TOKEN_SECRET = os.getenv(
+    "TRUST_JUGGLER_TOKEN_SECRET",
+    "local-development-only-change-this-secret-before-deployment",
+).encode("utf-8")
 
 # Google OAuth 2.0 Credentials & Redirect URI
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
@@ -269,6 +280,47 @@ def b64url_encode(value: bytes) -> str:
 
 def b64url_decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+GOOGLE_OAUTH_STATE_TTL_SECONDS = 600
+
+
+def create_google_oauth_state(state_data: dict[str, Any]) -> str:
+    payload = {
+        **state_data,
+        "iat": int(time.time()),
+        "nonce": secrets.token_urlsafe(24),
+    }
+    encoded_payload = b64url_encode(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    )
+    signature = hmac.new(
+        TOKEN_SECRET,
+        f"google-oauth:{encoded_payload}".encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+    return f"{encoded_payload}.{b64url_encode(signature)}"
+
+
+def decode_google_oauth_state(state: str) -> dict[str, Any]:
+    try:
+        encoded_payload, encoded_signature = state.split(".", 1)
+        expected_signature = hmac.new(
+            TOKEN_SECRET,
+            f"google-oauth:{encoded_payload}".encode("ascii"),
+            hashlib.sha256,
+        ).digest()
+        if not hmac.compare_digest(expected_signature, b64url_decode(encoded_signature)):
+            raise ValueError("Invalid Google OAuth state signature")
+        payload = json.loads(b64url_decode(encoded_payload))
+        issued_at = int(payload.get("iat", 0))
+        if not payload.get("nonce") or issued_at < int(time.time()) - GOOGLE_OAUTH_STATE_TTL_SECONDS:
+            raise ValueError("Google OAuth state expired")
+        if issued_at > int(time.time()) + 60:
+            raise ValueError("Invalid Google OAuth state timestamp")
+        return payload
+    except (ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError("Invalid or expired Google OAuth state") from exc
 
 
 def create_access_token(username: str) -> str:
@@ -706,16 +758,13 @@ def auth_google_login(
     configure: bool = Query(default=False),
     live: bool = Query(default=False),
 ) -> Any:
-    """Initiates Google OAuth 2.0 flow. If live=true and credentials are configured in .env,
-    redirects to Google's real consent screen. Otherwise, seamlessly logs into the verified
-    Google session sandbox so evaluators and operators are never blocked by Google's redirect_uri_mismatch."""
+    """Start either real Google OAuth or the explicitly requested local demo flow."""
     _load_env_file()
     state_data = {
         "frontend_origin": frontend_origin or "",
         "redirect_url": redirect_url,
-        "nonce": secrets.token_hex(8),
     }
-    state_str = b64url_encode(json.dumps(state_data).encode("utf-8"))
+    state_str = create_google_oauth_state(state_data)
 
     client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
@@ -743,6 +792,12 @@ def auth_google_login(
         }
         google_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
         return RedirectResponse(url=google_url)
+
+    if live and not has_real_credentials:
+        return RedirectResponse(
+            url=f"{target_origin}/auth?error={quote('Live Google OAuth is not configured on the server.')}",
+            status_code=303,
+        )
 
     target_origin = frontend_origin or "http://localhost:3000"
     sandbox_redirect = f"/v1/auth/google/sandbox-login?state={state_str}"
@@ -803,7 +858,7 @@ def auth_google_sandbox_login(
     target_redirect = "/fleet-dashboard.html"
     if state:
         try:
-            state_json = json.loads(b64url_decode(state))
+            state_json = decode_google_oauth_state(state)
             if state_json.get("frontend_origin"):
                 target_origin = state_json["frontend_origin"].rstrip("/")
             if state_json.get("redirect_url"):
@@ -812,8 +867,8 @@ def auth_google_sandbox_login(
                 user_email = state_json["user_email"]
             if not user_name and state_json.get("user_name"):
                 user_name = state_json["user_name"]
-        except Exception:
-            pass
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     email = (user_email or "alex.morgan@aslikaun.ai").strip().lower()
     name = (user_name or (email.split("@")[0].replace(".", " ").title() if "@" in email else "Alex Morgan")).strip()
@@ -848,17 +903,19 @@ async def auth_google_callback(
 ) -> Any:
     """Receives authorization code from Google, exchanges it for access token,
     retrieves Google profile, persists user, and redirects to dashboard with JWT."""
+    _load_env_file()
     target_origin = "http://localhost:3000"
-    target_redirect = "/fleet-dashboard.html"
-    if state:
-        try:
-            state_json = json.loads(b64url_decode(state))
-            if state_json.get("frontend_origin"):
-                target_origin = state_json["frontend_origin"].rstrip("/")
-            if state_json.get("redirect_url"):
-                target_redirect = state_json["redirect_url"]
-        except Exception:
-            pass
+    target_redirect = "/auth"
+    if not state:
+        raise HTTPException(status_code=400, detail="Missing Google OAuth state")
+    try:
+        state_json = decode_google_oauth_state(state)
+        if state_json.get("frontend_origin"):
+            target_origin = state_json["frontend_origin"].rstrip("/")
+        if state_json.get("redirect_url"):
+            target_redirect = state_json["redirect_url"]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if error:
         return RedirectResponse(url=f"{target_origin}/auth?error={quote(error)}")
@@ -903,6 +960,11 @@ async def auth_google_callback(
     email = userinfo.get("email")
     if not email:
         raise HTTPException(status_code=400, detail="Google account has no email address")
+    if userinfo.get("email_verified") is not True:
+        return RedirectResponse(
+            url=f"{target_origin}/auth?error={quote('Google did not verify the email address for this account.')}",
+            status_code=303,
+        )
 
     name = userinfo.get("name") or email.split("@")[0]
     picture = userinfo.get("picture")

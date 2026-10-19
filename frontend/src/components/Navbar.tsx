@@ -65,14 +65,9 @@ export const Navbar: React.FC<NavbarProps> = ({ theme, onToggleTheme }) => {
               Open Console ↗
             </a>
           ) : (
-            <>
-              <a className="nav-item" href="/auth?mode=login" style={{ fontSize: '13px', fontWeight: 500, marginRight: '4px' }}>
-                Sign in
-              </a>
-              <a className="btn-get-access" href="/auth?mode=signup">
-                Get access
-              </a>
-            </>
+            <a className="btn-get-access" href="/auth?mode=login">
+              Sign in ↗
+            </a>
           )}
         </div>
       </div>
