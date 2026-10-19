@@ -337,7 +337,7 @@ const Icon = ({ name, className = "icon" }: { name: string; className?: string }
     play: <polygon points="5 3 19 12 5 21 5 3"/>,
   };
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       {paths[name] || paths.grid}
     </svg>
   );
@@ -345,12 +345,8 @@ const Icon = ({ name, className = "icon" }: { name: string; className?: string }
 
 const Metric = ({ label, value, note, tone = "" }: { label: string; value: string | number; note: string; tone?: string }) => (
   <div className="metric">
-    <div className="metric-label">
-      <span>{label}</span>
-      <span className={`pulse ${tone}`}/>
-    </div>
-    <strong>{value}</strong>
-    <small>{note}</small>
+    <div className="metric-label"><span>{label}</span><span className={`pulse ${tone}`}/></div>
+    <strong>{value}</strong><small>{note}</small>
   </div>
 );
 
@@ -370,53 +366,28 @@ function FleetMap({
   onMarkFalseAlarm: (d: Driver) => void;
   actionLoading: boolean;
 }) {
-  const stableCount = drivers.filter((d) => d.color === "green").length;
-  const legitCount = drivers.filter((d) => d.color === "blue").length;
-  const ambigCount = drivers.filter((d) => d.color === "amber").length;
-  const handoffCount = drivers.filter((d) => d.color === "red").length;
-
-  const riskPercent = selected.color === "red" ? 86 : selected.color === "amber" ? 54 : selected.color === "blue" ? 18 : 6;
-
   return (
     <div className="fleet-layout">
       <section className="panel map-panel">
         <div className="panel-head">
           <div>
-            <span className="eyebrow">Real-Time Behavioral Defense</span>
-            <h2>Continuity Matrix</h2>
-            <p>Spatial mapping of Context Continuity (C<sub>c</sub>) against Behavioral Continuity (C<sub>b</sub>)</p>
+            <span className="eyebrow">Live intelligence</span>
+            <h2>Continuity matrix</h2>
+            <p>Context and behavioral confidence across all active sessions</p>
           </div>
           <div className="legend">
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><i className="green"/>Stable ({stableCount})</span>
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><i className="blue"/>Legit ({legitCount})</span>
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><i className="amber"/>Ambiguous ({ambigCount})</span>
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}><i className="red"/>Handoff ({handoffCount})</span>
+            <i className="green"/>Stable <i className="blue"/>Legit change <i className="amber"/>Ambiguous <i className="red"/>Handoff
           </div>
         </div>
-
         <div className="matrix-wrap">
-          <div className="y-title">Behavior Continuity <b>C<sub>b</sub></b></div>
+          <div className="y-title">Behavior continuity <b>C<sub>b</sub></b></div>
           <div className="matrix">
-            <div className="quadrant q1">
-              <b>Legitimate Shift</b>
-              <span>New context · verified authentic behavior</span>
-            </div>
-            <div className="quadrant q2">
-              <b>Stable Identity</b>
-              <span>Calibrated Gaussian baseline · nominal</span>
-            </div>
-            <div className="quadrant q3">
-              <b>Ambiguous Variance</b>
-              <span>Multi-modal drift · safe-pause scheduled</span>
-            </div>
-            <div className="quadrant q4">
-              <b>Handoff Signature</b>
-              <span>Device match · anomalous touch & motor patterns</span>
-            </div>
-
-            <span className="threshold-x">Threshold C<sub>c</sub> 0.60</span>
-            <span className="threshold-y">Threshold C<sub>b</sub> 0.29</span>
-
+            <div className="quadrant q1"><b>Legit change</b><span>New context · same person</span></div>
+            <div className="quadrant q2"><b>Stable identity</b><span>Expected session behavior</span></div>
+            <div className="quadrant q3"><b>Ambiguous</b><span>Multi-factor variance</span></div>
+            <div className="quadrant q4"><b>Handoff signature</b><span>Same context · new person</span></div>
+            <span className="threshold-x">C<sub>c</sub> 0.60</span>
+            <span className="threshold-y">C<sub>b</sub> 0.29</span>
             {drivers.map((d) => (
               <button
                 key={d.id}
@@ -425,17 +396,16 @@ function FleetMap({
                 style={{ left: `${d.x}%`, bottom: `${d.y}%` }}
                 aria-label={`Select ${d.name} (${d.id})`}
               >
-                <span>{d.id.replace("rider-", "ID ")}</span>
+                <span>{d.id.replace("rider-", "")}</span>
               </button>
             ))}
           </div>
-          <div className="x-title">Context Continuity <b>C<sub>c</sub></b></div>
+          <div className="x-title">Context continuity <b>C<sub>c</sub></b></div>
         </div>
-
         <div className="map-foot">
-          <span>0.0 (Total Divergence)</span>
-          <span>Decision Boundary: C<sub>c</sub> = 0.60, C<sub>b</sub> = 0.29</span>
-          <span>1.0 (Identical Match)</span>
+          <span>0.0</span>
+          <span>Context threshold 0.60</span>
+          <span>1.0</span>
         </div>
       </section>
 
@@ -444,24 +414,12 @@ function FleetMap({
           <div className={`avatar ${selected.color}`}>
             {selected.name.split(" ").map((x) => x[0]).join("")}
           </div>
-          <div style={{ flex: 1 }}>
-            <span className="eyebrow">Active Telemetry Inspection</span>
+          <div>
+            <span className="eyebrow">Driver inspector</span>
             <h3>{selected.name}</h3>
             <p>{selected.id} · {selected.location}</p>
           </div>
           <span className={`status ${selected.color}`}>{selected.state}</span>
-        </div>
-
-        {/* Dual Continuity Metric Bar */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", margin: "16px 0 6px" }}>
-          <div style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)", padding: "10px 14px", borderRadius: "10px" }}>
-            <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-subtle)", textTransform: "uppercase" }}>Context C<sub>c</sub></span>
-            <b style={{ display: "block", fontSize: "18px", fontFamily: "var(--font-mono)", color: "#38bdf8", marginTop: "2px" }}>{(selected.x / 100).toFixed(2)}</b>
-          </div>
-          <div style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)", padding: "10px 14px", borderRadius: "10px" }}>
-            <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-subtle)", textTransform: "uppercase" }}>Behavior C<sub>b</sub></span>
-            <b style={{ display: "block", fontSize: "18px", fontFamily: "var(--font-mono)", color: selected.y < 30 ? "#ef4444" : "#10b981", marginTop: "2px" }}>{(selected.y / 100).toFixed(2)}</b>
-          </div>
         </div>
 
         <div className="facts">
@@ -470,18 +428,18 @@ function FleetMap({
             <b>{selected.device}</b>
           </div>
           <div>
-            <span>Vehicle Speed</span>
+            <span>Vehicle speed</span>
             <b>{selected.speed}</b>
           </div>
           <div>
-            <span>Session Ref</span>
+            <span>Session</span>
             <b>{selected.session}</b>
           </div>
         </div>
 
         <div className="section-title">
-          <span>Multi-Sensor Signal Breakdown</span>
-          <small>Fisher Fused</small>
+          <span>Signal integrity</span>
+          <small>Fisher-fused real-time</small>
         </div>
 
         {selected.signals.map((s) => (
@@ -499,33 +457,30 @@ function FleetMap({
         <div className="reason">
           <span className="ai-mark">AI</span>
           <div>
-            <b>Neural Biometric Assessment</b>
+            <b>Reason vector</b>
             <p>{selected.reason}</p>
           </div>
         </div>
 
         <div className="safe">
-          <span>Safety Protocol</span>
+          <span>Safety Interlock</span>
           <b>{selected.safeStatus}</b>
         </div>
 
         <div className="actions">
           <button
             className="primary"
-            style={selected.color === "red" ? { background: "linear-gradient(135deg, #b91c1c, #ef4444)", borderColor: "#f87171" } : {}}
             disabled={actionLoading}
             onClick={() => onConfirmStepUp(selected)}
           >
-            <Icon name="alert"/>
-            {actionLoading ? "Dispatching..." : "Confirm Step-Up"}
+            {actionLoading ? "Dispatching..." : "Confirm step-up"}
           </button>
           <button
             className="secondary"
             disabled={actionLoading}
             onClick={() => onMarkFalseAlarm(selected)}
           >
-            <Icon name="check"/>
-            {actionLoading ? "Updating..." : "Mark False Alarm"}
+            {actionLoading ? "Updating..." : "Mark false alarm"}
           </button>
         </div>
       </aside>
@@ -554,21 +509,21 @@ function DriftTracker({ onNotify }: { onNotify: (msg: string) => void }) {
     <section className="panel page-panel">
       <div className="panel-head">
         <div>
-          <span className="eyebrow">Longitudinal Baseline Defense</span>
-          <h2>Dual-Timescale Behavioral Drift Tracker</h2>
-          <p>EWMA dynamic response vs immutable initial Gaussian anchor</p>
+          <span className="eyebrow">Longitudinal identity</span>
+          <h2>Dual-timescale drift tracker</h2>
+          <p>Continuous EWMA and anchored baseline across scored sessions</p>
         </div>
         <div className="alert-pill">{driftInfo.alert}</div>
       </div>
 
-      <div style={{ display: "flex", gap: "10px", margin: "16px 0 8px" }}>
+      <div style={{ display: "flex", gap: "8px", margin: "14px 0 6px" }}>
         {Object.keys(DRIVER_DRIFT_DATA).map((id) => (
           <button
             key={id}
             onClick={() => setActiveDriverId(id)}
             className={`driver-pill-btn ${activeDriverId === id ? "active" : ""}`}
           >
-            {id} {id === "rider-042" ? "🔴 (Breach)" : id === "rider-088" ? "🟡 (Drift)" : id === "rider-019" ? "🔵 (Upgrade)" : "🟢 (Stable)"}
+            {id} {id === "rider-042" ? "(Breach)" : id === "rider-088" ? "(Drift)" : id === "rider-019" ? "(Upgrade)" : "(Stable)"}
           </button>
         ))}
       </div>
@@ -583,46 +538,46 @@ function DriftTracker({ onNotify }: { onNotify: (msg: string) => void }) {
         <svg viewBox="0 0 900 240" preserveAspectRatio="none">
           <defs>
             <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#38bdf8" stopOpacity=".25"/>
-              <stop offset="1" stopColor="#38bdf8" stopOpacity="0"/>
+              <stop offset="0" stopColor="#22d3ee" stopOpacity=".2"/>
+              <stop offset="1" stopColor="#22d3ee" stopOpacity="0"/>
             </linearGradient>
           </defs>
           <path className="gridline" d="M0 30H900M0 90H900M0 150H900M0 210H900"/>
           <path className="anchor" d="M0 44H900"/>
           <path className="area" d="M0 49 C150 45 220 52 310 70 S460 91 540 105 S690 165 780 170 S850 182 900 188 V220H0Z"/>
           <path className="ewma" d="M0 49 C150 45 220 52 310 70 S460 91 540 105 S690 165 780 170 S850 182 900 188"/>
-          {activeDriverId === "rider-042" && <circle className="breach" cx="780" cy="170" r="8"/>}
+          {activeDriverId === "rider-042" && <circle className="breach" cx="780" cy="170" r="7"/>}
         </svg>
         <div className="chart-bottom">
-          <span>Session 1 (Enrollment Baseline)</span>
+          <span>Session 1</span>
           <span>Session 15</span>
           <span>Session 30</span>
-          <span>Session 45 (Recent Ingest)</span>
+          <span>Session 45</span>
         </div>
         <div className="chart-legend">
-          <span><i className="line solid"/>Frozen Anchor (Anchor C<sub>b</sub>: 0.94)</span>
-          <span><i className="line dashed"/>Fast EWMA (Short-Timescale Smoothing)</span>
-          <span><i className="circle"/>Breach Threshold (Handoff Interlock)</span>
+          <span><i className="line solid"/>Frozen anchor (Anchor C<sub>b</sub>: 0.94)</span>
+          <span><i className="line dashed"/>Fast EWMA (Short-timescale decay)</span>
+          <span><i className="circle"/>Breach threshold</span>
         </div>
       </div>
 
       <div className="table-title">
-        <h3>Session Audit Log ({activeDriverId})</h3>
+        <h3>Recent session audit ({activeDriverId})</h3>
         <button className="secondary" onClick={exportHistory}>
-          <Icon name="download"/> Export Audit CSV
+          <Icon name="download"/> Export history
         </button>
       </div>
 
       <table>
         <thead>
           <tr>
-            {["Session ID", "Timestamp", "Context C_c", "Behavior C_b", "Quadrant Classification", "Vehicle Speed", "Operational Verdict"].map((x) => (
+            {["Session ID", "Timestamp", "Context", "Behavior", "Quadrant", "Vehicle speed", "Verdict"].map((x) => (
               <th key={x}>{x}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {driftInfo.rows.map((r) => (
+          {driftInfo.rows.map((r, i) => (
             <tr key={String(r[0])} style={{ cursor: "pointer" }} onClick={() => handleRowClick(r)}>
               {r.map((x, j) => (
                 <td key={`${r[0]}-${j}`}>
@@ -671,54 +626,50 @@ function ReviewQueue({
     });
   }, [cases, filter, search]);
 
-  const openCount = cases.filter((c) => c.status === "OPEN").length;
-  const resolvedCount = cases.filter((c) => c.status === "RESOLVED").length;
-
   const exportQueue = () => {
     downloadCsv("aslikaun-review-queue.csv", [
       ["Review ID", "Driver ID", "Quadrant", "Status", "Speed", "Timestamp", "Reason"],
       ...cases.map((c) => [c.id, c.driverId, c.quadrant, c.status, c.speed, c.timestamp, c.reason]),
     ]);
-    onNotify("Review audit log downloaded");
+    onNotify("Audit report downloaded");
   };
 
   return (
     <section className="panel page-panel">
       <div className="panel-head">
         <div>
-          <span className="eyebrow">Security Action Center</span>
-          <h2>Prioritized Review Queue</h2>
-          <p>Autonomous step-up reviews gated by safe-pause interlock (0 mph)</p>
+          <span className="eyebrow">Operations action center</span>
+          <h2>Review queue <span className="muted">({cases.filter((c) => c.status === "OPEN").length} open)</span></h2>
+          <p>Prioritized by identity risk and vehicle safe-pause availability</p>
         </div>
         <button className="primary" onClick={exportQueue}>
-          <Icon name="download"/> Export Audit CSV
+          <Icon name="download"/> Export audit CSV
         </button>
       </div>
 
       <div className="toolbar">
         <div className="chips">
-          <button onClick={() => setFilter("All")} className={filter === "All" ? "active" : ""}>
-            All ({cases.length})
-          </button>
-          <button onClick={() => setFilter("Open")} className={filter === "Open" ? "active" : ""}>
-            Open ({openCount})
-          </button>
-          <button onClick={() => setFilter("Resolved")} className={filter === "Resolved" ? "active" : ""}>
-            Resolved ({resolvedCount})
-          </button>
+          {(["All", "Open", "Resolved"] as const).map((x) => (
+            <button
+              key={x}
+              onClick={() => setFilter(x)}
+              className={filter === x ? "active" : ""}
+            >
+              {x}
+            </button>
+          ))}
         </div>
-
         <div className="search">
           <Icon name="search"/>
           <input
             type="text"
-            placeholder="Search by driver ID, review ID, or telemetry reason..."
+            placeholder="Search driver, review ID, or reason..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           {search && (
             <button
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: "16px" }}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#84928d", padding: "0 4px" }}
               onClick={() => setSearch("")}
             >
               ×
@@ -729,8 +680,8 @@ function ReviewQueue({
 
       <div className="cases">
         {shown.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)", fontSize: "14px" }}>
-            No security incidents match your current filter.
+          <div style={{ textAlign: "center", padding: "32px", color: "#84928d" }}>
+            No review items match your current filter or query.
           </div>
         ) : (
           shown.map((c) => {
@@ -750,17 +701,17 @@ function ReviewQueue({
                   <small>{c.status}</small>
                 </div>
                 <p>
-                  {c.reason} <b style={{ color: "var(--text-muted)", marginLeft: "8px" }}>· {c.speed}</b>
+                  {c.reason} <span style={{ color: "#84928d", marginLeft: "6px" }}>({c.speed})</span>
                 </p>
                 <div className="case-actions">
                   <button className="secondary" onClick={() => onOpenCaseModal(c)}>
-                    {isResolved ? "Inspect Audit" : "Verify Step-Up"}
+                    {isResolved ? "Inspect Audit" : "Verify step-up"}
                   </button>
                   {!isResolved && (
                     <button
                       className="more"
                       aria-label={`Resolve ${c.id}`}
-                      title="Clear and verify baseline"
+                      title="Quick resolve & clear baseline"
                       onClick={() => onResolveCase(c.id, "cleared")}
                     >
                       ✓
@@ -782,16 +733,16 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
   const [isVerifying, setIsVerifying] = useState(false);
 
   const modelDetails: Record<string, string> = {
-    "Touch triplet": "Triplet-loss Siamese network trained on 840,000 commercial delivery taps. Evaluates touch dwell duration, velocity curvature entropy, and micro-pressure peaks.",
-    "Motion kinematics": "Bi-directional GRU parsing high-frequency accelerometer and gyroscope telemetry. Isolates vehicle vibrations from driver motor tilt with 37% AUC lift.",
-    "Fisher fusion": "Parametric Fisher combination fusing log-likelihood ratio scores across touch, motion, and operational timing under non-stationary environmental noise.",
+    "Touch triplet": "Triplet loss Siamese embedding trained on 840,000 commercial delivery taps. Extracts velocity curves, curvature entropy, and micro-dwell jitter.",
+    "Motion kinematics": "Bi-directional GRU tracking vehicle vibration absorption vs human body tilt. Detects posture changes and secondary passengers with 37% lift.",
+    "Fisher fusion": "Parametric Fisher combination fusing log-likelihood ratio scores across touch, kinematics, and operational timing under non-stationary noise.",
   };
 
   const runVerification = () => {
     setIsVerifying(true);
     window.setTimeout(() => {
       setIsVerifying(false);
-      onNotify("KS-Test calibration verified: All model p-values uniform (D=0.038, p > 0.10). Zero demographic or environmental bias.");
+      onNotify("KS-Test calibration verified: All model p-values uniform (D=0.038, p > 0.10). Zero cohort bias.");
     }, 900);
   };
 
@@ -800,24 +751,24 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
       <section className="panel page-panel span">
         <div className="panel-head">
           <div>
-            <span className="eyebrow">Model Assurance & Calibration</span>
-            <h2>Model Performance & Demographic Fairness</h2>
-            <p>Live inference monitoring · production calibration v2.4</p>
+            <span className="eyebrow">Model assurance</span>
+            <h2>Performance & cohort fairness</h2>
+            <p>Evaluation snapshot · production calibration v2.4</p>
           </div>
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-            <span className="healthy">All Models Calibrated</span>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <span className="healthy">All models calibrated</span>
             <button className="secondary" onClick={runVerification} disabled={isVerifying}>
               <Icon name="refresh" className={isVerifying ? "spin" : ""}/>
-              {isVerifying ? "Verifying..." : "Run Calibration Check"}
+              {isVerifying ? "Verifying..." : "Run calibration check"}
             </button>
           </div>
         </div>
 
         <div className="model-cards">
           {[
-            ["Touch triplet", "0.352", "0.722", "Baseline Model"],
-            ["Motion kinematics", "0.277", "0.780", "37% Lift over Touch"],
-            ["Fisher fusion", "0.158", "0.921", "State of the Art (Fused)"],
+            ["Touch triplet", "0.352", "0.722", "Baseline"],
+            ["Motion kinematics", "0.277", "0.780", "37% lift"],
+            ["Fisher fusion", "0.158", "0.921", "Best model"],
           ].map((m) => (
             <div
               key={m[0]}
@@ -827,15 +778,15 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
             >
               <span>{m[0]}</span>
               <b>AUC {m[2]}</b>
-              <p>Equal Error Rate (EER): {m[1]}</p>
+              <p>EER {m[1]}</p>
               <small>{m[3]}</small>
             </div>
           ))}
         </div>
 
-        <div style={{ marginTop: "18px", background: "rgba(255, 255, 255, 0.03)", border: "1px solid var(--border-subtle)", padding: "16px 20px", borderRadius: "12px" }}>
-          <b style={{ fontSize: "13px", color: "var(--green-core)" }}>{selectedModel} Architecture & Invariance:</b>
-          <p style={{ margin: "6px 0 0", fontSize: "13px", color: "#cbd5e1", lineHeight: 1.6 }}>
+        <div style={{ marginTop: "14px", background: "#f8fbf9", border: "1px solid #dce9e4", padding: "12px 16px", borderRadius: "8px" }}>
+          <b style={{ fontSize: "11px", color: "#174b3a" }}>{selectedModel} Architecture Details:</b>
+          <p style={{ margin: "4px 0 0", fontSize: "11px", color: "#455952", lineHeight: 1.5 }}>
             {modelDetails[selectedModel]}
           </p>
         </div>
@@ -843,19 +794,19 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
 
       <section className="panel chart-card">
         <div>
-          <span className="eyebrow">Cohort Equity</span>
-          <h3>False-Challenge Rate by Demographic Cohort</h3>
+          <span className="eyebrow">Equity monitor</span>
+          <h3>False-challenge rate by cohort</h3>
         </div>
         <div className="bars">
           {[
-            ["Standard Baseline Operation", 0.9, "48,200 sessions"],
-            ["New Phone / Hardware Upgrade", 1.1, "3,400 sessions"],
-            ["City Transit / Zone Relocation", 1.2, "2,150 sessions"],
-            ["Monsoon / Bumpy Road Kinematics", 1.4, "6,800 sessions"],
+            ["Regular baseline", 0.9, "48,200 sessions"],
+            ["New phone upgrade", 1.1, "3,400 sessions"],
+            ["City relocation", 1.2, "2,150 sessions"],
+            ["Monsoon / bumpy road", 1.4, "6,800 sessions"],
           ].map((x) => (
             <div key={x[0] as string} style={{ cursor: "pointer" }} onClick={() => onNotify(`Cohort ${x[0]}: ${x[1]}% false-challenge rate across ${x[2]}`)}>
               <label>
-                <span>{x[0]} <small style={{ color: "var(--text-subtle)", marginLeft: "6px" }}>({x[2]})</small></span>
+                <span>{x[0]} <small style={{ color: "#84928d", marginLeft: "4px" }}>({x[2]})</small></span>
                 <b>{x[1]}%</b>
               </label>
               <i>
@@ -865,15 +816,15 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
           ))}
         </div>
         <div className="takeaway">
-          <b>0.5pp Maximum Variance Across All Cohorts</b>
-          <span>Environmental shifts and phone upgrades maintain equal driver friction across all delivery conditions.</span>
+          <b>0.5pp maximum variance across demographic segments</b>
+          <span>Environmental changes and device transitions stay well within safe equity bounds.</span>
         </div>
       </section>
 
       <section className="panel chart-card">
         <div>
-          <span className="eyebrow">Statistical Validation</span>
-          <h3>Fused P-Value Distribution (KS Uniformity)</h3>
+          <span className="eyebrow">Statistical calibration</span>
+          <h3>Fused p-value distribution</h3>
         </div>
         <div className="histogram">
           {[78, 55, 40, 31, 25, 20, 18, 17, 18, 21, 25, 28, 30, 29, 31, 34, 36, 33, 37, 34].map((h, i) => (
@@ -887,12 +838,12 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
           ))}
         </div>
         <div className="hist-label">
-          <span>0.0 · Impostor Peak (Handoffs)</span>
-          <span>Nominal Uniform Distribution · 1.0 (True Identity)</span>
+          <span>0.0 · impostor spike (Handoffs)</span>
+          <span>Normal uniformity · 1.0 (True identity)</span>
         </div>
         <div className="takeaway">
-          <b>Kolmogorov-Smirnov Test Passed (p = 0.94)</b>
-          <span>Nominal sessions retain a mathematically uniform p-value distribution under continuous scoring.</span>
+          <b>KS calibration test passed (p = 0.94)</b>
+          <span>Normal sessions retain a flat uniform p-value distribution across all hours.</span>
         </div>
       </section>
     </div>
@@ -926,7 +877,7 @@ function Simulator({
   const scenarios = [
     {
       title: "Lazy renter",
-      sub: "Immediate account handoff to secondary rider",
+      sub: "Immediate account handoff",
       tag: "Handoff signature",
       tone: "red",
       driverId: "rider-sim-lazy",
@@ -944,7 +895,7 @@ function Simulator({
     },
     {
       title: "Slow-drift renter",
-      sub: "60-session boiling frog gradual attack",
+      sub: "60-session boiling frog attack",
       tag: "Drift breach",
       tone: "red",
       driverId: "rider-sim-drift",
@@ -961,8 +912,8 @@ function Simulator({
       },
     },
     {
-      title: "Split-shift co-rider",
-      sub: "Alternating riders across login windows",
+      title: "Split-shift",
+      sub: "Alternating co-riders on login",
       tag: "Periodic anomaly",
       tone: "amber",
       driverId: "rider-sim-split",
@@ -980,7 +931,7 @@ function Simulator({
     },
     {
       title: "Copycat attacker",
-      sub: "Replicates delivery zone and vehicle speed",
+      sub: "Mimics schedule and zone",
       tag: "Touch mismatch",
       tone: "red",
       driverId: "rider-sim-copycat",
@@ -998,7 +949,7 @@ function Simulator({
     },
     {
       title: "Legitimate phone upgrade",
-      sub: "New hardware purchase, authentic touch biometrics",
+      sub: "New device, same biometrics",
       tag: "Legit change",
       tone: "blue",
       driverId: "rider-sim-upgrade",
@@ -1016,7 +967,7 @@ function Simulator({
     },
     {
       title: "Cold-start rider",
-      sub: "First-time login · population conformal anchor",
+      sub: "Population conformal fallback",
       tag: "Observed",
       tone: "green",
       driverId: "rider-sim-coldstart",
@@ -1142,27 +1093,25 @@ function Simulator({
     <section className="panel page-panel">
       <div className="panel-head">
         <div>
-          <span className="eyebrow">Interactive Attack Vector Testing</span>
-          <h2>Adversarial & Scenario Simulator</h2>
-          <p>Inject synthesized high-frequency touch, motion, and operational streams into the live pipeline</p>
+          <span className="eyebrow">Live demo sandbox</span>
+          <h2>Attack & scenario simulator</h2>
+          <p>Inject controlled adversarial and benign sessions into the live scoring pipeline</p>
         </div>
-        <span className="sandbox">Live Isolation Sandbox</span>
+        <span className="sandbox">Isolated live pipeline sandbox</span>
       </div>
 
       {result && (
         <div className="sim-result">
           <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-              <span className={`status ${result.quadrant.toLowerCase().includes("handoff") ? "red" : "blue"}`} style={{ fontSize: "11px" }}>
-                {result.decision}
-              </span>
-              <b style={{ fontSize: "15px", color: "#ffffff" }}>{result.scenario} classified as {result.quadrant}</b>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+              <span className="status red" style={{ fontSize: "10px" }}>{result.decision}</span>
+              <b>{result.scenario} classified as {result.quadrant}</b>
             </div>
-            <p style={{ margin: "6px 0 10px", fontSize: "13px", color: "#e2e8f0", lineHeight: 1.5 }}>{result.reason}</p>
-            <div style={{ display: "flex", gap: "20px", fontSize: "12px", color: "var(--text-muted)" }}>
-              <span>Context Continuity: <b style={{ color: "#38bdf8" }}>{result.contextScore ?? "N/A"}</b></span>
-              <span>Behavior Continuity: <b style={{ color: result.behaviorScore && result.behaviorScore < 0.3 ? "#ef4444" : "#10b981" }}>{result.behaviorScore ?? "N/A"}</b></span>
-              <span>Injected Identifier: <b style={{ color: "#ffffff" }}>{result.driverId}</b></span>
+            <p style={{ margin: "4px 0 8px", fontSize: "11px", color: "#374d44" }}>{result.reason}</p>
+            <div style={{ display: "flex", gap: "16px", fontSize: "11px", color: "#687a74" }}>
+              <span>Context Continuity: <b>{result.contextScore ?? "N/A"}</b></span>
+              <span>Behavior Continuity: <b>{result.behaviorScore ?? "N/A"}</b></span>
+              <span>Target Driver: <b>{result.driverId}</b></span>
             </div>
             <div className="sim-actions">
               <button className="primary" onClick={handleInspectInMatrix}>
@@ -1175,7 +1124,7 @@ function Simulator({
           </div>
           <button
             onClick={() => setResult(null)}
-            style={{ fontSize: "22px", color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", height: "fit-content" }}
+            style={{ fontSize: "18px", color: "#687a74", background: "none", border: "none", cursor: "pointer", height: "fit-content" }}
             aria-label="Dismiss simulation result"
           >
             ×
@@ -1184,8 +1133,8 @@ function Simulator({
       )}
 
       <div className="scenario-heading">
-        <span>Synthetic Adversarial Injections</span>
-        <small>Click to execute real-time feature extraction & Fisher scoring</small>
+        <span>Adversarial & Baseline Scenarios</span>
+        <small>Click to inject live telemetry stream</small>
       </div>
 
       <div className="scenarios">
@@ -1201,11 +1150,11 @@ function Simulator({
               <span className={`scenario-num ${s.tone}`}>
                 {isCurrentRunning ? <Icon name="refresh" className="spin"/> : `0${i + 1}`}
               </span>
-              <div style={{ flex: 1 }}>
+              <div>
                 <h3>{s.title}</h3>
                 <p>{s.sub}</p>
                 <b>
-                  {isCurrentRunning ? "Processing Pipeline..." : `${s.tag} →`}
+                  {isCurrentRunning ? "Evaluating pipeline..." : `${s.tag} →`}
                 </b>
               </div>
             </button>
@@ -1233,6 +1182,7 @@ export default function App() {
     window.setTimeout(() => setMessage(""), 2800);
   };
 
+  // Sync live scores from backend on mount or on user request
   const fetchLiveScores = async () => {
     setIsRefreshing(true);
     try {
@@ -1314,6 +1264,7 @@ export default function App() {
     fetchLiveScores();
   }, []);
 
+  // Fleet Map Actions
   const handleConfirmStepUp = async (driver: Driver) => {
     setActionLoading(true);
     try {
@@ -1324,7 +1275,7 @@ export default function App() {
         body: JSON.stringify({
           driver_id: driver.id,
           device_id: driver.device,
-          vehicle_speed_mph: 0.0,
+          vehicle_speed_mph: 0.0, // Safe-pause challenge condition
           is_simulated: true,
           touch_events: [{ type: "tap", pressure: 0.92, duration_ms: 240 }],
         }),
@@ -1333,14 +1284,14 @@ export default function App() {
       setDrivers((current) =>
         current.map((d) =>
           d.id === driver.id
-            ? { ...d, state: "Handoff (Challenge armed)", color: "red", safeStatus: "Step-up challenge armed · Scheduled for next safe stop (0 mph)" }
+            ? { ...d, state: "Handoff (Challenge armed)", color: "red", safeStatus: "Step-up challenge armed · Triggered at next 0 mph safe stop" }
             : d
         )
       );
 
       setSelectedDriver((prev) =>
         prev.id === driver.id
-          ? { ...prev, state: "Handoff (Challenge armed)", color: "red", safeStatus: "Step-up challenge armed · Scheduled for next safe stop (0 mph)" }
+          ? { ...prev, state: "Handoff (Challenge armed)", color: "red", safeStatus: "Step-up challenge armed · Triggered at next 0 mph safe stop" }
           : prev
       );
 
@@ -1356,6 +1307,7 @@ export default function App() {
     setActionLoading(true);
     try {
       const token = sessionStorage.getItem("tm-auth-token") || "demo-admin-session-token";
+      // Find open review case for this driver if any
       const matchingCase = cases.find((c) => c.driverId === driver.id && c.status === "OPEN");
       if (matchingCase) {
         await fetch(`/v1/review-queue/${matchingCase.sessionId}/resolve`, {
@@ -1390,6 +1342,7 @@ export default function App() {
     }
   };
 
+  // Review Queue Actions
   const handleResolveCase = async (id: string, resolution = "cleared") => {
     const targetCase = cases.find((c) => c.id === id);
     if (!targetCase) return;
@@ -1419,6 +1372,7 @@ export default function App() {
     notify(`Case #${id} resolved: ${resolution.replace(/_/g, " ")}`);
   };
 
+  // Navigation & Export
   const exportFleet = () => {
     downloadCsv("aslikaun-live-fleet.csv", [
       ["Driver ID", "Driver Name", "Context Score", "Behavior Score", "Classification", "Speed", "Session ID"],
@@ -1458,8 +1412,8 @@ export default function App() {
             />
           </div>
           <div>
-            <b>AsliKaun AI</b>
-            <span>BIOMETRIC FLEET DEFENSE</span>
+            <b>AsliKaun</b>
+            <span>IDENTITY INTELLIGENCE</span>
           </div>
         </div>
 
@@ -1505,7 +1459,7 @@ export default function App() {
               <div className="user-dropdown">
                 <div className="user-dropdown-header">
                   <b>Alex Morgan</b>
-                  <span>Chief Operations Officer · admin@aslikaun.ai</span>
+                  <span>Operations Lead · admin@aslikaun.ai</span>
                 </div>
                 <button onClick={() => { fetchLiveScores(); setUserDropdownOpen(false); }}>
                   <Icon name="refresh"/> Sync Backend Telemetry
@@ -1525,20 +1479,20 @@ export default function App() {
       <main>
         <div className="page-title">
           <div>
-            <span className="eyebrow">Enterprise Telemetry & Operations</span>
+            <span className="eyebrow">Admin operations</span>
             <h1>{page}</h1>
           </div>
           <div className="updated">
             <i/>
-            Verified Live Ingest <span>{new Date().toLocaleTimeString()}</span>
+            Updated live <span>{new Date().toLocaleTimeString()}</span>
           </div>
         </div>
 
         <div className="metrics">
-          <Metric label="Active Live Sessions" value={drivers.length * 15 + 7} note="+8 continuous sessions in the last hour"/>
-          <Metric label="Handoff Threats" value={handoffAlertsCount} note={`${openCasesCount} open reviews requiring action`} tone={handoffAlertsCount > 0 ? "red" : "green"}/>
-          <Metric label="Safe-Pause Queue" value={safePauseCount} note="Armed to challenge at 0 mph vehicle stop" tone="amber"/>
-          <Metric label="False-Alarm Rate" value="0.9%" note="Rolling 24-hr KS calibrated baseline" tone="blue"/>
+          <Metric label="Active sessions" value={drivers.length * 15 + 7} note="+8 in the last hour"/>
+          <Metric label="Handoff alerts" value={handoffAlertsCount} note={`${openCasesCount} require review`} tone={handoffAlertsCount > 0 ? "red" : "green"}/>
+          <Metric label="Safe-pause queue" value={safePauseCount} note="Armed for 0 mph stop" tone="amber"/>
+          <Metric label="False-alarm rate" value="0.9%" note="Rolling 24 hours" tone="blue"/>
         </div>
 
         <div className="page-content" key={page}>
@@ -1568,12 +1522,12 @@ export default function App() {
                 setDrivers((current) => [d, ...current.filter((x) => x.id !== d.id)]);
                 setSelectedDriver(d);
                 setPage("Fleet map");
-                notify(`Injected driver ${d.id} into Continuity Matrix`);
+                notify(`Added simulated driver ${d.id} to Continuity Matrix`);
               }}
               onAddCaseToQueue={(c) => {
                 setCases((current) => [c, ...current]);
                 setPage("Review queue");
-                notify(`Added case #${c.id} to review queue`);
+                notify(`Queued case #${c.id} for operator review`);
               }}
               onNotify={notify}
             />
@@ -1587,29 +1541,29 @@ export default function App() {
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div>
-                <span className="eyebrow">Case Investigation & Evidence Audit</span>
+                <span className="eyebrow">Case Investigation</span>
                 <h3>#{activeCaseModal.id} · {activeCaseModal.driverId}</h3>
               </div>
               <button className="modal-close" onClick={() => setActiveCaseModal(null)}>×</button>
             </div>
             <div className="modal-body">
-              <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "16px" }}>
+              <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "14px" }}>
                 <span className={`status ${activeCaseModal.quadrant.includes("Handoff") ? "red" : activeCaseModal.quadrant.includes("Ambiguous") ? "amber" : "blue"}`}>
                   {activeCaseModal.quadrant}
                 </span>
                 <span className={`status ${activeCaseModal.status === "RESOLVED" ? "green" : "amber"}`}>
                   {activeCaseModal.status}
                 </span>
-                <small style={{ color: "var(--text-muted)", marginLeft: "auto", fontWeight: 600 }}>{activeCaseModal.timestamp}</small>
+                <small style={{ color: "#84928d", marginLeft: "auto" }}>{activeCaseModal.timestamp}</small>
               </div>
 
-              <div className="facts" style={{ margin: "14px 0" }}>
+              <div className="facts" style={{ margin: "10px 0" }}>
                 <div><span>Device Lineage</span><b>{activeCaseModal.device}</b></div>
-                <div><span>Vehicle Velocity</span><b>{activeCaseModal.speed}</b></div>
-                <div><span>Context Continuity</span><b>{activeCaseModal.contextScore}</b></div>
+                <div><span>Vehicle Speed</span><b>{activeCaseModal.speed}</b></div>
+                <div><span>Context Score</span><b>{activeCaseModal.contextScore}</b></div>
               </div>
 
-              <div className="reason" style={{ margin: "16px 0" }}>
+              <div className="reason" style={{ margin: "14px 0" }}>
                 <span className="ai-mark">AI</span>
                 <div>
                   <b>Telemetry Discrepancy Vector</b>
@@ -1617,9 +1571,9 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="safe" style={{ marginTop: "14px" }}>
-                <span>Driver Safety Interlock</span>
-                <b>Active safe-pause protocol armed. Drivers are never interrupted while moving. Challenge triggers strictly at 0 mph.</b>
+              <div className="safe" style={{ marginTop: "12px" }}>
+                <span>Safe-Stop Gate</span>
+                <b>Active safe-pause protocol armed. Drivers are never interrupted while moving.</b>
               </div>
             </div>
 
@@ -1629,8 +1583,8 @@ export default function App() {
                   <button className="secondary" onClick={() => handleResolveCase(activeCaseModal.id, "cleared")}>
                     Clear False Alarm
                   </button>
-                  <button className="primary" style={{ background: "linear-gradient(135deg, #b91c1c, #ef4444)", borderColor: "#f87171" }} onClick={() => handleResolveCase(activeCaseModal.id, "confirmed_handoff")}>
-                    Confirm Handoff (Revoke)
+                  <button className="primary" style={{ background: "#d95555", borderColor: "#c24545" }} onClick={() => handleResolveCase(activeCaseModal.id, "confirmed_handoff")}>
+                    Confirm Handoff
                   </button>
                   <button className="primary" onClick={() => handleResolveCase(activeCaseModal.id, "needs_follow_up")}>
                     Require Selfie at 0 mph
@@ -1638,7 +1592,7 @@ export default function App() {
                 </>
               ) : (
                 <button className="secondary" onClick={() => setActiveCaseModal(null)}>
-                  Close Audit View
+                  Close
                 </button>
               )}
             </div>
