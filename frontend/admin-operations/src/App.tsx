@@ -1218,6 +1218,9 @@ function Simulator({
 
 // --- MAIN APPLICATION ---
 export default function App() {
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    return (localStorage.getItem("tm-theme") as "light" | "dark") || "light";
+  });
   const [page, setPage] = useState<Page>("Fleet map");
   const [message, setMessage] = useState("");
   const [drivers, setDrivers] = useState<Driver[]>(INITIAL_DRIVERS);
@@ -1227,6 +1230,17 @@ export default function App() {
   const [actionLoading, setActionLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("tm-theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === "light" ? "dark" : "light";
+    setTheme(nextTheme);
+    notify(`Switched to ${nextTheme === "light" ? "Light Mode ☀️" : "Dark Mode 🌙"}`);
+  };
 
   const notify = (text: string) => {
     setMessage(text);
@@ -1479,6 +1493,14 @@ export default function App() {
 
         <div className="header-right">
           <button
+            className="theme-toggle-btn"
+            onClick={toggleTheme}
+            title={`Current theme: ${theme.toUpperCase()}. Click to switch to ${theme === "light" ? "Dark Mode" : "Light Mode"}`}
+          >
+            {theme === "light" ? "🌙 Dark" : "☀️ Light"}
+          </button>
+
+          <button
             className="live-btn"
             onClick={fetchLiveScores}
             disabled={isRefreshing}
@@ -1507,6 +1529,9 @@ export default function App() {
                   <b>Alex Morgan</b>
                   <span>Chief Operations Officer · admin@aslikaun.ai</span>
                 </div>
+                <button onClick={() => { toggleTheme(); setUserDropdownOpen(false); }}>
+                  {theme === "light" ? "🌙 Switch to Dark Mode" : "☀️ Switch to Light Mode"}
+                </button>
                 <button onClick={() => { fetchLiveScores(); setUserDropdownOpen(false); }}>
                   <Icon name="refresh"/> Sync Backend Telemetry
                 </button>
