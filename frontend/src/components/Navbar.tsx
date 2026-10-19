@@ -6,6 +6,14 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ theme, onToggleTheme }) => {
+  const [isLoggedIn, setIsLoggedIn] = React.useState(false);
+
+  React.useEffect(() => {
+    try {
+      setIsLoggedIn(sessionStorage.getItem('tm-auth') === 'true');
+    } catch {}
+  }, []);
+
   return (
     <header className="site-header" role="banner">
       <div className="site-header-inner">
@@ -52,13 +60,20 @@ export const Navbar: React.FC<NavbarProps> = ({ theme, onToggleTheme }) => {
             )}
           </button>
 
-          <a className="nav-item" href="/auth?mode=login" style={{ fontSize: '13px', fontWeight: 500, marginRight: '4px' }}>
-            Sign in
-          </a>
-
-          <a className="btn-get-access" href="/auth?mode=signup">
-            Get access
-          </a>
+          {isLoggedIn ? (
+            <a className="btn-get-access" href="/fleet-dashboard.html">
+              Open Console ↗
+            </a>
+          ) : (
+            <>
+              <a className="nav-item" href="/auth?mode=login" style={{ fontSize: '13px', fontWeight: 500, marginRight: '4px' }}>
+                Sign in
+              </a>
+              <a className="btn-get-access" href="/auth?mode=signup">
+                Get access
+              </a>
+            </>
+          )}
         </div>
       </div>
     </header>

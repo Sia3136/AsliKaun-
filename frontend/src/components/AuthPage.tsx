@@ -264,7 +264,26 @@ export function AuthPage({ initialMode }: { initialMode: Mode }) {
           </form>
 
           <div className="auth-demo-note">
-            <strong>{mode === 'login' ? 'Quick Access Credentials' : 'Fleet Registration'}</strong>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong>{mode === 'login' ? 'Quick Access Credentials' : 'Fleet Registration'}</strong>
+              {mode === 'login' ? (
+                <button
+                  type="button"
+                  style={{ background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8', padding: '3px 8px', borderRadius: '5px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+                  onClick={() => { setEmail('admin@aslikaun.ai'); setPassword('aslikaun'); setError(''); }}
+                >
+                  Autofill Demo
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  style={{ background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8', padding: '3px 8px', borderRadius: '5px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+                  onClick={handleQuickDemoSignup}
+                >
+                  Autofill Sample Profile
+                </button>
+              )}
+            </div>
             <p>{mode === 'login' ? 'Default demo credentials (admin@aslikaun.ai / aslikaun) are prefilled for immediate evaluation.' : 'Create an organization admin profile to access fleet continuous monitoring telemetry.'}</p>
           </div>
 

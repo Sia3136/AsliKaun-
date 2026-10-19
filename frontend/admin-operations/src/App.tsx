@@ -1165,6 +1165,14 @@ function Simulator({
   );
 }
 
+export type AuthUser = {
+  name: string;
+  email: string;
+  organization?: string;
+  provider?: string;
+  avatar_url?: string;
+};
+
 // --- MAIN APPLICATION ---
 export default function App() {
   const [page, setPage] = useState<Page>("Fleet map");
@@ -1176,6 +1184,20 @@ export default function App() {
   const [actionLoading, setActionLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+
+  // Authenticated Operator State
+  const [currentUser, setCurrentUser] = useState<AuthUser>(() => {
+    try {
+      const raw = sessionStorage.getItem("tm-auth-user");
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return {
+      name: "Alex Morgan",
+      email: "admin@aslikaun.ai",
+      organization: "AsliKaun Fleet Operations",
+      provider: "email",
+    };
+  });
 
   const notify = (text: string) => {
     setMessage(text);
@@ -1191,6 +1213,13 @@ export default function App() {
         fetch("/v1/fleet/scores", { headers: { Authorization: `Bearer ${token}` } }),
         fetch("/v1/review-queue?status=all", { headers: { Authorization: `Bearer ${token}` } }),
       ]);
+
+      if (scoresRes.status === 401 || queueRes.status === 401) {
+        sessionStorage.removeItem("tm-auth");
+        sessionStorage.removeItem("tm-auth-token");
+        window.location.assign("/auth?mode=login&error=Session+expired.+Please+sign+in+again.");
+        return;
+      }
 
       if (scoresRes.ok) {
         const scoresData = await scoresRes.json();
@@ -1261,6 +1290,45 @@ export default function App() {
   };
 
   useEffect(() => {
+    // 1. Process incoming URL tokens (e.g. from Google OAuth or Login redirects)
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get("auth_token");
+    const urlEmail = params.get("user_email");
+    const urlName = params.get("user_name");
+    const urlOrg = params.get("organization") || "AsliKaun Fleet Operations";
+    const urlProvider = params.get("provider") || "google";
+
+    if (urlToken) {
+      sessionStorage.setItem("tm-auth", "true");
+      sessionStorage.setItem("tm-auth-token", urlToken);
+      const userObj: AuthUser = {
+        email: urlEmail || "operator@aslikaun.ai",
+        name: urlName || (urlEmail ? urlEmail.split("@")[0] : "Fleet Operator"),
+        organization: urlOrg,
+        provider: urlProvider,
+      };
+      sessionStorage.setItem("tm-auth-user", JSON.stringify(userObj));
+      setCurrentUser(userObj);
+      window.history.replaceState({}, document.title, window.location.pathname);
+      notify(`Welcome back, ${userObj.name}`);
+    } else {
+      const savedUser = sessionStorage.getItem("tm-auth-user");
+      if (savedUser) {
+        try {
+          setCurrentUser(JSON.parse(savedUser));
+        } catch {}
+      }
+    }
+
+    // 2. Authentication check: redirect to sign-in page if no active session
+    const hasAuth = sessionStorage.getItem("tm-auth") === "true";
+    const token = sessionStorage.getItem("tm-auth-token");
+    if (!hasAuth && !token) {
+      window.location.assign("/auth?mode=login");
+      return;
+    }
+
+    // 3. Ingest live fleet telemetry
     fetchLiveScores();
   }, []);
 
@@ -1385,8 +1453,17 @@ export default function App() {
     sessionStorage.removeItem("tm-auth");
     sessionStorage.removeItem("tm-auth-token");
     sessionStorage.removeItem("tm-auth-user");
-    window.location.assign("/index.html");
+    sessionStorage.removeItem("tm-auth-fallback");
+    notify("Signing out...");
+    window.location.assign("/auth?mode=login");
   };
+
+  const userInitials = useMemo(() => {
+    if (!currentUser?.name) return "AM";
+    const parts = currentUser.name.trim().split(/\s+/);
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    return parts[0].slice(0, 2).toUpperCase();
+  }, [currentUser]);
 
   const openCasesCount = cases.filter((c) => c.status === "OPEN").length;
   const handoffAlertsCount = drivers.filter((d) => d.color === "red").length;
@@ -1451,15 +1528,20 @@ export default function App() {
             <button
               className="user-btn"
               onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-              title="Operator profile and settings"
+              title={`${currentUser.name} (${currentUser.email})`}
             >
-              SK
+              {userInitials}
             </button>
             {userDropdownOpen && (
               <div className="user-dropdown">
                 <div className="user-dropdown-header">
-                  <b>Alex Morgan</b>
-                  <span>Operations Lead · admin@aslikaun.ai</span>
+                  <b>{currentUser.name}</b>
+                  <span>{currentUser.organization || "Fleet Operations"} · {currentUser.email}</span>
+                  <div style={{ marginTop: "4px" }}>
+                    <span style={{ fontSize: "11px", color: "#174b3a", background: "#eef9f4", padding: "2px 6px", borderRadius: "4px", fontWeight: 600 }}>
+                      {currentUser.provider === "google" ? "Google Workspace" : "Enterprise Session"}
+                    </span>
+                  </div>
                 </div>
                 <button onClick={() => { fetchLiveScores(); setUserDropdownOpen(false); }}>
                   <Icon name="refresh"/> Sync Backend Telemetry

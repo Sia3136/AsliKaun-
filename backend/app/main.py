@@ -509,10 +509,20 @@ def write_event(con: sqlite3.Connection, driver_id: str, event_type: str, detail
     )
 
 
-def mean_abs(values: list[float]) -> float | None:
+def mean_abs(values: list[Any]) -> float | None:
     if not values:
         return None
-    return sum(abs(v) for v in values) / len(values)
+    magnitudes = []
+    for v in values:
+        if isinstance(v, (int, float)):
+            magnitudes.append(abs(float(v)))
+        elif isinstance(v, dict):
+            sq = sum(float(v[k]) ** 2 for k in ("x", "y", "z") if k in v and isinstance(v[k], (int, float)))
+            magnitudes.append(sq ** 0.5)
+        elif hasattr(v, "x") and hasattr(v, "y"):
+            sq = float(getattr(v, "x", 0)) ** 2 + float(getattr(v, "y", 0)) ** 2 + float(getattr(v, "z", 0)) ** 2
+            magnitudes.append(sq ** 0.5)
+    return sum(magnitudes) / len(magnitudes) if magnitudes else None
 
 
 def behavior_features(payload: SessionIngest) -> dict[str, float | None]:
@@ -721,7 +731,7 @@ def auth_google_login(
         and "your-secret" not in client_secret.lower()
     )
 
-    if (has_real_credentials or live) and not configure:
+    if (has_real_credentials and live) and not configure:
         params = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
@@ -1646,5 +1656,14 @@ def dashboard_html_redirect() -> Any:
     if dist_fleet.exists():
         return FileResponse(str(dist_fleet))
     return RedirectResponse(url="/dashboard/dashboard.html")
+
+
+@app.get("/{filename}.png", include_in_schema=False)
+def serve_root_png(filename: str) -> Any:
+    for base in [_FRONTEND_DIST, _FRONTEND_DIR / "public"]:
+        candidate = base / f"{filename}.png"
+        if candidate.exists():
+            return FileResponse(str(candidate), media_type="image/png")
+    raise HTTPException(status_code=404)
 
 
