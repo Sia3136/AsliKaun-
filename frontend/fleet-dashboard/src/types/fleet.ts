@@ -54,6 +54,10 @@ export interface DriverRecord {
   anomalyFlags: string[];
   sessionFrozen?: boolean;
   livenessPending?: boolean;
+  signalScores?: Record<string, number>;
+  signalMetric?: 'p_value' | 'anomaly_score';
+  safePauseInfo?: { is_moving?: boolean; speed_mph?: number | null; safe_pause_scheduled?: boolean; scheduled_state?: string } | null;
+  adaptiveThreshold?: { threshold?: number; source?: string; sample_count?: number; note?: string } | null;
 }
 
 export type TabKey = 

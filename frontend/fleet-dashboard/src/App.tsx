@@ -12,7 +12,6 @@ import {
   Layers
 } from 'lucide-react';
 import { DriverRecord, TabKey, FilterCategory } from './types/fleet';
-import { INITIAL_DRIVERS } from './data/mockFleetData';
 import { Header } from './components/Header';
 import { NavigationTabs } from './components/NavigationTabs';
 import { StatCards } from './components/StatCards';
@@ -139,8 +138,8 @@ export default function App() {
     return apiDrivers.map((apiD: any, idx: number) => {
       const id = apiD.driver_id;
       const meta = DRIVER_METADATA[id] || {};
-      const ctxScore = typeof apiD.context_score === 'number' ? Math.round(apiD.context_score * 100) : 100;
-      const behScore = typeof apiD.behavior_score === 'number' ? Math.round(apiD.behavior_score * 100) : 88;
+      const ctxScore = typeof apiD.context_score === 'number' ? Math.round(apiD.context_score * 100) : 0;
+      const behScore = typeof apiD.behavior_score === 'number' ? Math.round(apiD.behavior_score * 100) : 0;
       const isHandoff = (apiD.decision || '').includes('challenge') || apiD.quadrant === 'handoff_signature';
       const isLegit = apiD.quadrant === 'legit_change';
       const isAmbiguous = apiD.quadrant === 'ambiguous' || (apiD.decision || '').includes('step_up');
@@ -153,13 +152,7 @@ export default function App() {
         ? 'Low Risk'
         : 'Trusted';
 
-      const riskScore = isHandoff
-        ? Math.round(88 + (1 - (apiD.behavior_score ?? 0.3)) * 10)
-        : isAmbiguous
-        ? 62
-        : isLegit
-        ? 28
-        : 12;
+      const riskScore = typeof apiD.behavior_score === 'number' ? Math.round((1 - apiD.behavior_score) * 100) : 0;
 
       const riskReason = (apiD.reasons && apiD.reasons.length > 0)
         ? apiD.reasons[0]
@@ -201,6 +194,10 @@ export default function App() {
           heading: 90,
         },
         anomalyFlags: apiD.reasons || [],
+        signalScores: apiD.signals || {},
+        signalMetric: apiD.model_status === 'per_rider_conformal_fusion' ? 'p_value' : 'anomaly_score',
+        safePauseInfo: apiD.safe_pause_info || null,
+        adaptiveThreshold: apiD.threshold_info || null,
       };
     });
   }, []);
@@ -244,6 +241,8 @@ export default function App() {
       if (reviewRes.ok) {
         const reviewData = await reviewRes.json();
         setReviewItems(reviewData.items || reviewData.reviews || []);
+      } else {
+        throw new Error(`Failed to load review queue (HTTP ${reviewRes.status})`);
       }
 
       setIsBackendConnected(true);
@@ -253,8 +252,8 @@ export default function App() {
       setIsBackendConnected(false);
       setBackendError(err.message || 'Unable to connect to FastAPI backend at /v1/fleet/scores');
 
-      // Seamless fallback to seed drivers if backend is offline so demo is never broken
-      setDrivers(INITIAL_DRIVERS);
+      setDrivers([]);
+      setReviewItems([]);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -295,14 +294,7 @@ export default function App() {
       await fetchFleetData();
     } catch (e: any) {
       console.error('Resolve error:', e);
-      // Optimistic update in UI
-      setReviewItems((prev) =>
-        prev.map((r) =>
-          r.session_id === sessionId
-            ? { ...r, status: 'resolved', resolution, reviewer_note: note }
-            : r
-        )
-      );
+      throw e;
     }
   };
 
@@ -430,7 +422,7 @@ export default function App() {
           const found = drivers.find((d) => d.id === id);
           if (found) setSelectedDriverForInvestigation(found);
         }}
-        unreadAlertsCount={openReviewCount || 4}
+        unreadAlertsCount={openReviewCount}
       />
 
       {/* Backend Status Notification Strip */}
@@ -477,7 +469,7 @@ export default function App() {
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         investigationCount={highRiskCount}
-        reviewQueueCount={openReviewCount || newHardwareCount}
+              reviewQueueCount={openReviewCount}
       />
 
       {/* Main Workspace Body */}

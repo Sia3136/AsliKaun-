@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Play, 
   RotateCcw, 
@@ -29,11 +29,14 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
   const [selectedScenario, setSelectedScenario] = useState<
     'handoff' | 'legit_change' | 'slow_drift' | 'split_shift' | 'teleport' | 'illness'
   >('handoff');
-  const [selectedDriverId, setSelectedDriverId] = useState<string>('rider-001');
+  const [selectedDriverId, setSelectedDriverId] = useState<string>('rider-sim-console');
   const [simulationRunning, setSimulationRunning] = useState(false);
   const [simLogs, setSimLogs] = useState<string[]>([]);
   const [lastResult, setLastResult] = useState<any>(null);
   const [detectionLatency, setDetectionLatency] = useState<number | null>(null);
+  useEffect(() => {
+    if (drivers.length && !drivers.some(d => d.id === selectedDriverId)) setSelectedDriverId(drivers[0].id);
+  }, [drivers, selectedDriverId]);
 
   const scenarios = [
     {
@@ -265,16 +268,7 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
     } catch (err: any) {
       const elapsed = Math.round(performance.now() - startTime);
       addLog(`[Error] Backend connection error: ${err.message}`);
-      addLog(`[Fallback] Simulated local pipeline verdict applied for presentation.`);
-      
-      const fallbackResult = {
-        decision: selectedScenario === 'handoff' ? 'challenge_at_safe_pause' : selectedScenario === 'legit_change' ? 'rebaseline' : 'continue',
-        quadrant: selectedScenario === 'handoff' ? 'handoff_signature' : selectedScenario === 'legit_change' ? 'legit_change' : 'stable',
-        context_score: selectedScenario === 'legit_change' ? 0.28 : 0.94,
-        behavior_score: selectedScenario === 'handoff' ? 0.29 : 0.88,
-        reasons: [`Simulated test response: ${selectedScenario}`]
-      };
-      setLastResult(fallbackResult);
+      setLastResult(null);
     } finally {
       setSimulationRunning(false);
     }
@@ -323,10 +317,7 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
                 onChange={(e) => setSelectedDriverId(e.target.value)}
                 className="bg-white border border-[#e2e8f0] rounded-md px-2 py-1 text-xs font-mono font-bold text-[#0b1c30] focus:outline-none focus:border-[#0058be]"
               >
-                <option value="rider-001">rider-001 (Pristine Baseline)</option>
-                <option value="rider-014">rider-014 (Hardware Upgrade)</option>
-                <option value="rider-042">rider-042 (Known High Risk)</option>
-                <option value="rider-088">rider-088 (Step-up Target)</option>
+                {drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.id} · {driver.name}</option>)}
               </select>
             </div>
           </div>

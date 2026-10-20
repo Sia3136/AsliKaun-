@@ -454,3 +454,28 @@ def evaluate_session_ml(
         "model_status": "ml_two_axis_fusion",
     }
 
+
+def evaluate_with_rider_calibration(payload: Any, history: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Use split historical sessions to fit per-rider scorers when history is sufficient.
+
+    This intentionally returns no result until there are enough prior sessions to
+    keep enrollment and conformal calibration separate.
+    """
+    usable = [s for s in history if s.get("accept_latency_ms") is not None]
+    if len(usable) < 10:
+        return None
+    try:
+        from ml.inference.rider_model_bundle import RiderModelBundle
+        split = max(5, int(len(usable) * 0.7))
+        if len(usable) - split < 5:
+            split = len(usable) - 5
+        bundle = RiderModelBundle.fit(usable[:split], usable[split:])
+        current = payload.model_dump(mode="json") if hasattr(payload, "model_dump") else dict(payload)
+        result = bundle.score(current, generate_reason=False)
+        if not result.get("p_values"):
+            return None
+        result["threshold_info"] = bundle.threshold_info
+        return result
+    except Exception:
+        return None
+

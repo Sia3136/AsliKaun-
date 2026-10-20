@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -16,18 +15,32 @@ from urllib.parse import quote, unquote, urlencode
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+# SSE Event Subscriptions for real-time live frontend streaming
+_event_subscribers: set[asyncio.Queue] = set()
+
+def broadcast_event_sync(event_type: str, data: dict[str, Any]) -> None:
+    """Broadcast an event to all connected SSE clients non-blockingly."""
+    message = json.dumps({"event": event_type, "data": data, "timestamp": datetime.now(timezone.utc).isoformat()})
+    for queue in list(_event_subscribers):
+        try:
+            queue.put_nowait(message)
+        except Exception:
+            pass
+
+
 try:
-    from backend.app.ml_bridge import evaluate_session_ml
+    from backend.app.ml_bridge import evaluate_session_ml, evaluate_with_rider_calibration
 except ImportError:
     try:
-        from app.ml_bridge import evaluate_session_ml
+        from app.ml_bridge import evaluate_session_ml, evaluate_with_rider_calibration
     except ImportError:
         evaluate_session_ml = None
+        evaluate_with_rider_calibration = None
 
 DB_PATH = os.getenv("TRUST_JUGGLER_DB", "trust_juggler.db")
 app = FastAPI(
@@ -538,7 +551,6 @@ def seed_demo_fleet() -> None:
 def startup() -> None:
     init_db()
     seed_admin_from_env()
-    seed_demo_fleet()
 
 
 def now_iso() -> str:
@@ -1036,6 +1048,31 @@ def ingest_session(
         has_baseline = bool(
             driver is not None and decode_json(driver["latest_result_json"], {})
         )
+        is_sim_attack = body.is_simulated or body.driver_id.startswith("rider-sim-")
+        if (driver is None or not has_baseline) and is_sim_attack:
+            # Seed owner baseline for simulator evaluation so ML evaluation runs immediately
+            owner_context = {
+                "device_id": "dev-iphone-old" if "upgrade" in body.driver_id else "dev-samsung-a54",
+                "ip_subnet": "192.168.1.0/24",
+                "zone": "mumbai_central",
+            }
+            owner_behavior = {
+                "operational": {"accept_latency_ms": 620.0, "hour_of_day": 14.0},
+                "touch": {"pressure_mean": 0.38, "pressure_std": 0.08, "interval_mean_ms": 210.0, "velocity_mean": 0.45, "touch_count": 8},
+                "motion": {"accel_mean": 9.8, "accel_std": 0.12},
+                "gps": {"speed_mean_mph": 16.5},
+            }
+            con.execute(
+                """INSERT OR REPLACE INTO drivers(driver_id, anchor_json, fast_json, latest_json,
+                   latest_result_json, updated_at) VALUES(?,?,?,?,?,?)""",
+                (body.driver_id, json.dumps(owner_behavior), json.dumps(owner_behavior),
+                 json.dumps(owner_context), "{}", now_iso()),
+            )
+            driver = con.execute(
+                "SELECT * FROM drivers WHERE driver_id = ?", (body.driver_id,)
+            ).fetchone()
+            has_baseline = True
+
         if driver is None or not has_baseline:
             # First authenticated session establishes the starting baseline; no identity verdict.
             if evaluate_session_ml is not None:
@@ -1144,6 +1181,29 @@ def ingest_session(
                 "anchor_behavior": anchor_behavior,
                 "known_contexts": [previous_context],
             })
+            # Once enough prior sessions exist, prefer fitted per-rider
+            # conformal scorers and expose their true sensor p-values.
+            if evaluate_with_rider_calibration is not None:
+                history_rows = con.execute(
+                    "SELECT payload_json FROM sessions WHERE driver_id=? ORDER BY id ASC",
+                    (body.driver_id,),
+                ).fetchall()
+                calibrated = evaluate_with_rider_calibration(
+                    body, [decode_json(row["payload_json"], {}) for row in history_rows]
+                )
+                if calibrated is not None:
+                    ml_eval.update({
+                        "context_score": calibrated.get("context_continuity"),
+                        "behavior_score": calibrated.get("behavior_continuity"),
+                        "context_axis": "stable" if (calibrated.get("context_continuity") or 0) >= 0.6 else "changed",
+                        "behavior_axis": "stable" if (calibrated.get("behavior_continuity") or 0) >= calibrated.get("threshold_info", {}).get("threshold", 0.29) else "changed",
+                        "quadrant": calibrated.get("quadrant", ml_eval["quadrant"]),
+                        "decision": {"escalate_challenge":"challenge_at_safe_pause", "lightweight_challenge":"step_up_check_at_safe_pause", "rebaseline_silently":"rebaseline", "continue":"continue"}.get(calibrated.get("decision"), ml_eval["decision"]),
+                        "signals": calibrated.get("p_values", {}),
+                        "threshold_info": calibrated.get("threshold_info"),
+                        "model_status": "per_rider_conformal_fusion",
+                        "reasons": [calibrated.get("meaning", "Per-rider conformal fusion scored this session")],
+                    })
             context_score = ml_eval["context_score"]
             behavior_score = ml_eval["behavior_score"]
             context_axis = ml_eval["context_axis"]
@@ -1266,6 +1326,23 @@ def ingest_session(
         )
         write_event(con, body.driver_id, "session_scored", result)
 
+    broadcast_event_sync("session_scored", {
+        "session_id": session_id,
+        "driver_id": body.driver_id,
+        "result": result,
+    })
+    broadcast_event_sync("fleet_update", {
+        "driver_id": body.driver_id,
+        "context_score": result.get("context_score"),
+        "behavior_score": result.get("behavior_score"),
+        "quadrant": result.get("quadrant"),
+        "decision": result.get("decision"),
+        "reasons": result.get("reasons", []),
+        "signals": result.get("signals", {}),
+        "reason_vector": result.get("reason_vector"),
+        "safe_pause_info": result.get("safe_pause_info"),
+    })
+
     return result
 
 
@@ -1317,6 +1394,9 @@ def fleet_scores(admin: dict[str, str] = Depends(require_admin)) -> dict:
                 "signals": result.get("signals", {}),
                 "reasons": result.get("reasons", []),
                 "reason_vector": result.get("reason_vector", {}),
+                "safe_pause_info": result.get("safe_pause_info"),
+                "threshold_info": result.get("threshold_info"),
+                "model_status": result.get("model_status"),
                 "updated_at": row["updated_at"],
             })
         return {"count": len(drivers), "drivers": drivers}
@@ -1522,7 +1602,7 @@ def get_review_queue(
                       q.reviewer_id, q.reviewer_note,
                       s.timestamp AS session_timestamp, s.context_score,
                       s.behavior_score, s.context_axis, s.behavior_axis,
-                      s.quadrant, s.reasons_json
+                      s.quadrant, s.reasons_json, s.payload_json
                FROM review_queue q
                JOIN sessions s ON s.id = q.session_id"""
     clauses = []
@@ -1546,6 +1626,14 @@ def get_review_queue(
     for row in rows:
         item = dict(row)
         item["reasons"] = decode_json(item.pop("reasons_json"), [])
+        payload = decode_json(item.pop("payload_json"), {})
+        speed = payload.get("vehicle_speed_mph")
+        item["safe_pause_info"] = {
+            "is_moving": speed is not None and speed > 2.0,
+            "speed_mph": speed,
+            "safe_pause_scheduled": item["decision"] in ("challenge_at_safe_pause", "step_up_check_at_safe_pause") and speed is not None and speed > 2.0,
+            "scheduled_state": "queued_for_stop" if speed is not None and speed > 2.0 else "safe_stop_confirmed" if speed is not None else "unknown",
+        }
         reviews.append(item)
 
     return {"count": len(reviews), "reviews": reviews, "items": reviews}
@@ -1625,6 +1713,16 @@ def resolve_review(
             },
         )
 
+    broadcast_event_sync("review_resolved", {
+        "session_id": session_id,
+        "driver_id": review["driver_id"],
+        "status": "resolved",
+        "resolution": body.resolution,
+        "reviewer_id": admin["username"],
+        "reviewer_note": body.reviewer_note,
+        "resolved_at": resolved_at,
+    })
+
     return {
         "session_id": session_id,
         "driver_id": review["driver_id"],
@@ -1633,6 +1731,300 @@ def resolve_review(
         "reviewer_id": admin["username"],
         "resolved_at": resolved_at,
     }
+
+
+# ---------- Real-Time Event Streaming & ML Simulation Endpoints ----------
+
+@app.get("/v1/events/stream")
+async def event_stream(request: Request) -> StreamingResponse:
+    """Real-time SSE event stream for live fleet telemetry, reviews, and simulator updates."""
+    queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+    _event_subscribers.add(queue)
+
+    async def event_generator():
+        try:
+            init_msg = json.dumps({"status": "connected", "service": "trust-juggler-realtime", "timestamp": now_iso()})
+            yield f"event: connected\ndata: {init_msg}\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=10.0)
+                    yield f"data: {msg}\n\n"
+                except asyncio.TimeoutError:
+                    yield f": ping {now_iso()}\n\n"
+        finally:
+            _event_subscribers.discard(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/v1/drivers/{driver_id}/drift")
+def get_driver_drift(driver_id: str) -> dict:
+    """Return historical sessions with Fast EWMA, Frozen Anchor, and breach annotations."""
+    with connect() as con:
+        rows = con.execute(
+            """SELECT id, timestamp, payload_json, context_score, behavior_score,
+                      context_axis, behavior_axis, quadrant, decision, reasons_json
+               FROM sessions WHERE driver_id = ? ORDER BY id ASC LIMIT 60""",
+            (driver_id,),
+        ).fetchall()
+
+    if not rows:
+        return {
+            "driver_id": driver_id,
+            "count": 0,
+            "alert": "Calibrated Gaussian anchor retained across sessions",
+            "anchor_score": None,
+            "rows": [],
+            "sessions": [],
+            "rental_audit": {"status": "insufficient_history", "sessions_required": 20},
+        }
+
+    formatted_rows = []
+    sessions = []
+    observed = [float(r["behavior_score"]) for r in rows if r["behavior_score"] is not None]
+    ewma = observed[0] if observed else None
+    has_breach = False
+
+    for r in rows:
+        payload = decode_json(r["payload_json"], {})
+        beh = r["behavior_score"]
+        ctx = r["context_score"]
+        speed = payload.get("vehicle_speed_mph", 0.0)
+        ewma = round(0.8 * ewma + 0.2 * beh, 3) if beh is not None and ewma is not None else beh
+        quadrant = r["quadrant"].replace("_", " ").title()
+        if "handoff" in r["quadrant"].lower():
+            has_breach = True
+        verdict = "Challenge queued" if (r["decision"] or "").startswith("challenge") else ("Rebaselined" if r["decision"] == "rebaseline" else "Verified")
+        speed_str = f"{speed:.1f} mph" if isinstance(speed, (int, float)) else "—"
+        ts_str = r["timestamp"].split("T")[1][:5] if "T" in r["timestamp"] else "Recent"
+        ses_id = f"SES-{r['id']:04d}"
+
+        formatted_rows.append([ses_id, ts_str, f"{ctx:.2f}" if ctx is not None else "—", f"{beh:.2f}" if beh is not None else "—", quadrant, speed_str, verdict])
+        sessions.append({
+            "session_id": ses_id,
+            "timestamp": r["timestamp"],
+            "context_score": ctx,
+            "behavior_score": beh,
+            "ewma_score": ewma,
+            "anchor_score": round(sum(observed[:min(10, len(observed))]) / min(10, len(observed)), 3) if observed else None,
+            "quadrant": r["quadrant"],
+            "decision": r["decision"],
+            "speed_mph": speed,
+            "verdict": verdict,
+        })
+
+    alert = "Drift review recommended from stored ML decisions" if has_breach else "No stored handoff decision in this history"
+    rental_audit: dict[str, Any] = {"status": "insufficient_history", "sessions_required": 20, "session_count": len(rows)}
+    if len(rows) >= 20:
+        try:
+            from ml.redteam.detectors import split_rental_check
+            import math
+            audit_sessions = []
+            for row in rows:
+                payload = decode_json(row["payload_json"], {})
+                stamp = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
+                payload["hour_of_day"] = stamp.hour + stamp.minute / 60
+                if payload.get("accept_latency_ms") is not None and payload.get("touch_events"):
+                    audit_sessions.append(payload)
+            if len(audit_sessions) >= 20:
+                rental_audit = {"status": "scored", "session_count": len(audit_sessions), **split_rental_check(audit_sessions)}
+        except (ImportError, ValueError, KeyError, TypeError) as exc:
+            rental_audit = {"status": "unavailable", "session_count": len(rows), "note": str(exc)}
+    return {
+        "driver_id": driver_id,
+        "count": len(sessions),
+        "alert": alert,
+        "anchor_score": round(sum(observed[:min(10, len(observed))]) / min(10, len(observed)), 3) if observed else None,
+        "rows": formatted_rows,
+        "sessions": sessions,
+        "rental_audit": rental_audit,
+    }
+
+
+@app.get("/v1/ml/models/health")
+def get_model_health() -> dict:
+    """Summarize runtime scoring and calibration evidence from stored sessions."""
+    with connect() as con:
+        rows = con.execute("SELECT latest_result_json FROM drivers").fetchall()
+        session_count = con.execute("SELECT COUNT(*) AS n FROM sessions").fetchone()["n"]
+    results = [decode_json(r["latest_result_json"], {}) for r in rows]
+    scored = [r for r in results if r.get("model_status")]
+    statuses = sorted({str(r.get("model_status")) for r in scored})
+    adaptive = sum(1 for r in scored if r.get("threshold_info", {}).get("source") == "per_rider_calibrated")
+    conformal_active = any(r.get("model_status") == "per_rider_conformal_fusion" for r in scored)
+    return {
+        "status": "available" if scored else "no_data",
+        "timestamp": now_iso(),
+        "summary": ", ".join(statuses) if statuses else "No backend ML evaluations recorded",
+        "sample_count": session_count,
+        "calibration": {"status": "conformal_active" if conformal_active else "insufficient_evidence", "minimum_sessions": 10,
+            "note": "Per-sensor p-values are produced only after a separate enrollment/calibration split is fit from at least 10 prior sessions. A KS uniformity check still requires a held-out p-value cohort and is not reported without one." if conformal_active else "The current fleet has no persisted per-rider conformal evaluation yet. Relative anomaly scores are not presented as p-values, and no KS calibration result is reported without held-out evidence."},
+        "thresholds": {"adaptive_driver_count": adaptive, "population_fallback_count": max(0, len(scored) - adaptive)},
+        "models": [{"name": name, "status": "runtime active" if name == "ml_two_axis_fusion" else name,
+            "scored_sessions": sum(1 for r in scored if r.get("model_status") == name),
+            "latest_score": next((r.get("behavior_score") for r in reversed(scored) if r.get("model_status") == name and isinstance(r.get("behavior_score"), (float, int))), None)} for name in (statuses or ["ml_two_axis_fusion"])],
+    }
+
+
+@app.post("/v1/fleet/telemetry/tick")
+def telemetry_tick() -> dict:
+    """Advances live telemetry stream: simulates slight speed variations and broadcasts."""
+    import random
+    with connect() as con:
+        rows = con.execute("SELECT driver_id, latest_result_json, updated_at FROM drivers LIMIT 20").fetchall()
+        ticks = []
+        for r in rows:
+            speed = 0.0 if random.random() < 0.28 else round(random.uniform(9.5, 26.8), 1)
+            ticks.append({
+                "driver_id": r["driver_id"],
+                "speed_mph": speed,
+                "is_moving": speed > 2.0,
+                "timestamp": now_iso(),
+            })
+
+    broadcast_event_sync("telemetry_tick", {"drivers": ticks})
+    return {"status": "ok", "count": len(ticks), "drivers": ticks}
+
+
+class SimRequest(BaseModel):
+    scenario: str = Field(default="lazy_renter")
+    driver_id: str | None = None
+    vehicle_speed_mph: float | None = None
+
+
+@app.post("/v1/ml/simulate")
+def run_ml_simulation(body: SimRequest) -> dict:
+    """Execute one of the ML red-team / honest benchmark scenarios and broadcast in real time."""
+    scenario_type = body.scenario.lower().replace("-", "_").replace(" ", "_")
+
+    scenario_configs = {
+        "lazy_renter": {
+            "driver_id": body.driver_id or "rider-sim-lazy",
+            "device_id": "dev-samsung-a54",
+            "ip_subnet": "192.168.1.0/24",
+            "zone": "mumbai_central",
+            "vehicle_speed_mph": body.vehicle_speed_mph if body.vehicle_speed_mph is not None else 18.4,
+            "accept_latency_ms": 3200.0,
+            "touch_events": [{"type": "tap", "pressure": 0.94, "duration_ms": 220, "path": [{"x": 100, "y": 150, "pressure": 0.94, "t": 0}, {"x": 102, "y": 152, "pressure": 0.92, "t": 220}]}],
+            "accel": [{"x": 2.1, "y": 3.4, "z": 9.1}],
+            "gyro": [1.4, 0.8, 1.1],
+            "is_simulated": True,
+        },
+        "slow_drift_renter": {
+            "driver_id": body.driver_id or "rider-sim-drift",
+            "device_id": "dev-samsung-a54",
+            "ip_subnet": "192.168.1.0/24",
+            "zone": "mumbai_central",
+            "vehicle_speed_mph": body.vehicle_speed_mph if body.vehicle_speed_mph is not None else 15.0,
+            "accept_latency_ms": 2400.0,
+            "touch_events": [{"type": "tap", "pressure": 0.78, "duration_ms": 180}],
+            "accel": [{"x": 1.8, "y": 2.5, "z": 8.9}],
+            "is_simulated": True,
+        },
+        "split_shift": {
+            "driver_id": body.driver_id or "rider-sim-split",
+            "device_id": "dev-oneplus-11",
+            "ip_subnet": "192.168.10.0/24",
+            "zone": "chennai_omr",
+            "vehicle_speed_mph": body.vehicle_speed_mph if body.vehicle_speed_mph is not None else 22.0,
+            "accept_latency_ms": 1800.0,
+            "touch_events": [{"type": "tap", "pressure": 0.62, "duration_ms": 130}],
+            "accel": [{"x": 0.8, "y": 1.2, "z": 9.8}],
+            "is_simulated": True,
+        },
+        "copycat_attacker": {
+            "driver_id": body.driver_id or "rider-sim-copycat",
+            "device_id": "dev-samsung-a54",
+            "ip_subnet": "192.168.1.0/24",
+            "zone": "mumbai_central",
+            "vehicle_speed_mph": body.vehicle_speed_mph if body.vehicle_speed_mph is not None else 12.0,
+            "accept_latency_ms": 680.0,
+            "touch_events": [{"type": "swipe", "pressure": 0.91, "path": [{"x": 50, "y": 80, "pressure": 0.91, "t": 0}, {"x": 240, "y": 310, "pressure": 0.88, "t": 120}]}],
+            "accel": [{"x": 1.9, "y": 2.1, "z": 9.3}],
+            "is_simulated": True,
+        },
+        "legitimate_phone_upgrade": {
+            "driver_id": body.driver_id or "rider-sim-upgrade",
+            "device_id": "dev-iphone-15-pro-new",
+            "ip_subnet": "10.20.30.0/24",
+            "zone": "navi_mumbai_vashi",
+            "vehicle_speed_mph": body.vehicle_speed_mph if body.vehicle_speed_mph is not None else 0.0,
+            "accept_latency_ms": 510.0,
+            "touch_events": [{"type": "tap", "pressure": 0.35, "duration_ms": 90}],
+            "accel": [{"x": 0.1, "y": 0.2, "z": 9.8}],
+            "is_simulated": True,
+        },
+        "phone_upgrade": {
+            "driver_id": body.driver_id or "rider-sim-upgrade",
+            "device_id": "dev-iphone-15-pro-new",
+            "ip_subnet": "10.20.30.0/24",
+            "zone": "navi_mumbai_vashi",
+            "vehicle_speed_mph": body.vehicle_speed_mph if body.vehicle_speed_mph is not None else 0.0,
+            "accept_latency_ms": 510.0,
+            "touch_events": [{"type": "tap", "pressure": 0.35, "duration_ms": 90}],
+            "accel": [{"x": 0.1, "y": 0.2, "z": 9.8}],
+            "is_simulated": True,
+        },
+        "cold_start_rider": {
+            "driver_id": body.driver_id or "rider-sim-coldstart",
+            "device_id": "dev-pixel-8",
+            "ip_subnet": "192.168.4.0/24",
+            "zone": "bkc_mumbai",
+            "vehicle_speed_mph": body.vehicle_speed_mph if body.vehicle_speed_mph is not None else 0.0,
+            "accept_latency_ms": 600.0,
+            "touch_events": [{"type": "tap", "pressure": 0.38, "duration_ms": 95}],
+            "accel": [{"x": 0.12, "y": 0.15, "z": 9.81}],
+            "is_simulated": True,
+        },
+        "cold_start": {
+            "driver_id": body.driver_id or "rider-sim-coldstart",
+            "device_id": "dev-pixel-8",
+            "ip_subnet": "192.168.4.0/24",
+            "zone": "bkc_mumbai",
+            "vehicle_speed_mph": body.vehicle_speed_mph if body.vehicle_speed_mph is not None else 0.0,
+            "accept_latency_ms": 600.0,
+            "touch_events": [{"type": "tap", "pressure": 0.38, "duration_ms": 95}],
+            "accel": [{"x": 0.12, "y": 0.15, "z": 9.81}],
+            "is_simulated": True,
+        },
+    }
+
+    cfg = scenario_configs.get(scenario_type, scenario_configs["lazy_renter"])
+
+    # Pre-populate owner baseline in SQLite so the scenario is evaluated against an authentic owner history
+    with connect() as con:
+        owner_context = {
+            "device_id": "dev-iphone-12-old" if "upgrade" in scenario_type else "dev-samsung-a54",
+            "ip_subnet": "192.168.1.0/24",
+            "zone": "mumbai_central",
+        }
+        owner_behavior = {
+            "operational": {"accept_latency_ms": 620.0, "hour_of_day": 14.0},
+            "touch": {"pressure_mean": 0.38, "pressure_std": 0.08, "interval_mean_ms": 210.0, "velocity_mean": 0.45, "touch_count": 8},
+            "motion": {"accel_mean": 9.8, "accel_std": 0.12},
+            "gps": {"speed_mean_mph": 16.5},
+        }
+        con.execute(
+            """INSERT OR REPLACE INTO drivers(driver_id, anchor_json, fast_json, latest_json,
+               latest_result_json, updated_at) VALUES(?,?,?,?,?,?)""",
+            (cfg["driver_id"], json.dumps(owner_behavior), json.dumps(owner_behavior),
+             json.dumps(owner_context), "{}", now_iso()),
+        )
+
+    session_ingest = SessionIngest(**cfg)
+    result = ingest_session(session_ingest, x_driver_token=None)
+    result["scenario"] = scenario_type
+    return result
 
 
 # ---------- Public & Demo Endpoints for Frontend Integration ----------
@@ -1680,13 +2072,12 @@ def public_driver_status(driver_id: str) -> dict:
 # ---------- Frontend Dashboard Static Mount ----------
 _FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 _FRONTEND_DIST = _FRONTEND_DIR / "dist"
-_STATIC_DIR = _FRONTEND_DIST if _FRONTEND_DIST.exists() else _FRONTEND_DIR
 
 if (_FRONTEND_DIST / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="assets")
 
-if _STATIC_DIR.exists():
-    app.mount("/dashboard", StaticFiles(directory=str(_STATIC_DIR), html=True), name="dashboard")
+if _FRONTEND_DIR.exists():
+    app.mount("/dashboard", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="dashboard")
 
 
 @app.get("/health")
@@ -1717,23 +2108,46 @@ def fleet_dashboard_endpoint() -> Any:
     dist_fleet = _FRONTEND_DIST / "fleet-dashboard.html"
     if dist_fleet.exists():
         return FileResponse(str(dist_fleet))
+    raw_fleet = _FRONTEND_DIR / "fleet-dashboard.html"
+    if raw_fleet.exists():
+        return FileResponse(str(raw_fleet))
     return RedirectResponse(url="/dashboard/fleet-dashboard.html")
 
 
 @app.get("/dashboard.html", include_in_schema=False)
-def dashboard_html_redirect() -> Any:
-    dist_fleet = _FRONTEND_DIST / "fleet-dashboard.html"
-    if dist_fleet.exists():
-        return FileResponse(str(dist_fleet))
-    return RedirectResponse(url="/dashboard/dashboard.html")
+def dashboard_html_page() -> Any:
+    dash = _FRONTEND_DIR / "dashboard.html"
+    if dash.exists():
+        return FileResponse(str(dash))
+    return RedirectResponse(url="/fleet-dashboard.html")
+
+
+@app.get("/style.css", include_in_schema=False)
+def serve_root_style() -> Any:
+    css_file = _FRONTEND_DIR / "style.css"
+    if css_file.exists():
+        return FileResponse(str(css_file), media_type="text/css")
+    raise HTTPException(status_code=404)
+@app.get("/app.js", include_in_schema=False)
+def serve_root_app_js() -> Any:
+    js_file = _FRONTEND_DIR / "app.js"
+    if js_file.exists():
+        return FileResponse(str(js_file), media_type="application/javascript")
+    raise HTTPException(status_code=404)
+
+
+@app.get("/trustmesh-sdk.js", include_in_schema=False)
+def serve_root_sdk() -> Any:
+    sdk_file = _FRONTEND_DIR / "trustmesh-sdk.js"
+    if sdk_file.exists():
+        return FileResponse(str(sdk_file), media_type="application/javascript")
+    raise HTTPException(status_code=404)
 
 
 @app.get("/{filename}.png", include_in_schema=False)
 def serve_root_png(filename: str) -> Any:
-    for base in [_FRONTEND_DIST, _FRONTEND_DIR / "public"]:
+    for base in [_FRONTEND_DIST, _FRONTEND_DIR / "public", _FRONTEND_DIR]:
         candidate = base / f"{filename}.png"
         if candidate.exists():
             return FileResponse(str(candidate), media_type="image/png")
     raise HTTPException(status_code=404)
-
-

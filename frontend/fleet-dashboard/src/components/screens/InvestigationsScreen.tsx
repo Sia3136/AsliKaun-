@@ -1,74 +1,23 @@
-import React from 'react';
-import { ShieldAlert, Clock, User, ArrowRight, CheckCircle2, Lock } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { AlertCircle, ArrowRight, Lock, ShieldAlert } from 'lucide-react';
 import { DriverRecord } from '../../types/fleet';
 
-interface InvestigationsScreenProps {
-  onInvestigateDriver: (driver: DriverRecord) => void;
-  drivers: DriverRecord[];
-}
+interface Props { onInvestigateDriver: (driver: DriverRecord) => void; drivers: DriverRecord[]; }
+type Drift = { count:number; alert:string; sessions:Array<{session_id:string;timestamp:string;context_score:number|null;behavior_score:number|null;ewma_score:number|null;anchor_score:number|null;quadrant:string;decision:string;speed_mph:number;verdict:string}>; rental_audit?:Record<string,any> };
 
-export const InvestigationsScreen: React.FC<InvestigationsScreenProps> = ({
-  onInvestigateDriver,
-  drivers,
-}) => {
-  const highRiskDrivers = drivers.filter((d) => d.riskCategory === 'High Risk');
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-[#727785]">
-          INCIDENT MANAGEMENT / SOC TRIAGE QUEUE
-        </div>
-        <h1 className="text-2xl font-bold text-[#0b1c30] mt-1">Open Triage Cases</h1>
-        <p className="text-xs text-[#565e74] mt-1">
-          Active driver sessions requiring manual chain-of-custody verification, device attestation, or fleet dispatch intervention.
-        </p>
-      </div>
-
-      <div className="bg-white rounded-xl border border-[#e2e8f0] shadow-2xs divide-y divide-[#e2e8f0]">
-        {highRiskDrivers.map((driver) => (
-          <div key={driver.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-[#f8f9ff] transition-colors">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-lg bg-[#ffdad6] text-[#ba1a1a] flex items-center justify-center shrink-0">
-                <ShieldAlert className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-[#0b1c30]">{driver.name}</span>
-                  <span className="font-mono text-xs font-semibold text-[#565e74] bg-[#eff4ff] px-2 py-0.5 rounded">
-                    #{driver.id}
-                  </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#ffdad6] text-[#ba1a1a]">
-                    Threat Score: {driver.riskScore}
-                  </span>
-                </div>
-                <p className="text-xs text-[#ba1a1a] font-semibold mt-1">
-                  Primary Vector: {driver.riskReason}
-                </p>
-                <p className="text-[11px] text-[#565e74] mt-0.5">
-                  Vehicle: {driver.vehicle} ({driver.plate}) · Hardware: {driver.hardwareTo}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 shrink-0 self-end md:self-center">
-              {driver.sessionFrozen && (
-                <span className="text-xs font-semibold text-[#ba1a1a] flex items-center gap-1 bg-[#ffdad6]/40 px-2.5 py-1 rounded">
-                  <Lock className="w-3.5 h-3.5" />
-                  Locked Down
-                </span>
-              )}
-              <button
-                onClick={() => onInvestigateDriver(driver)}
-                className="px-4 py-2 bg-[#0058be] hover:bg-[#0047a0] text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <span>Open Dossier & Telemetry</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+export const InvestigationsScreen: React.FC<Props> = ({ onInvestigateDriver, drivers }) => {
+  const [driverId,setDriverId]=useState(drivers[0]?.id || ''); const [data,setData]=useState<Drift|null>(null); const [loading,setLoading]=useState(false); const [error,setError]=useState(''); const [refreshKey,setRefreshKey]=useState(0);
+  useEffect(()=>{if(!driverId)return; let live=true; setLoading(true);setError(''); fetch(`/v1/drivers/${encodeURIComponent(driverId)}/drift`).then(async r=>{if(!r.ok)throw new Error(`Drift history request failed (HTTP ${r.status})`);return r.json();}).then(d=>{if(live)setData(d);}).catch(e=>{if(live)setError(e.message);}).finally(()=>{if(live)setLoading(false);}); return ()=>{live=false;};},[driverId,refreshKey]);
+  const audit=data?.rental_audit;
+  return <div className="space-y-6">
+    <div className="flex flex-wrap items-end justify-between gap-3"><div><div className="text-[11px] font-semibold uppercase tracking-wider text-[#727785]">DRIVER HISTORY / DRIFT & RENTAL AUDIT</div><h1 className="text-2xl font-bold text-[#0b1c30] mt-1">Drift Tracker</h1><p className="text-xs text-[#565e74] mt-1">Stored ML session history, fast baseline trend, frozen anchor, and Gaussian mixture split shift audit.</p></div><select value={driverId} onChange={e=>setDriverId(e.target.value)} className="bg-white border rounded-md px-3 py-2 text-sm">{drivers.map(d=><option key={d.id} value={d.id}>{d.name} · {d.id}</option>)}</select></div>
+    {drivers.length===0&&<div className="p-10 bg-white border rounded-xl text-center text-sm text-[#565e74]">No driver history is available from the backend yet.</div>}
+    {loading&&<p className="p-8 text-center text-sm text-[#565e74]">Loading stored driver history…</p>}
+    {error&&<div className="p-4 bg-white border rounded-xl text-sm text-red-700 flex gap-2"><AlertCircle className="w-4 h-4"/>{error}<button className="underline ml-auto" onClick={()=>setRefreshKey(x=>x+1)}>Retry</button></div>}
+    {data&&<>
+      <div className="grid md:grid-cols-2 gap-4"><div className="bg-white p-4 border rounded-xl"><div className="text-[10px] uppercase font-bold text-[#727785]">Stored sessions</div><div className="text-2xl font-bold mt-1">{data.count}</div><p className="text-xs text-[#565e74] mt-1">{data.alert}</p></div><div className="bg-white p-4 border rounded-xl"><div className="text-[10px] uppercase font-bold text-[#727785]">Split shift rental audit · GMM</div><div className="text-lg font-bold mt-1">{audit?.status==='scored'?(audit.split_rental_suspected?'Rental pattern suspected':'No split shift pattern detected'):audit?.status==='unavailable'?'Audit unavailable':'Insufficient history'}</div><p className="text-xs text-[#565e74] mt-1">{audit?.status==='scored'?`${audit.session_count} sessions · BIC 1 component ${Number(audit.bic_1_component).toFixed(1)}, 2 components ${Number(audit.bic_2_component).toFixed(1)} · time-of-day separation ${audit.correlates_with_time_of_day?'detected':'not detected'}`:`${audit?.session_count ?? data.count} sessions recorded; the audit requires at least 20 usable sessions.`}</p></div></div>
+      <div className="bg-white rounded-xl border overflow-hidden"><div className="p-4 border-b flex items-center justify-between"><h2 className="font-bold text-sm">Session history</h2><span className="text-xs text-[#565e74]">Actual backend scores and decisions</span></div>{data.sessions.length===0?<p className="p-8 text-center text-sm text-[#565e74]">No scored sessions recorded for this driver.</p>:<div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-[#f8f9ff] text-[#727785] uppercase"><tr>{['Session','Time','Context','Behavior','EWMA','Frozen anchor','Quadrant','Decision'].map(x=><th key={x} className="p-3">{x}</th>)}</tr></thead><tbody className="divide-y">{data.sessions.map(s=><tr key={s.session_id}><td className="p-3 font-mono">{s.session_id}</td><td className="p-3">{new Date(s.timestamp).toLocaleString()}</td><td className="p-3">{s.context_score==null?'—':s.context_score.toFixed(3)}</td><td className="p-3">{s.behavior_score==null?'—':s.behavior_score.toFixed(3)}</td><td className="p-3">{s.ewma_score==null?'—':s.ewma_score.toFixed(3)}</td><td className="p-3">{s.anchor_score==null?'—':s.anchor_score.toFixed(3)}</td><td className="p-3">{s.quadrant}</td><td className="p-3">{s.decision}</td></tr>)}</tbody></table></div>}</div>
+      <div className="bg-white border rounded-xl p-4"><h2 className="font-bold text-sm mb-2">Current fleet drivers</h2>{drivers.filter(d=>d.riskCategory==='High Risk').length===0?<p className="text-xs text-[#565e74]">No active high risk ML results.</p>:drivers.filter(d=>d.riskCategory==='High Risk').map(d=><div key={d.id} className="py-3 border-t flex items-center gap-3"><ShieldAlert className="w-4 h-4 text-red-600"/><div className="flex-1"><b>{d.name}</b><div className="text-xs text-[#565e74]">{d.riskReason}</div>{d.safePauseInfo?.safe_pause_scheduled&&<span className="text-xs text-amber-700">Challenge waiting for safe pause ({d.safePauseInfo.speed_mph ?? 'moving'} mph)</span>}</div>{d.sessionFrozen&&<Lock className="w-4 h-4"/>}<button onClick={()=>onInvestigateDriver(d)} className="text-xs text-blue-700 flex gap-1">Open dossier <ArrowRight className="w-3 h-3"/></button></div>)}</div>
+    </>}
+  </div>;
 };
