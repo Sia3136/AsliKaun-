@@ -466,9 +466,10 @@ def evaluate_with_rider_calibration(payload: Any, history: list[dict[str, Any]])
         return None
     try:
         from ml.inference.rider_model_bundle import RiderModelBundle
-        split = max(5, int(len(usable) * 0.7))
-        if len(usable) - split < 5:
-            split = len(usable) - 5
+        # All signal scorers require at least five calibration observations.
+        # Clamp the chronological split so the advertised 10-session minimum
+        # yields the minimum viable 5-session enrollment + calibration sets.
+        split = min(max(5, int(len(usable) * 0.7)), len(usable) - 5)
         bundle = RiderModelBundle.fit(usable[:split], usable[split:])
         current = payload.model_dump(mode="json") if hasattr(payload, "model_dump") else dict(payload)
         result = bundle.score(current, generate_reason=False)

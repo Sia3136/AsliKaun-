@@ -1081,7 +1081,7 @@ def ingest_session(
                 model_status = ml_eval["model_status"]
             else:
                 initial_behavior = current_behavior
-                model_status = "mock_behavior_scorer"
+                model_status = "ml_dependencies_unavailable"
 
             if driver is None:
                 con.execute(
@@ -1216,27 +1216,13 @@ def ingest_session(
             current_behavior = ml_eval["current_behavior"]
             model_status = ml_eval["model_status"]
         else:
-            context_score, context_axis, context_reasons = compare_context(current_context, previous_context)
-            fast_score, fast_axis, fast_reasons = mock_behavior_score(current_behavior, fast_behavior)
-            anchor_score, anchor_axis, anchor_reasons = mock_behavior_score(current_behavior, anchor_behavior)
-            available_scores = [s for s in (fast_score, anchor_score) if s is not None]
-            behavior_score = min(available_scores) if available_scores else None
-            if fast_axis == "insufficient_evidence" and anchor_axis == "insufficient_evidence":
-                behavior_axis = "insufficient_evidence"
-            elif "changed" in (fast_axis, anchor_axis):
-                behavior_axis = "changed"
-            else:
-                behavior_axis = "stable"
-            decision, quadrant = decide(context_axis, behavior_axis)
-            reasons = (
-                context_reasons
-                + [f"Fast baseline: {r}" for r in fast_reasons]
-                + [f"Frozen anchor: {r}" for r in anchor_reasons]
-                + declaration_reason
-            )
+            context_score = behavior_score = None
+            context_axis = behavior_axis = "unavailable"
+            decision, quadrant = "ml_unavailable", "unknown"
+            reasons = ["ML scoring is unavailable because backend ML dependencies could not be loaded"] + declaration_reason
             signals = {}
             reason_vector = None
-            model_status = "mock_behavior_scorer"
+            model_status = "ml_dependencies_unavailable"
 
         # A declared or apparently legitimate context change with stable behavior gets
         # a context re-baseline. Keep the frozen anchor; update only the fast baseline.
@@ -1382,7 +1368,17 @@ def fleet_scores(admin: dict[str, str] = Depends(require_admin)) -> dict:
         ).fetchall()
         drivers = []
         for row in rows:
+            latest_session = con.execute(
+                "SELECT payload_json FROM sessions WHERE driver_id=? ORDER BY id DESC LIMIT 1",
+                (row["driver_id"],),
+            ).fetchone()
+            # Ignore legacy seeded/demo rows; only sessions posted through the
+            # ingest API carry their own driver identity in the request payload.
+            if latest_session is None or decode_json(latest_session["payload_json"], {}).get("driver_id") != row["driver_id"]:
+                continue
             result = decode_json(row["latest_result_json"], {})
+            latest_payload = decode_json(latest_session["payload_json"], {})
+            gps_points = latest_payload.get("gps") or []
             drivers.append({
                 "driver_id": row["driver_id"],
                 "context_score": result.get("context_score"),
@@ -1397,6 +1393,12 @@ def fleet_scores(admin: dict[str, str] = Depends(require_admin)) -> dict:
                 "safe_pause_info": result.get("safe_pause_info"),
                 "threshold_info": result.get("threshold_info"),
                 "model_status": result.get("model_status"),
+                "latest_telemetry": {
+                    "device_id": latest_payload.get("device_id"),
+                    "zone": latest_payload.get("zone"),
+                    "vehicle_speed_mph": latest_payload.get("vehicle_speed_mph"),
+                    "gps": gps_points[-1] if gps_points else None,
+                },
                 "updated_at": row["updated_at"],
             })
         return {"count": len(drivers), "drivers": drivers}
@@ -1627,6 +1629,8 @@ def get_review_queue(
         item = dict(row)
         item["reasons"] = decode_json(item.pop("reasons_json"), [])
         payload = decode_json(item.pop("payload_json"), {})
+        if payload.get("driver_id") != item["driver_id"]:
+            continue
         speed = payload.get("vehicle_speed_mph")
         item["safe_pause_info"] = {
             "is_moving": speed is not None and speed > 2.0,
@@ -1771,12 +1775,13 @@ async def event_stream(request: Request) -> StreamingResponse:
 def get_driver_drift(driver_id: str) -> dict:
     """Return historical sessions with Fast EWMA, Frozen Anchor, and breach annotations."""
     with connect() as con:
-        rows = con.execute(
+        fetched_rows = con.execute(
             """SELECT id, timestamp, payload_json, context_score, behavior_score,
                       context_axis, behavior_axis, quadrant, decision, reasons_json
                FROM sessions WHERE driver_id = ? ORDER BY id ASC LIMIT 60""",
             (driver_id,),
         ).fetchall()
+        rows = [r for r in fetched_rows if decode_json(r["payload_json"], {}).get("driver_id") == driver_id]
 
     if not rows:
         return {
@@ -1835,6 +1840,13 @@ def get_driver_drift(driver_id: str) -> dict:
                 stamp = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
                 payload["hour_of_day"] = stamp.hour + stamp.minute / 60
                 if payload.get("accept_latency_ms") is not None and payload.get("touch_events"):
+                    # The touch scorer consumes normalized gesture features; ingest
+                    # clients are allowed to omit area or offsets.
+                    payload["touch_events"] = [
+                        {**event, "pressure": event.get("pressure", 0.0), "area": event.get("area", 0.0),
+                         "t_offset_ms": event.get("t_offset_ms", index * 100)}
+                        for index, event in enumerate(payload["touch_events"])
+                    ]
                     audit_sessions.append(payload)
             if len(audit_sessions) >= 20:
                 rental_audit = {"status": "scored", "session_count": len(audit_sessions), **split_rental_check(audit_sessions)}
@@ -1855,9 +1867,12 @@ def get_driver_drift(driver_id: str) -> dict:
 def get_model_health() -> dict:
     """Summarize runtime scoring and calibration evidence from stored sessions."""
     with connect() as con:
-        rows = con.execute("SELECT latest_result_json FROM drivers").fetchall()
+        rows = con.execute("SELECT driver_id, latest_result_json FROM drivers").fetchall()
         session_count = con.execute("SELECT COUNT(*) AS n FROM sessions").fetchone()["n"]
-    results = [decode_json(r["latest_result_json"], {}) for r in rows]
+        latest_payloads = {}
+        for session in con.execute("SELECT driver_id, payload_json FROM sessions ORDER BY id DESC").fetchall():
+            latest_payloads.setdefault(session["driver_id"], decode_json(session["payload_json"], {}))
+    results = [decode_json(r["latest_result_json"], {}) for r in rows if latest_payloads.get(r["driver_id"], {}).get("driver_id") == r["driver_id"]]
     scored = [r for r in results if r.get("model_status")]
     statuses = sorted({str(r.get("model_status")) for r in scored})
     adaptive = sum(1 for r in scored if r.get("threshold_info", {}).get("source") == "per_rider_calibrated")

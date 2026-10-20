@@ -348,21 +348,21 @@ export const FleetTable: React.FC<FleetTableProps> = ({
                       <div className="space-y-1">
                         <div className="flex items-center gap-1.5">
                           <span className={`font-bold tabular-nums ${getScoreColor(driver.contextScore)}`}>
-                            {driver.contextScore} / 100
+                            {driver.hasContextScore === false ? 'N/A' : `${driver.contextScore} / 100`}
                           </span>
                           <span
                             className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${getBadgeStyle(
                               driver.contextLabel
                             )}`}
                           >
-                            {driver.contextLabel}
+                            {driver.hasContextScore === false ? 'UNSCORED' : driver.contextLabel}
                           </span>
                         </div>
                         {/* Progress Bar */}
                         <div className="w-full bg-[#e2e8f0] h-1 rounded-full overflow-hidden">
                           <div
                             className={`h-full ${getScoreBarBg(driver.contextScore)}`}
-                            style={{ width: `${driver.contextScore}%` }}
+                            style={{ width: `${driver.hasContextScore === false ? 0 : driver.contextScore}%` }}
                           />
                         </div>
                         <p className="text-[11px] text-[#565e74] truncate">
@@ -376,21 +376,21 @@ export const FleetTable: React.FC<FleetTableProps> = ({
                       <div className="space-y-1">
                         <div className="flex items-center gap-1.5">
                           <span className={`font-bold tabular-nums ${getScoreColor(driver.behavioralScore)}`}>
-                            {driver.behavioralScore} / 100
+                            {driver.hasBehaviorScore === false ? 'N/A' : `${driver.behavioralScore} / 100`}
                           </span>
                           <span
                             className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${getBadgeStyle(
                               driver.behavioralLabel
                             )}`}
                           >
-                            {driver.behavioralLabel}
+                            {driver.hasBehaviorScore === false ? 'UNSCORED' : driver.behavioralLabel}
                           </span>
                         </div>
                         {/* Progress Bar */}
                         <div className="w-full bg-[#e2e8f0] h-1 rounded-full overflow-hidden">
                           <div
                             className={`h-full ${getScoreBarBg(driver.behavioralScore)}`}
-                            style={{ width: `${driver.behavioralScore}%` }}
+                            style={{ width: `${driver.hasBehaviorScore === false ? 0 : driver.behavioralScore}%` }}
                           />
                         </div>
                         <p className="text-[11px] text-[#565e74] truncate">

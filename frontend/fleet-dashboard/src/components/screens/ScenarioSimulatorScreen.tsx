@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { 
   Play, 
   RotateCcw, 
@@ -29,14 +29,11 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
   const [selectedScenario, setSelectedScenario] = useState<
     'handoff' | 'legit_change' | 'slow_drift' | 'split_shift' | 'teleport' | 'illness'
   >('handoff');
-  const [selectedDriverId, setSelectedDriverId] = useState<string>('rider-sim-console');
+  const selectedDriverId = `rider-sim-console-${selectedScenario}`;
   const [simulationRunning, setSimulationRunning] = useState(false);
   const [simLogs, setSimLogs] = useState<string[]>([]);
   const [lastResult, setLastResult] = useState<any>(null);
   const [detectionLatency, setDetectionLatency] = useState<number | null>(null);
-  useEffect(() => {
-    if (drivers.length && !drivers.some(d => d.id === selectedDriverId)) setSelectedDriverId(drivers[0].id);
-  }, [drivers, selectedDriverId]);
 
   const scenarios = [
     {
@@ -99,7 +96,7 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
       setSimLogs((prev) => [...prev, msg]);
     };
 
-    addLog(`[0.00s] Initializing synthetic test session for Driver #${selectedDriverId}...`);
+    addLog(`[0.00s] Initializing isolated synthetic profile #${selectedDriverId}...`);
     addLog(`[0.02s] Scenario: ${selectedScenario.toUpperCase()} [SIMULATED TELEMETRY]`);
 
     // Prepare synthetic session payload matching selected scenario
@@ -114,7 +111,7 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
       // Stable context, anomalous behavior
       payload = {
         ...payload,
-        device_id: 'dev-client-s23',
+        device_id: 'dev-samsung-a54',
         ip_subnet: '192.168.1.0/24',
         zone: 'mumbai_central',
         accept_latency_ms: 3150, // Massive latency spike
@@ -168,7 +165,7 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
       // Drift test: high latency and moderate motor variance
       payload = {
         ...payload,
-        device_id: 'dev-client-s23',
+        device_id: 'dev-samsung-a54',
         ip_subnet: '192.168.1.0/24',
         zone: 'mumbai_central',
         accept_latency_ms: 1850,
@@ -187,7 +184,7 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
       // Evening shift renter
       payload = {
         ...payload,
-        device_id: 'dev-client-s23',
+        device_id: 'dev-samsung-a54',
         ip_subnet: '192.168.1.0/24',
         zone: 'mumbai_central',
         accept_latency_ms: 2400,
@@ -199,7 +196,7 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
       // GPS teleportation jump
       payload = {
         ...payload,
-        device_id: 'dev-client-s23',
+        device_id: 'dev-samsung-a54',
         ip_subnet: '192.168.1.0/24',
         zone: 'mumbai_central',
         accept_latency_ms: 450,
@@ -214,7 +211,7 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
       // Honest fatigue / recovery
       payload = {
         ...payload,
-        device_id: 'dev-client-s23',
+        device_id: 'dev-samsung-a54',
         ip_subnet: '192.168.1.0/24',
         zone: 'mumbai_central',
         accept_latency_ms: 1100, // Slower but authentic
@@ -228,23 +225,37 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
 
     try {
       const token = sessionStorage.getItem('tm-auth-token') || 'demo-admin-session-token';
-      const response = await fetch('/v1/sessions/ingest', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      });
+      const sequenceLength = selectedScenario === 'slow_drift' ? 12 : selectedScenario === 'split_shift' ? 20 : 1;
+      let result: any = null;
+      for (let index = 0; index < sequenceLength; index += 1) {
+        const event = { ...payload, timestamp: new Date(Date.now() - (sequenceLength - index) * 60_000).toISOString() };
+        if (selectedScenario === 'slow_drift') {
+          event.accept_latency_ms = 350 + index * 145;
+          event.touch_events = [{ type: 'swipe', pressure: 0.36 + index * 0.035, duration_ms: 85 + index * 7, area: 0.35 + index * 0.04, t_offset_ms: index * 100 }];
+        }
+        if (selectedScenario === 'split_shift') {
+          const renter = index % 2 === 1;
+          event.timestamp = new Date(Date.now() - (sequenceLength - index) * 60_000 + (renter ? 12 * 60 * 60 * 1000 : 0)).toISOString();
+          event.accept_latency_ms = renter ? 2400 : 360;
+          event.touch_events = [{ type: 'tap', pressure: renter ? 0.82 : 0.36, duration_ms: renter ? 140 : 85, area: renter ? 0.82 : 0.36, t_offset_ms: 100 }];
+        }
+        const response = await fetch('/v1/sessions/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(event)
+        });
+        if (!response.ok) throw new Error(`Backend returned HTTP ${response.status}`);
+        result = await response.json();
+        if (sequenceLength > 1) addLog(`[Sequence] Session ${index + 1}/${sequenceLength} · ${result.decision}`);
+      }
 
       const elapsed = Math.round(performance.now() - startTime);
       setDetectionLatency(elapsed);
 
-      if (!response.ok) {
-        throw new Error(`Backend returned HTTP ${response.status}`);
+      if (selectedScenario === 'split_shift') {
+        const auditResponse = await fetch(`/v1/drivers/${encodeURIComponent(targetDriver)}/drift`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (auditResponse.ok) result.rental_audit = (await auditResponse.json()).rental_audit;
       }
-
-      const result = await response.json();
       setLastResult(result);
 
       addLog(`[0.${elapsed}s] HTTP 200 OK — Backend ML fusion completed.`);
@@ -258,6 +269,7 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
       if (result.safe_pause_info?.safe_pause_scheduled) {
         addLog(`[Safety Gate] Challenge scheduled for verified safe stop.`);
       }
+      if (result.rental_audit) addLog(`[GMM Audit] ${result.rental_audit.status}: ${result.rental_audit.finding || result.rental_audit.note || 'No rental detected'}`);
 
       // Refresh dashboard live data
       if (onRefreshFleet) {
@@ -311,14 +323,8 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-[#0b1c30]">Select Test Scenario Vector</h2>
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-[#565e74]">Target Driver:</span>
-              <select
-                value={selectedDriverId}
-                onChange={(e) => setSelectedDriverId(e.target.value)}
-                className="bg-white border border-[#e2e8f0] rounded-md px-2 py-1 text-xs font-mono font-bold text-[#0b1c30] focus:outline-none focus:border-[#0058be]"
-              >
-                {drivers.map(driver => <option key={driver.id} value={driver.id}>{driver.id} · {driver.name}</option>)}
-              </select>
+              <span className="text-[#565e74]">Isolated test profile:</span>
+              <span className="font-mono font-bold text-[#0b1c30]">{selectedDriverId}</span>
             </div>
           </div>
 
@@ -426,6 +432,10 @@ export const ScenarioSimulatorScreen: React.FC<ScenarioSimulatorScreenProps> = (
                   <span>Context: {lastResult.context_score ?? 'N/A'}</span>
                   <span>Behavior: {lastResult.behavior_score ?? 'N/A'}</span>
                 </div>
+                <div className="text-[10px] text-slate-300">Model: <span className="font-mono">{lastResult.model_status || 'unreported'}</span></div>
+                {Array.isArray(lastResult.reasons) && lastResult.reasons.length > 0 && <div className="text-[10px] text-slate-300">Explanation: {lastResult.reasons.join(' · ')}</div>}
+                {lastResult.safe_pause_info && <div className="text-[10px] text-slate-300">Safe pause: {lastResult.safe_pause_info.safe_pause_scheduled ? 'scheduled' : lastResult.safe_pause_info.is_moving ? 'waiting for safe stop' : 'not required'}{lastResult.safe_pause_info.speed_mph != null ? ` · ${lastResult.safe_pause_info.speed_mph} mph` : ''}</div>}
+                {lastResult.rental_audit && <div className="text-[10px] text-slate-300">GMM rental audit: {lastResult.rental_audit.status}{lastResult.rental_audit.split_rental_suspected === true ? ' · split shift suspected' : ''}</div>}
               </div>
             )}
           </div>

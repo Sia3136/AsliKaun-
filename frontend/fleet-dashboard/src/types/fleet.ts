@@ -1,6 +1,6 @@
 export type ShiftStatus = 'Active Trip' | 'On Break' | 'Off Duty' | 'Standby';
 
-export type RiskLevel = 'High Risk' | 'Medium Risk' | 'Low Risk' | 'Trusted';
+export type RiskLevel = 'High Risk' | 'Medium Risk' | 'Low Risk' | 'Trusted' | 'Unscored';
 
 export interface DriverRecord {
   id: string; // e.g., 'DRV-9042'
@@ -23,11 +23,13 @@ export interface DriverRecord {
   
   // Context Continuity
   contextScore: number; // 0 - 100
+  hasContextScore?: boolean;
   contextLabel: 'LOW BASELINE' | 'STABLE' | 'PRISTINE' | 'IMPOSSIBLE' | 'MODERATE';
   contextDetail: string; // e.g., 'Cell-tower radius offset +4.1km'
   
   // Behavioral Continuity
   behavioralScore: number; // 0 - 100
+  hasBehaviorScore?: boolean;
   behavioralLabel: 'CRITICAL' | 'NORMAL' | 'OPTIMAL' | 'UNSTABLE';
   behavioralDetail: string; // e.g., 'G-force delta incongruent'
   
