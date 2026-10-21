@@ -167,7 +167,7 @@ export const FleetTable: React.FC<FleetTableProps> = ({
                 : 'bg-[#f8f9ff] text-[#565e74] hover:text-[#0b1c30] border border-[#e2e8f0]'
             }`}
           >
-            All Monitored <span className="opacity-80">(42,890)</span>
+            All Monitored <span className="opacity-80">({drivers.length})</span>
           </button>
           <button
             onClick={() => {
@@ -180,7 +180,7 @@ export const FleetTable: React.FC<FleetTableProps> = ({
                 : 'bg-[#f8f9ff] text-[#ba1a1a] hover:bg-[#ffdad6]/40 border border-[#e2e8f0]'
             }`}
           >
-            High Risk <span className="font-bold">(632)</span>
+            High Risk <span className="font-bold">({drivers.filter(d => d.riskCategory === 'High Risk').length})</span>
           </button>
           <button
             onClick={() => {
@@ -193,7 +193,7 @@ export const FleetTable: React.FC<FleetTableProps> = ({
                 : 'bg-[#f8f9ff] text-[#565e74] hover:text-[#0b1c30] border border-[#e2e8f0]'
             }`}
           >
-            New Devices <span className="opacity-80">(1,204)</span>
+            New Devices <span className="opacity-80">({drivers.filter(d => d.lineageType === 'swap' || d.lineageStatusType === 'declared').length})</span>
           </button>
           <button
             onClick={() => {
@@ -206,7 +206,7 @@ export const FleetTable: React.FC<FleetTableProps> = ({
                 : 'bg-[#f8f9ff] text-[#565e74] hover:text-[#0b1c30] border border-[#e2e8f0]'
             }`}
           >
-            Pending Liveness <span className="opacity-80">(43)</span>
+            Pending Liveness <span className="opacity-80">({drivers.filter(d => d.livenessPending || d.recommendedAction === 'Trigger Liveness').length})</span>
           </button>
         </div>
       </div>
@@ -348,21 +348,21 @@ export const FleetTable: React.FC<FleetTableProps> = ({
                       <div className="space-y-1">
                         <div className="flex items-center gap-1.5">
                           <span className={`font-bold tabular-nums ${getScoreColor(driver.contextScore)}`}>
-                            {driver.contextScore} / 100
+                            {driver.hasContextScore === false ? 'N/A' : `${driver.contextScore} / 100`}
                           </span>
                           <span
                             className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${getBadgeStyle(
                               driver.contextLabel
                             )}`}
                           >
-                            {driver.contextLabel}
+                            {driver.hasContextScore === false ? 'UNSCORED' : driver.contextLabel}
                           </span>
                         </div>
                         {/* Progress Bar */}
                         <div className="w-full bg-[#e2e8f0] h-1 rounded-full overflow-hidden">
                           <div
                             className={`h-full ${getScoreBarBg(driver.contextScore)}`}
-                            style={{ width: `${driver.contextScore}%` }}
+                            style={{ width: `${driver.hasContextScore === false ? 0 : driver.contextScore}%` }}
                           />
                         </div>
                         <p className="text-[11px] text-[#565e74] truncate">
@@ -376,26 +376,30 @@ export const FleetTable: React.FC<FleetTableProps> = ({
                       <div className="space-y-1">
                         <div className="flex items-center gap-1.5">
                           <span className={`font-bold tabular-nums ${getScoreColor(driver.behavioralScore)}`}>
-                            {driver.behavioralScore} / 100
+                            {driver.hasBehaviorScore === false ? 'N/A' : `${driver.behavioralScore} / 100`}
                           </span>
                           <span
                             className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${getBadgeStyle(
                               driver.behavioralLabel
                             )}`}
                           >
-                            {driver.behavioralLabel}
+                            {driver.hasBehaviorScore === false ? 'UNSCORED' : driver.behavioralLabel}
                           </span>
                         </div>
                         {/* Progress Bar */}
                         <div className="w-full bg-[#e2e8f0] h-1 rounded-full overflow-hidden">
                           <div
                             className={`h-full ${getScoreBarBg(driver.behavioralScore)}`}
-                            style={{ width: `${driver.behavioralScore}%` }}
+                            style={{ width: `${driver.hasBehaviorScore === false ? 0 : driver.behavioralScore}%` }}
                           />
                         </div>
                         <p className="text-[11px] text-[#565e74] truncate">
                           {driver.behavioralDetail}
                         </p>
+                        {Object.keys(driver.signalScores || {}).length > 0 && <p className="text-[10px] text-[#565e74] truncate" title={Object.entries(driver.signalScores || {}).map(([k,v]) => `${k}: ${driver.signalMetric === 'p_value' ? 'p=' : 'score='}${v.toFixed(3)}`).join(' · ')}>
+                          {Object.entries(driver.signalScores || {}).map(([k,v]) => `${k} ${driver.signalMetric === 'p_value' ? 'p' : 'score'}=${v.toFixed(2)}`).join(' · ')}
+                        </p>}
+                        {driver.adaptiveThreshold && <p className="text-[10px] text-[#0058be]" title={driver.adaptiveThreshold.note}>Threshold {driver.adaptiveThreshold.threshold?.toFixed(3)} · {driver.adaptiveThreshold.source}</p>}
                       </div>
                     </td>
 
@@ -545,8 +549,8 @@ export const FleetTable: React.FC<FleetTableProps> = ({
       <div className="px-4 py-3 border-t border-[#e2e8f0] bg-[#ffffff] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#565e74]">
         <div className="flex items-center gap-2">
           <span>
-            Showing <strong className="font-semibold text-[#0b1c30]">1-5</strong> of{' '}
-            <strong className="font-semibold text-[#0b1c30]">42,890</strong> drivers
+            Showing <strong className="font-semibold text-[#0b1c30]">{filteredDrivers.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, filteredDrivers.length)}</strong> of{' '}
+            <strong className="font-semibold text-[#0b1c30]">{filteredDrivers.length}</strong> drivers
           </span>
           <span className="text-[#c2c6d6]">·</span>
           <span>

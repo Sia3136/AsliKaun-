@@ -18,10 +18,10 @@ interface StatCardsProps {
 }
 
 export const StatCards: React.FC<StatCardsProps> = ({
-  activeStreams = 42890,
-  severeCount = 632,
-  newHardwareCount = 1204,
-  livenessGateCount = 43,
+  activeStreams = 0,
+  severeCount = 0,
+  newHardwareCount = 0,
+  livenessGateCount = 0,
   onFilterClick,
 }) => {
   return (
@@ -40,7 +40,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
           </div>
           <div className="flex items-center gap-1.5 mt-1.5 text-xs text-[#00855b] font-medium">
             <TrendingUp className="w-3.5 h-3.5" />
-            <span>+342 vs last shift</span>
+            <span>Backend driver records</span>
           </div>
         </div>
         <div className="w-10 h-10 rounded-lg bg-[#eff4ff] text-[#0058be] flex items-center justify-center shrink-0 group-hover:bg-[#dce9ff] transition-colors">
@@ -62,7 +62,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
           </div>
           <div className="flex items-center gap-1.5 mt-1.5 text-xs text-[#ba1a1a] font-medium">
             <AlertTriangle className="w-3.5 h-3.5" />
-            <span>Action required (1.47%)</span>
+            <span>High risk evaluations</span>
           </div>
         </div>
         <div className="w-10 h-10 rounded-lg bg-[#ffdad6]/60 text-[#ba1a1a] flex items-center justify-center shrink-0 group-hover:bg-[#ffdad6] transition-colors">
@@ -84,7 +84,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
           </div>
           <div className="flex items-center gap-1.5 mt-1.5 text-xs text-[#565e74] font-medium">
             <Smartphone className="w-3.5 h-3.5 text-[#565e74]" />
-            <span>Unverified IMEIs pending</span>
+            <span>Current backend records</span>
           </div>
         </div>
         <div className="w-10 h-10 rounded-lg bg-[#eff4ff] text-[#0058be] flex items-center justify-center shrink-0 group-hover:bg-[#dce9ff] transition-colors">
@@ -106,7 +106,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
           </div>
           <div className="flex items-center gap-1.5 mt-1.5 text-xs text-[#00855b] font-medium">
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>38 passed in last 10m</span>
+            <span>Open safety reviews</span>
           </div>
         </div>
         <div className="w-10 h-10 rounded-lg bg-[#eff4ff] text-[#0058be] flex items-center justify-center shrink-0 group-hover:bg-[#dce9ff] transition-colors">

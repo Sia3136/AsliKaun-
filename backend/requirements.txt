@@ -7,6 +7,8 @@ httpx>=0.27,<1.0
 # Runtime ML bridge and two-axis scoring
 numpy>=1.24
 scipy>=1.10
+scikit-learn>=1.3,<2.0
+pyod>=2.0
 
 # Required for ml/inference/rider_model_bundle.py's real trained models
 torch>=2.2,<3.0
@@ -17,6 +19,3 @@ torchvision>=0.17,<1.0
 
 # Optional LLM Reason Vector
 anthropic>=0.34
-
-# Required for ml/redteam/detectors.py's split_rental_check()
-scikit-learn>=1.3,<2.0

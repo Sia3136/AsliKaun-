@@ -641,3 +641,30 @@ def warmup_bundles() -> int:
     if warmed > 0:
         logger.info("[ml_bridge] Prewarmed %d persisted RiderModelBundles into memory cache", warmed)
     return warmed
+
+
+def evaluate_with_rider_calibration(payload: Any, history: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Use split historical sessions to fit per-rider scorers when history is sufficient.
+
+    This intentionally returns no result until there are enough prior sessions to
+    keep enrollment and conformal calibration separate.
+    """
+    usable = [s for s in history if s.get("accept_latency_ms") is not None]
+    if len(usable) < 10:
+        return None
+    try:
+        from ml.inference.rider_model_bundle import RiderModelBundle
+        # All signal scorers require at least five calibration observations.
+        # Clamp the chronological split so the advertised 10-session minimum
+        # yields the minimum viable 5-session enrollment + calibration sets.
+        split = min(max(5, int(len(usable) * 0.7)), len(usable) - 5)
+        bundle = RiderModelBundle.fit(usable[:split], usable[split:])
+        current = payload.model_dump(mode="json") if hasattr(payload, "model_dump") else dict(payload)
+        result = bundle.score(current, generate_reason=False)
+        if not result.get("p_values"):
+            return None
+        result["threshold_info"] = bundle.threshold_info
+        return result
+    except Exception:
+        return None
+

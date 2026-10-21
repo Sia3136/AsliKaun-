@@ -33,6 +33,7 @@ export interface ReviewItem {
   behavior_axis?: string;
   quadrant?: string;
   reasons: string[];
+  safe_pause_info?: { is_moving?: boolean; speed_mph?: number | null; safe_pause_scheduled?: boolean; scheduled_state?: string };
 }
 
 interface ReviewQueueScreenProps {
@@ -52,6 +53,7 @@ export const ReviewQueueScreen: React.FC<ReviewQueueScreenProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'open' | 'resolved' | 'hardware'>('open');
   const [resolvingId, setResolvingId] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [resolutionNote, setResolutionNote] = useState<{ [key: number]: string }>({});
 
   // Sort reviews ordered by risk: challenge_at_safe_pause first, then step_up_check, then date
@@ -76,9 +78,12 @@ export const ReviewQueueScreen: React.FC<ReviewQueueScreenProps> = ({
     resolution: 'cleared' | 'confirmed_handoff' | 'needs_follow_up'
   ) => {
     setResolvingId(sessionId);
+    setActionError(null);
     try {
       const note = resolutionNote[sessionId] || `Resolved via Operations Console as ${resolution}`;
       await onResolveReview(sessionId, resolution, note);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to save review resolution.');
     } finally {
       setResolvingId(null);
     }
@@ -139,6 +144,7 @@ export const ReviewQueueScreen: React.FC<ReviewQueueScreenProps> = ({
       {/* Main Review Cases View */}
       {activeTab === 'open' && (
         <div className="space-y-4">
+          {actionError && <div role="alert" className="p-3 rounded-lg bg-[#ffdad6] text-[#ba1a1a] text-xs">{actionError}</div>}
           {openReviews.length === 0 ? (
             <div className="bg-white rounded-xl border border-[#e2e8f0] p-12 text-center shadow-2xs">
               <CheckCircle2 className="w-10 h-10 text-[#006947] mx-auto mb-3" />
@@ -150,8 +156,8 @@ export const ReviewQueueScreen: React.FC<ReviewQueueScreenProps> = ({
           ) : (
             openReviews.map((item, idx) => {
               const isHandoff = item.decision.includes('challenge');
-              const ctxScore = typeof item.context_score === 'number' ? item.context_score : 1.0;
-              const behScore = typeof item.behavior_score === 'number' ? item.behavior_score : 0.35;
+              const ctxScore = item.context_score;
+              const behScore = item.behavior_score;
               const isResolving = resolvingId === item.session_id;
 
               return (
@@ -187,29 +193,29 @@ export const ReviewQueueScreen: React.FC<ReviewQueueScreenProps> = ({
                     <div className="p-3 rounded-lg bg-[#f8f9ff] border border-[#e2e8f0]">
                       <span className="text-[10px] font-bold uppercase text-[#727785] block">CONTEXT CONTINUITY</span>
                       <div className="text-xl font-bold text-[#0b1c30] mt-0.5 tabular-nums">
-                        {(ctxScore * 100).toFixed(0)}%
+                        {ctxScore == null ? 'N/A' : `${(ctxScore * 100).toFixed(0)}%`}
                       </div>
                       <span className="text-[10px] font-medium text-[#565e74]">
-                        {ctxScore >= 0.6 ? 'Stable hardware lineage' : 'Altered device / zone'}
+                        {ctxScore == null ? 'No score recorded' : ctxScore >= 0.6 ? 'Stable hardware lineage' : 'Altered device / zone'}
                       </span>
                     </div>
 
                     <div className="p-3 rounded-lg bg-[#f8f9ff] border border-[#e2e8f0]">
                       <span className="text-[10px] font-bold uppercase text-[#727785] block">BEHAVIORAL CONTINUITY</span>
                       <div className={`text-xl font-bold mt-0.5 tabular-nums ${
-                        behScore < 0.6 ? 'text-[#ba1a1a]' : 'text-[#006947]'
+                        behScore == null || behScore < 0.6 ? 'text-[#ba1a1a]' : 'text-[#006947]'
                       }`}>
-                        {(behScore * 100).toFixed(0)}%
+                        {behScore == null ? 'N/A' : `${(behScore * 100).toFixed(0)}%`}
                       </div>
                       <span className="text-[10px] font-medium text-[#ba1a1a]">
-                        {behScore < 0.6 ? 'Severe motor cadence shift' : 'Biometrics consistent'}
+                        {behScore == null ? 'No score recorded' : behScore < 0.6 ? 'Behavior changed' : 'Behavior stable'}
                       </span>
                     </div>
 
                     <div className="p-3 rounded-lg bg-[#f8f9ff] border border-[#e2e8f0]">
                       <span className="text-[10px] font-bold uppercase text-[#727785] block">DECISION QUADRANT</span>
                       <div className="text-sm font-bold text-[#0058be] mt-1 font-mono uppercase">
-                        {item.quadrant || (isHandoff ? 'handoff_signature' : 'ambiguous')}
+                        {item.quadrant || 'unknown'}
                       </div>
                       <span className="text-[10px] text-[#565e74]">Two-Axis classification</span>
                     </div>
@@ -218,9 +224,9 @@ export const ReviewQueueScreen: React.FC<ReviewQueueScreenProps> = ({
                       <span className="text-[10px] font-bold uppercase text-[#727785] block">SAFETY TIMING GATE</span>
                       <div className="text-xs font-bold text-[#006947] mt-1 flex items-center gap-1">
                         <Lock className="w-3.5 h-3.5" />
-                        <span>Safe Pause Timing Verified</span>
+                        <span>{item.safe_pause_info?.safe_pause_scheduled ? 'Challenge queued until stop' : item.safe_pause_info?.scheduled_state === 'safe_stop_confirmed' ? 'Safe stop confirmed' : 'Safe pause state unknown'}</span>
                       </div>
-                      <span className="text-[10px] text-[#565e74]">No highway challenge</span>
+                      <span className="text-[10px] text-[#565e74]">{item.safe_pause_info?.speed_mph == null ? 'No speed telemetry recorded' : `Observed speed ${item.safe_pause_info.speed_mph} mph`}</span>
                     </div>
                   </div>
 

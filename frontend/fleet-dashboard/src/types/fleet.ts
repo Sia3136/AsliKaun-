@@ -1,6 +1,6 @@
 export type ShiftStatus = 'Active Trip' | 'On Break' | 'Off Duty' | 'Standby';
 
-export type RiskLevel = 'High Risk' | 'Medium Risk' | 'Low Risk' | 'Trusted';
+export type RiskLevel = 'High Risk' | 'Medium Risk' | 'Low Risk' | 'Trusted' | 'Unscored';
 
 export interface DriverRecord {
   id: string; // e.g., 'DRV-9042'
@@ -23,11 +23,13 @@ export interface DriverRecord {
   
   // Context Continuity
   contextScore: number; // 0 - 100
+  hasContextScore?: boolean;
   contextLabel: 'LOW BASELINE' | 'STABLE' | 'PRISTINE' | 'IMPOSSIBLE' | 'MODERATE';
   contextDetail: string; // e.g., 'Cell-tower radius offset +4.1km'
   
   // Behavioral Continuity
   behavioralScore: number; // 0 - 100
+  hasBehaviorScore?: boolean;
   behavioralLabel: 'CRITICAL' | 'NORMAL' | 'OPTIMAL' | 'UNSTABLE';
   behavioralDetail: string; // e.g., 'G-force delta incongruent'
   
@@ -54,6 +56,10 @@ export interface DriverRecord {
   anomalyFlags: string[];
   sessionFrozen?: boolean;
   livenessPending?: boolean;
+  signalScores?: Record<string, number>;
+  signalMetric?: 'p_value' | 'anomaly_score';
+  safePauseInfo?: { is_moving?: boolean; speed_mph?: number | null; safe_pause_scheduled?: boolean; scheduled_state?: string } | null;
+  adaptiveThreshold?: { threshold?: number; source?: string; sample_count?: number; note?: string } | null;
 }
 
 export type TabKey = 

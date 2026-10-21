@@ -12,7 +12,6 @@ import {
   Layers
 } from 'lucide-react';
 import { DriverRecord, TabKey, FilterCategory } from './types/fleet';
-import { INITIAL_DRIVERS } from './data/mockFleetData';
 import { Header } from './components/Header';
 import { NavigationTabs } from './components/NavigationTabs';
 import { StatCards } from './components/StatCards';
@@ -31,54 +30,6 @@ import { ReviewQueueScreen, ReviewItem } from './components/screens/ReviewQueueS
 import { ScenarioSimulatorScreen } from './components/screens/ScenarioSimulatorScreen';
 import { ModelPerformanceScreen } from './components/screens/ModelPerformanceScreen';
 import { AuditLogsScreen } from './components/screens/AuditLogsScreen';
-
-// Known fleet metadata dictionary to enrich API records with realistic vehicle & corridor data
-const DRIVER_METADATA: Record<string, Partial<DriverRecord>> = {
-  'rider-001': {
-    name: 'Aarav Sharma',
-    avatarFallback: 'AS',
-    avatarBg: 'bg-emerald-600',
-    vehicle: '2023 Hero Electric Nyx HX',
-    plate: 'MH 02 EV 0001',
-    imei: '862049104882101',
-    macAddress: 'F4:D4:88:AC:32:01',
-    carrier: 'Airtel IoT Fleet M2M',
-    location: { lat: 19.076, lng: 72.877, corridor: 'BKC Central Delivery Sector, Mumbai', speedMph: 0, heading: 90 },
-  },
-  'rider-014': {
-    name: 'Devika Nair',
-    avatarFallback: 'DN',
-    avatarBg: 'bg-blue-600',
-    vehicle: '2024 Ather 450X Gen 3',
-    plate: 'MH 03 EV 0014',
-    imei: '862049104882114',
-    macAddress: 'F4:D4:88:AC:32:14',
-    carrier: 'Jio Enterprise 5G',
-    location: { lat: 19.033, lng: 73.029, corridor: 'Vashi Palm Beach Corridor, Navi Mumbai', speedMph: 0, heading: 140 },
-  },
-  'rider-042': {
-    name: 'Marcus Vance',
-    avatarFallback: 'MV',
-    avatarBg: 'bg-amber-600',
-    vehicle: '2023 Tata Nexon EV Prime',
-    plate: 'MH 02 EK 9042',
-    imei: '862049104882109',
-    macAddress: 'F4:D4:88:AC:32:0B',
-    carrier: 'Jio Enterprise 5G (True 5G Fleet)',
-    location: { lat: 19.088, lng: 72.889, corridor: 'Western Express Highway, Bandra-Worli Sea Link Exit, Mumbai', speedMph: 0, heading: 182 },
-  },
-  'rider-088': {
-    name: 'Elena Rostova',
-    avatarFallback: 'ER',
-    avatarBg: 'bg-purple-600',
-    vehicle: '2023 Mahindra Treo Zor',
-    plate: 'TN 09 ER 0088',
-    imei: '862049104882188',
-    macAddress: 'F4:D4:88:AC:32:88',
-    carrier: 'Vi Business Fleet',
-    location: { lat: 13.082, lng: 80.270, corridor: 'Old Mahabalipuram Road (OMR), Chennai', speedMph: 0, heading: 210 },
-  },
-};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('fleet-monitor');
@@ -136,16 +87,21 @@ export default function App() {
 
   // Helper to map API drivers to DriverRecord
   const mapApiDrivers = useCallback((apiDrivers: any[]): DriverRecord[] => {
-    return apiDrivers.map((apiD: any, idx: number) => {
+    return apiDrivers.map((apiD: any) => {
       const id = apiD.driver_id;
-      const meta = DRIVER_METADATA[id] || {};
-      const ctxScore = typeof apiD.context_score === 'number' ? Math.round(apiD.context_score * 100) : 100;
-      const behScore = typeof apiD.behavior_score === 'number' ? Math.round(apiD.behavior_score * 100) : 88;
+      const telemetry = apiD.latest_telemetry || {};
+      const gps = telemetry.gps || null;
+      const ctxScore = typeof apiD.context_score === 'number' ? Math.round(apiD.context_score * 100) : 0;
+      const behScore = typeof apiD.behavior_score === 'number' ? Math.round(apiD.behavior_score * 100) : 0;
       const isHandoff = (apiD.decision || '').includes('challenge') || apiD.quadrant === 'handoff_signature';
       const isLegit = apiD.quadrant === 'legit_change';
       const isAmbiguous = apiD.quadrant === 'ambiguous' || (apiD.decision || '').includes('step_up');
 
-      const riskCategory = isHandoff
+      const hasContextScore = typeof apiD.context_score === 'number';
+      const hasBehaviorScore = typeof apiD.behavior_score === 'number';
+      const riskCategory = !hasContextScore || !hasBehaviorScore
+        ? 'Unscored'
+        : isHandoff
         ? 'High Risk'
         : isAmbiguous
         ? 'Medium Risk'
@@ -153,13 +109,7 @@ export default function App() {
         ? 'Low Risk'
         : 'Trusted';
 
-      const riskScore = isHandoff
-        ? Math.round(88 + (1 - (apiD.behavior_score ?? 0.3)) * 10)
-        : isAmbiguous
-        ? 62
-        : isLegit
-        ? 28
-        : 12;
+      const riskScore = typeof apiD.behavior_score === 'number' ? Math.round((1 - apiD.behavior_score) * 100) : 0;
 
       const riskReason = (apiD.reasons && apiD.reasons.length > 0)
         ? apiD.reasons[0]
@@ -167,40 +117,46 @@ export default function App() {
 
       return {
         id,
-        name: meta.name || id.replace('-', ' ').toUpperCase(),
-        avatarFallback: meta.avatarFallback || id.slice(-2).toUpperCase(),
-        avatarBg: meta.avatarBg || (isHandoff ? 'bg-rose-600' : isLegit ? 'bg-blue-600' : 'bg-emerald-600'),
-        vehicle: meta.vehicle || '2023 Electric Delivery Scooter',
-        plate: meta.plate || `MH 02 EV ${1000 + idx}`,
-        shiftStatus: isHandoff ? 'Standby' : 'Active Trip',
-        shiftDuration: '3h 45m logged',
-        hardwareFrom: isLegit ? 'SM-S918B' : undefined,
-        hardwareTo: isLegit ? 'iPhone 16 Pro (Declared)' : 'Galaxy S23 Enterprise',
+        name: id,
+        avatarFallback: id.slice(-2).toUpperCase(),
+        avatarBg: isHandoff ? 'bg-rose-600' : isLegit ? 'bg-blue-600' : 'bg-emerald-600',
+        vehicle: 'Not reported by telemetry',
+        plate: 'Not reported',
+        shiftStatus: (telemetry.vehicle_speed_mph || gps?.speed || 0) > 2 ? 'Active Trip' : 'Standby',
+        shiftDuration: 'Not reported',
+        hardwareFrom: undefined,
+        hardwareTo: telemetry.device_id || 'Not reported',
         lineageType: isLegit ? 'swap' : 'single',
-        lineageStatusText: isLegit ? 'Pre-Declared Hardware Upgrade' : 'Knox Attestation Verified',
-        lineageStatusType: isLegit ? 'verified' : (isHandoff ? 'critical' : 'verified'),
+        lineageStatusText: telemetry.device_id || 'No device telemetry',
+        lineageStatusType: isLegit ? 'declared' : (isHandoff ? 'critical' : 'verified'),
         contextScore: ctxScore,
+        hasContextScore,
         contextLabel: ctxScore >= 60 ? 'STABLE' : 'LOW BASELINE',
-        contextDetail: ctxScore >= 60 ? 'Cell-tower lineage consistent' : 'Context shift: new device or zone',
+        contextDetail: [telemetry.device_id, telemetry.zone].filter(Boolean).join(' · ') || 'No context details reported',
         behavioralScore: behScore,
+        hasBehaviorScore,
         behavioralLabel: behScore >= 60 ? 'OPTIMAL' : 'CRITICAL',
-        behavioralDetail: behScore >= 60 ? 'Multi-modal motor rhythm verified' : 'Anomalous motor biometric divergence',
+        behavioralDetail: apiD.model_status || 'Backend score unavailable',
         riskScore,
         riskCategory,
         riskReason,
         recommendedAction: isHandoff ? 'Investigate' : isLegit ? 'Review IMEI' : 'Telemetry',
-        imei: meta.imei || `8620491048821${idx}`,
-        macAddress: meta.macAddress || `F4:D4:88:AC:32:${idx < 10 ? '0' + idx : idx}`,
-        simSerial: `89910014103211100${idx}`,
-        carrier: meta.carrier || 'Jio Enterprise 5G Fleet',
-        location: meta.location || {
-          lat: 19.076 + idx * 0.01,
-          lng: 72.877 + idx * 0.01,
-          corridor: 'Mumbai Delivery Corridor West',
-          speedMph: 0,
-          heading: 90,
+        imei: 'Not reported',
+        macAddress: 'Not reported',
+        simSerial: 'Not reported',
+        carrier: 'Not reported',
+        location: {
+          lat: typeof gps?.lat === 'number' ? gps.lat : Number.NaN,
+          lng: typeof gps?.lng === 'number' ? gps.lng : Number.NaN,
+          corridor: telemetry.zone || (gps ? 'GPS position reported' : 'No GPS position reported'),
+          speedMph: telemetry.vehicle_speed_mph ?? gps?.speed ?? 0,
+          heading: gps?.heading ?? 0,
         },
         anomalyFlags: apiD.reasons || [],
+        signalScores: apiD.signals || {},
+        signalMetric: apiD.model_status === 'per_rider_conformal_fusion' ? 'p_value' : 'anomaly_score',
+        safePauseInfo: apiD.safe_pause_info || null,
+        adaptiveThreshold: apiD.threshold_info || null,
       };
     });
   }, []);
@@ -247,6 +203,8 @@ export default function App() {
       if (reviewRes.ok) {
         const reviewData = await reviewRes.json();
         setReviewItems(reviewData.items || reviewData.reviews || []);
+      } else {
+        throw new Error(`Failed to load review queue (HTTP ${reviewRes.status})`);
       }
 
       setIsBackendConnected(true);
@@ -256,8 +214,8 @@ export default function App() {
       setIsBackendConnected(false);
       setBackendError(err.message || 'Unable to connect to FastAPI backend at /v1/fleet/scores');
 
-      // Seamless fallback to seed drivers if backend is offline so demo is never broken
-      setDrivers(INITIAL_DRIVERS);
+      setDrivers([]);
+      setReviewItems([]);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -298,14 +256,7 @@ export default function App() {
       await fetchFleetData();
     } catch (e: any) {
       console.error('Resolve error:', e);
-      // Optimistic update in UI
-      setReviewItems((prev) =>
-        prev.map((r) =>
-          r.session_id === sessionId
-            ? { ...r, status: 'resolved', resolution, reviewer_note: note }
-            : r
-        )
-      );
+      throw e;
     }
   };
 
@@ -423,6 +374,7 @@ export default function App() {
   const highRiskCount = drivers.filter((d) => d.riskCategory === 'High Risk').length;
   const newHardwareCount = drivers.filter((d) => d.lineageType === 'swap').length;
   const openReviewCount = reviewItems.filter((r) => r.status === 'open').length;
+  const scoredDrivers = drivers.filter((d) => d.hasContextScore !== false && d.hasBehaviorScore !== false);
 
   return (
     <div className="min-h-screen bg-[#f8f9ff] text-[#0b1c30] flex flex-col font-sans selection:bg-[#eff4ff] selection:text-[#0058be]">
@@ -433,7 +385,7 @@ export default function App() {
           const found = drivers.find((d) => d.id === id);
           if (found) setSelectedDriverForInvestigation(found);
         }}
-        unreadAlertsCount={openReviewCount || 4}
+        unreadAlertsCount={openReviewCount}
       />
 
       {/* Backend Status Notification Strip */}
@@ -480,7 +432,7 @@ export default function App() {
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         investigationCount={highRiskCount}
-        reviewQueueCount={openReviewCount || newHardwareCount}
+              reviewQueueCount={openReviewCount}
       />
 
       {/* Main Workspace Body */}
@@ -545,7 +497,7 @@ export default function App() {
 
                 {/* Two-Axis Trust Quadrant Plane (Item 2) */}
                 <TwoAxisQuadrantView
-                  drivers={drivers}
+                  drivers={scoredDrivers}
                   selectedDriverId={selectedDriverForInvestigation?.id}
                   onSelectDriver={(driver) => setSelectedDriverForInvestigation(driver)}
                   onRefresh={fetchFleetData}
