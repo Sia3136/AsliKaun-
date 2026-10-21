@@ -1963,25 +1963,54 @@ footer {
   .auth-card h2 { font-size: 28px; }
 }
 
-/* Auth and dashboard are product pages after the public landing page. */
+/* Keep Auth shell in sleek black cyber-defense theme matching the landing page */
 .auth-shell {
-  --auth-bg: #f4f6fb;
-  --auth-panel: #fff;
-  --auth-line: rgba(24, 30, 48, .12);
-  --auth-copy: #596176;
-  color: #171a27;
-  background: radial-gradient(circle at 18% 15%, rgba(139, 92, 246, .11), transparent 32%), radial-gradient(circle at 82% 88%, rgba(34, 211, 238, .12), transparent 28%), var(--auth-bg);
+  background: radial-gradient(circle at 18% 15%, rgba(99, 102, 241, 0.12), transparent 36%), radial-gradient(circle at 82% 88%, rgba(56, 189, 248, 0.08), transparent 32%), #08090e;
+  color: #f8fafc;
 }
-.auth-brand { color: #171a27; }
-.auth-story h1, .auth-card h2 { color: #171a27; }
-.auth-story-copy > p { color: #596176; }
-.auth-stats div { background: rgba(255, 255, 255, .78); box-shadow: 0 12px 30px rgba(30, 38, 65, .05); }
-.auth-stats span, .auth-footnote, .auth-legal { color: #747b8e; }
-.auth-home-link, .auth-intro, .auth-switch { color: #626a7d; }
-.auth-fields label { color: #303649; }
-.auth-fields input { background: rgba(255, 255, 255, .9); color: #171a27; box-shadow: 0 2px 5px rgba(20, 28, 48, .03); }
-.auth-demo-note strong { color: #34394b; }
-.auth-demo-note p { color: #6f778a; }
+.auth-card {
+  background: rgba(13, 16, 25, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 32px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+.auth-fields input {
+  background: rgba(18, 22, 34, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+}
+.auth-fields input:focus {
+  border-color: #6366f1;
+  background: rgba(22, 27, 42, 0.95);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+.auth-demo-note {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 10px;
+  padding: 14px;
+}
+.auth-demo-note strong {
+  color: #38bdf8;
+  font-size: 12px;
+}
+.auth-demo-note p {
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.auth-submit {
+  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 50%, #06b6d4 100%);
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+  color: #ffffff;
+  font-weight: 600;
+}
+.auth-submit:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+}
 
 /* ════════════════════════════════════════════════════════════════
    SCROLL-LINKED WORD REVEAL SECTION (Matches user reference)
