@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 
-export type Page = "Fleet map" | "Drift tracker" | "Review queue" | "Model health" | "Simulator";
+export type Page = "Continuity matrix" | "Drift tracker" | "Review queue" | "Model health" | "Simulator";
 
 export type Driver = {
   id: string;
@@ -372,8 +372,8 @@ function FleetMap({
         <div className="panel-head">
           <div>
             <span className="eyebrow">Live intelligence</span>
-            <h2>Continuity matrix</h2>
-            <p>Context and behavioral confidence across all active sessions</p>
+            <h2>Continuity matrix (C_ctx vs C_b)</h2>
+            <p>Real-time physical biometric continuity (Fisher Omnibus) vs hardware context integrity</p>
           </div>
           <div className="legend">
             <i className="green"/>Stable <i className="blue"/>Legit change <i className="amber"/>Ambiguous <i className="red"/>Handoff
@@ -457,7 +457,7 @@ function FleetMap({
         <div className="reason">
           <span className="ai-mark">AI</span>
           <div>
-            <b>Reason vector</b>
+            <b>Reason vector <span style={{ color: '#10b981', fontSize: '9.5px', fontWeight: 600, marginLeft: '6px' }}>Groq Qwen-3.8-27B</span></b>
             <p>{selected.reason}</p>
           </div>
         </div>
@@ -598,6 +598,20 @@ function DriftTracker({ onNotify }: { onNotify: (msg: string) => void }) {
   );
 }
 
+function formatTriageReason(reason: string): string {
+  if (!reason) return "Continuous telemetry evaluation.";
+  if (reason.includes("both axes moved")) {
+    return "Multi-Axis Variance: Device context & physical biometrics shifted jointly. Step-up challenge recommended.";
+  }
+  if (reason.includes("same device/zone/network, different behavior") || reason.includes("handoff signature")) {
+    return "Handoff Signature: Known device operating with divergent motor/touch biometrics. Person-level account handoff suspected.";
+  }
+  if (reason.includes("context changed but behavior didn't") || reason.includes("life change")) {
+    return "Legitimate Context Change: New phone or network detected with matching physical biometrics. Auto-rebaselined.";
+  }
+  return reason;
+}
+
 // --- COMPONENT: Review Queue ---
 function ReviewQueue({
   cases,
@@ -701,7 +715,7 @@ function ReviewQueue({
                   <small>{c.status}</small>
                 </div>
                 <p>
-                  {c.reason} <span style={{ color: "#84928d", marginLeft: "6px" }}>({c.speed})</span>
+                  {formatTriageReason(c.reason)} <span style={{ color: "#84928d", marginLeft: "6px" }}>({c.speed})</span>
                 </p>
                 <div className="case-actions">
                   <button className="secondary" onClick={() => onOpenCaseModal(c)}>
@@ -1175,7 +1189,7 @@ export type AuthUser = {
 
 // --- MAIN APPLICATION ---
 export default function App() {
-  const [page, setPage] = useState<Page>("Fleet map");
+  const [page, setPage] = useState<Page>("Continuity matrix");
   const [message, setMessage] = useState("");
   const [drivers, setDrivers] = useState<Driver[]>(INITIAL_DRIVERS);
   const [selectedDriver, setSelectedDriver] = useState<Driver>(INITIAL_DRIVERS[0]);
@@ -1472,7 +1486,7 @@ export default function App() {
   const safePauseCount = drivers.filter((d) => d.safeStatus.toLowerCase().includes("safe-pause") || d.safeStatus.toLowerCase().includes("0 mph")).length;
 
   const pages: [Page, string][] = [
-    ["Fleet map", "grid"],
+    ["Continuity matrix", "grid"],
     ["Drift tracker", "trend"],
     ["Review queue", "shield"],
     ["Model health", "chart"],
@@ -1580,7 +1594,7 @@ export default function App() {
         </div>
 
         <div className="page-content" key={page}>
-          {page === "Fleet map" ? (
+          {page === "Continuity matrix" ? (
             <FleetMap
               drivers={drivers}
               selected={selectedDriver}
@@ -1605,7 +1619,7 @@ export default function App() {
               onAddDriverToMatrix={(d) => {
                 setDrivers((current) => [d, ...current.filter((x) => x.id !== d.id)]);
                 setSelectedDriver(d);
-                setPage("Fleet map");
+                setPage("Continuity matrix");
                 notify(`Added simulated driver ${d.id} to Continuity Matrix`);
               }}
               onAddCaseToQueue={(c) => {

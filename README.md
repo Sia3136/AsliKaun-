@@ -9,14 +9,14 @@
 ## 1. Executive Overview & Problem Statement
 
 In the on-demand gig economy, account sharing and illicit profile subleasing pose severe public safety, insurance, and regulatory liabilities. Conventional platforms rely on **periodic mid-shift facial verification (selfie checks)**, which introduce two critical failures:
-1. **Safety Hazard**: Interrupting couriers mid-shift forces drivers to stop dangerously in traffic or look at their phone while operating vehicles.
-2. **High False-Positive Friction**: Legitimate life events—such as buying a new phone, changing carriers, or delivering in a new geographic zone—collapse classical single-score fraud models, triggering wrongful account suspensions.
+1. **Safety Hazard**: Interrupting couriers mid-shift forces drivers to stop dangerously in traffic or glance at their phones while operating motorcycles.
+2. **High False-Positive Friction**: Legitimate life events—such as buying a new phone, changing cellular carriers, or delivering in a new geographic zone—collapse classical single-score fraud models, triggering wrongful account suspensions.
 
 ### The AsliKaun Paradigm: The Two-Axis Decision Matrix
 
 AsliKaun decouples contextual environment indicators from intrinsic physical biometrics onto an orthogonal **Two-Axis Continuous Decision Matrix**:
-- **Context Continuity Axis ($0.0 \to 1.0$)**: Hardware Device ID, IP subnet, cellular carrier, and delivery zone.
-- **Behavioral Continuity Axis ($0.0 \to 1.0$)**: Multi-modal physical biometrics (touch swipe kinematics, vehicle vibration dynamics, order acceptance cadence, and courier delivery trajectories).
+- **Context Continuity Axis ($C_{ctx} \in [0.0, 1.0]$)**: Hardware Device ID (0.40 weight), IP subnet (0.30 weight), and geohash delivery zone (0.30 weight).
+- **Behavioral Continuity Axis ($C_b \in [0.0, 1.0]$)**: Multi-modal physical biometrics (touch stroke kinematics, vehicle vibration dynamics, order acceptance latency, and courier delivery kinematics) fused via Fisher's combined probability omnibus test.
 
 ```mermaid
 quadrantChart
@@ -35,23 +35,23 @@ quadrantChart
 
 ```mermaid
 flowchart TD
-    subgraph ClientLayer["Driver Client & Sensor Layer"]
-        SDK["AsliKaun Mobile SDK / Telemetry Client"]
-        TOUCH["Touch Strokes & Micro-Pressure"]
-        MOTION["3-Axis Accelerometer & Gyroscope"]
-        GPS["Delivery Trajectory & Stop Kinematics"]
-        OPS["Dispatch Acceptance Cadence"]
+    subgraph ClientLayer["1. Driver Client & Sensor Telemetry Layer"]
+        SDK["AsliKaun Mobile Telemetry SDK"]
+        TOUCH["Touch Strokes & Micro-Pressure (12-dim)"]
+        MOTION["3-Axis Accelerometer & Gyroscope (21-dim FFT)"]
+        GPS["Delivery Trajectory & Stop Kinematics (14-dim)"]
+        OPS["Dispatch Acceptance Latency (3-dim)"]
 
         TOUCH & MOTION & GPS & OPS --> SDK
     end
 
-    subgraph IngestionLayer["Backend Ingestion & Control Plane (FastAPI)"]
+    subgraph IngestionLayer["2. Backend Ingestion & Control Plane (FastAPI)"]
         SDK -->|POST /v1/sessions/ingest| INGEST["Ingest Controller & Auth Gate"]
-        INGEST --> DB[("SQLite State Store<br/>(Sessions, Drivers, Reviews, TimeSeries)")]
+        INGEST --> DB[("SQLite State Store (WAL)<br/>(Sessions, Drivers, Reviews, Anchors)")]
         INGEST --> BRIDGE["ML Bridge & In-Memory Bundle Cache"]
     end
 
-    subgraph MLLayer["AsliKaun Machine Learning Engine"]
+    subgraph MLLayer["3. AsliKaun Machine Learning Engine"]
         BRIDGE --> ADAPTERS["Schema Adapters & Kinematic Extractors"]
         
         ADAPTERS --> OP_MOD["Operational Isolation Forest"]
@@ -59,68 +59,70 @@ flowchart TD
         ADAPTERS --> TCH_MOD["Bidirectional GRU Triplet Encoder (Touch)"]
         ADAPTERS --> GPS_MOD["Delivery Kinematics Isolation Forest (ODIDMob)"]
 
-        OP_MOD & MOT_MOD & TCH_MOD & GPS_MOD --> CONFORMAL["Split-Conformal Calibration<br/>(Valid p-values under H₀)"]
+        OP_MOD & MOT_MOD & TCH_MOD & GPS_MOD --> CONFORMAL["Split-Conformal Calibration<br/>(Empirical p-values under H₀)"]
         CONFORMAL --> FUSION["Fisher's Omnibus Multimodal Fusion<br/>X² = -2 Σ ln(p_k) ~ χ²(2K)"]
-        FUSION --> MATRIX["Two-Axis Combiner Matrix<br/>(Context × Behavior)"]
+        FUSION --> MATRIX["Two-Axis Combiner Matrix<br/>(Context C_ctx × Behavior C_b)"]
 
         FUSION --> DUAL_TIME["Dual-Timescale Frozen Identity Anchor<br/>(Boiling-Frog Slow Takeover Detector)"]
-        FUSION --> GMM_RENTAL["2-Component GMM<br/>(Shift-Sharing Rental Detector)"]
+        FUSION --> GMM_RENTAL["2-Component Gaussian Mixture Model<br/>(Shift-Sharing Rental Detector)"]
         FUSION --> TIME_SERIES["EWMA & CUSUM Profiler<br/>(Concept Drift vs Step Jump)"]
     end
 
-    subgraph ResolutionLayer["Escalation, Safety & Fleet Intelligence"]
-        MATRIX --> SAFE_GATE{"Safe-Pause Gate<br/>Vehicle Speed < 1.5 m/s?"}
-        SAFE_GATE -->|Vehicle Moving| QUEUE_DEFER["Safe-Queue Deferral<br/>(Wait for Standstill)"]
-        SAFE_GATE -->|At Standstill| DISPATCH["Dispatch Verification Challenge"]
+    subgraph ResolutionLayer["4. Escalation, Safety & Operations Control"]
+        MATRIX --> SAFE_GATE{"Safe-Pause Gate<br/>Vehicle Speed > 2.0 mph?"}
+        SAFE_GATE -->|Vehicle Moving| QUEUE_DEFER["Safe-Queue Deferral<br/>(Suppressed until Standstill)"]
+        SAFE_GATE -->|At Standstill (0.0 mph)| DISPATCH["Dispatch Verification Challenge"]
 
-        DISPATCH --> GROQ["Groq Cloud LLM (Qwen-3.8-27B / GPT-OSS)<br/>Plain-Language Reason Vector"]
-        GROQ --> REVIEW_QUEUE["Admin Human Review Queue<br/>(Outbound Partner Webhook)"]
-        REVIEW_QUEUE --> DASHBOARD["Fleet Operations Command Dashboard<br/>(Real-Time Canvas & Radar Inspection)"]
+        DISPATCH --> GROQ["Groq Cloud LLM (Qwen-3.8-27B)<br/>Plain-Language Reason Vector"]
+        GROQ --> REVIEW_QUEUE["Admin Human Triage Queue<br/>(Outbound Webhook / SSE)"]
+        REVIEW_QUEUE --> DASHBOARD["Unified Cyber-Defense Admin Console<br/>(Continuity Matrix, Drift Tracker, Simulator)"]
     end
 ```
 
 ---
 
-## 3. Implementation Status Across Subsystems
+## 3. Subsystem Implementation & Architecture
 
 ### A. Machine Learning Engine (`ml/`)
-- **Trained Deep Metric Learning Models**:
-  - **Touch Gesture Kinematics**: 2-layer Bidirectional GRU with Triplet Margin Loss trained on H-MOG ($EER = \mathbf{0.352}$, $AUC = \mathbf{0.722}$ vs classical $0.396 / 0.648$).
-  - **Physical Motion Dynamics**: Bidirectional GRU Triplet Encoder trained on 20Hz resampled 2.5s vibration windows ($EER = \mathbf{0.277}$, $AUC = \mathbf{0.744}$).
-  - **ODIDMob Delivery Kinematics**: 14-dimensional courier route vector with 15s stop detection, directness, and speed percentiles ($EER = \mathbf{0.397}$).
-  - **Operational Cadence**: Diurnal periodic harmonic representation ($\sin$/$\cos$ 24h) + acceptance latency ($EER = \mathbf{0.256}$).
-- **Multimodal Fisher Fusion**:
-  - Combines independent conformal non-conformity p-values via Fisher's combined $\chi^2$ test.
+- **Trained Deep Metric Learning Encoders**:
+  - **Touch Gesture Kinematics** (`ml/models/touch_triplet.py`): 2-layer Bidirectional GRU with Triplet Margin Loss trained on H-MOG ($EER = \mathbf{0.352}$, $AUC = \mathbf{0.722}$ vs classical autoencoders $0.481$). Captures stroke velocity, curvature, and pressure dynamics.
+  - **Physical Motion Dynamics** (`ml/models/motion_triplet.py`): Bidirectional GRU Triplet Encoder trained on 20Hz resampled 2.5s vibration windows ($EER = \mathbf{0.277}$, $AUC = \mathbf{0.744}$). Extracts 21-dim FFT spectral features and jerk cross-correlations to isolate unique vehicle mount and scooter engine signatures.
+  - **GPS Delivery Kinematics** (`ml/inference/schema_adapters.py`): 14-dimensional courier route vector capturing stop-time ratios, route directness, and speed percentiles ($EER = \mathbf{0.397}$).
+  - **Operational Cadence** (`ml/features/operational_features.py`): Diurnal harmonic representation ($\sin$/$\cos$ 24h) + order acceptance latency ($EER = \mathbf{0.256}$).
+- **Statistical Multimodal Fusion & Calibration**:
+  - Independent non-conformity p-values combined via Fisher's Combined Probability Test ($\chi^2 = -2 \sum \ln(p_k)$).
   - Achieves **Pooled EER: 0.160**, **Pooled AUC: 0.922**, and **Mean Per-Rider EER: 0.114** [95% CI: 0.092, 0.140].
-- **Industry-Grade Capabilities Implemented & Verified**:
-  - **Empirical Bayes Threshold Calibration**: Smooth credibility shrinkage ($w_n = \frac{n}{n+10}$) blending personal empirical quantiles with population priors for $5 \le n < 99$.
-  - **Persistent Model Bundle Cache**: Disk persistence in `ml/weights/bundles/<driver_id>.pkl` with startup pre-warming in **<10ms** per driver.
-  - **Time-Series Behavioral Profiler**: Dual-rate EWMA smoothing ($\alpha = 0.15$) and CUSUM change detection differentiating gradual habit evolution from illicit step jumps ($|\Delta| \ge 0.35$).
-  - **Adversarial Red-Team Defenses**: Frozen Identity Anchor halting slow-drift attackers at median **36 sessions**; GMM 2-component BIC clustering ($\Delta\text{BIC} = -338.0$) catching split shifts.
-  - **Explainability**: Live Groq Cloud API integration generating human-readable Reason Vectors in **~300ms**.
+  - **Empirical Bayes Threshold Calibration**: Smooth credibility shrinkage ($w_n = \frac{n}{n+10}$) blending driver empirical quantiles with population priors.
+- **Adversarial Red-Team Defenses**:
+  - **Dual-Timescale Baseline (Frozen Anchor)**: Pinned to verified onboarding identity, accumulating directional drift deficit ($\sum \max(0, \text{Anchor\_Mean} - \text{Score})$) to halt slow-drift attackers at a median of **36 sessions** (0/15 pairs censored).
+  - **GMM Shift-Rental Detection**: 2-component Gaussian Mixture Model ($\Delta\text{BIC} = -338.0$) catching alternating 12-hour driver split shifts.
+- **Explainability**:
+  - **Groq Cloud Integration** (`ml/llm/reason_vector.py`): Live inference with `qwen/qwen3.8-27b` generating plain-language, non-accusatory factor attributions in **~300ms** with deterministic template fallbacks.
 
 ### B. Backend Control Plane (`backend/`)
-- **FastAPI REST API**: High-throughput asynchronous endpoints with Pydantic schema validation.
-  - `POST /v1/sessions/ingest`: Telemetry ingestion and real-time multi-modal evaluation.
-  - `GET /v1/drivers/{driver_id}/score`: Real-time driver health and quadrant status.
-  - `GET /v1/fleet/scores`: Fleet-wide distribution matrix.
-  - `POST /v1/drivers/{driver_id}/declare-change`: Pre-declared device or zone updates.
-  - `GET /v1/reviews/pending`: Administrative human escalation queue.
-  - `POST /v1/reviews/{review_id}/resolve`: Auditor resolution endpoint.
-- **State Store & Resilience**:
-  - SQLite persistence (`aslikaun.db`) tracking sessions, baseline states, audit trails, and drift time-series (`drivers.timeseries_json`).
-  - Safe-pause gate suppressing challenges when vehicle velocity exceeds $1.5\text{ m/s}$.
-  - Token-based RBAC security protecting driver declarations and administrative operations.
-  - 100% regression and unit test coverage in `backend/tests/test_api.py`.
+- **FastAPI 0.115 Async REST & SSE Service**:
+  - `POST /v1/sessions/ingest`: Telemetry ingestion, real-time multi-modal evaluation, and safe-pause scheduling.
+  - `GET /v1/fleet/scores`: Real-time fleet-wide coordinate positioning for the Continuity Matrix.
+  - `GET /v1/review-queue`: Triage queue for human operations auditors.
+  - `POST /v1/review-queue/{session_id}/resolve`: Auditor resolution and anchor re-baselining.
+  - `GET /v1/events`: Server-Sent Events (SSE) broadcasting live ingest, drift alerts, and resolutions.
+- **Resilience & Storage**:
+  - High-performance SQLite database in WAL mode (`aslikaun.db`) with 30-day raw telemetry payload purging.
+  - Startup pre-warming for persisted per-driver `RiderModelBundle` weights.
+  - Strict pause-aware speed gate suppressing verification challenges when velocity exceeds $2.0\text{ mph}$ ($0.9\text{ m/s}$).
 
-### C. Frontend Interfaces (`frontend/`)
-- **Fleet Operations Command Dashboard** (`frontend/index.html`, `frontend/app.js`):
-  - **Two-Axis Scatter Canvas**: Real-time interactive quadrant matrix displaying fleet positioning.
-  - **Driver Profile Modal**: Deep-dive telemetry inspection with multi-modal radar, drift charts, and historical p-value distributions.
-  - **Live Alert Drawer**: Urgent escalated handoffs with plain-language Reason Vectors and one-click resolution.
-  - **Interactive Threat Simulator**: Live simulation of immediate handoffs, boiling-frog attacks, split-shift rentals, and legitimate phone upgrades.
-- **Client Telemetry SDK** (`frontend/aslikaun-sdk.js`):
-  - In-browser and mobile-friendly telemetry buffer gathering stroke vectors, device orientation, and delivery stop intervals with zero sensitive PII leakage.
+### C. Frontend Architecture (`frontend/`)
+- **Unified Sleek Cyber-Defense Aesthetic**:
+  - A cohesive, high-contrast dark theme (`#08090d` background, glassmorphic panels `#0e121e`, crisp glowing borders) across all routes.
+- **Public Product Experience** (`frontend/src/`):
+  - **Architecture Stack**: 6 authentic, code-rendered vector UI algorithmic visualizers illustrating the Two-Axis Combiner, Dual-Timescale Anchor, Safe-Pause interlock, and Groq Reason Vectors.
+  - **Streamlined Admin Auth** (`/auth`): Direct, high-contrast **"Log in as Fleet Admin"** button for frictionless access with pre-configured credentials (`admin@aslikaun.ai` / `aslikaun`).
+- **Enterprise Operations Console** (`frontend/admin-operations/`):
+  - **Continuity Matrix ($C_{ctx}$ vs $C_b$)**: Interactive Cartesian coordinate plane displaying active driver sessions mapped across the 4 quadrants with real-time biometric radar and safe-pause status.
+  - **Dual-Timescale Drift Tracker**: Interactive longitudinal timeline comparing the Frozen Anchor against the decaying fast EWMA curve with automated breach triggers.
+  - **Operations Triage Queue**: Executive-level incident triage cards with automated plain-language translation of multi-axis variances.
+  - **Model Health & Fairness Monitor**: Live display of benchmark AUCs (Touch 0.722, Motion 0.780, Fisher 0.921), cohort fairness variances (<1.4%), and uniform conformal p-value distributions.
+  - **Adversarial Sandbox Simulator**: Interactive harness to inject 6 synthetic attacks and legitimate transitions into the scoring pipeline (Lazy Renter, Slow Drift, Split Shift, Copycat, Phone Upgrade, Cold Start).
 
 ---
 
@@ -132,79 +134,82 @@ All benchmark metrics are experimentally verified against real-world datasets (*
 | :--- | :---: | :---: | :--- |
 | **Touch Biometrics (H-MOG)** | EER: 0.396 \| AUC: 0.648 | **EER: 0.352 \| AUC: 0.722** | **+11.1% EER reduction**, +11.4% AUC gain |
 | **Motion Biometrics (H-MOG)** | EER: 0.440 \| AUC: 0.570 | **EER: 0.277 \| AUC: 0.744** | **+37.0% EER reduction**, +30.5% AUC gain |
-| **GPS Kinematics (ODIDMob)** | EER: 0.409 (GRU) | **EER: 0.397 (14-dim IF)** | Optimal tabular kinematics retained |
-| **Multimodal Fisher Fusion** | EER: 0.256 – 0.440 | **EER: 0.160 \| AUC: 0.922** | **Mean rider EER: 0.114** [0.092, 0.140] |
-| **Immediate Handoff Latency** | — | **0 Sessions** (Immediate) | Caught on session 1 in Quadrant 3 |
+| **GPS Kinematics (ODIDMob)** | EER: 0.409 (Sequence GRU) | **EER: 0.397 (14-dim IF)** | Superior tabular courier route modeling |
+| **Multimodal Fisher Fusion** | EER: 0.256 – 0.440 | **EER: 0.160 \| AUC: 0.922** | **Mean per-rider EER: 0.114** [0.092, 0.140] |
+| **Immediate Handoff Latency** | — | **0 Sessions** (Immediate) | Flagged on Session 1 in Quadrant 3 |
 | **Boiling-Frog Drift Latency** | Censored (>100 sessions) | **Median: 36 Sessions** | 0/15 test pairs censored |
 | **Split-Rental GMM Detection** | BIC: +200.7 (1-comp) | **BIC: -137.3 (2-comp)** | $\Delta\text{BIC} = -338.0$ (bimodal split detected) |
 | **Groq Reason Vector Latency** | — | **~300 ms** | Live Qwen-3.8-27B cloud generation |
 
 ---
 
-## 5. Future Scope & Roadmap
+## 5. Quickstart & Local Execution
 
-```mermaid
-timeline
-    title AsliKaun Research & Engineering Roadmap
-    Phase 1 (Completed) : Real-Dataset Pretrained Encoders : Conformal Prediction & Fisher Fusion : Two-Axis Combiner & Safe-Pause Gate : Persistent Bundle Cache & Time-Series Profiler
-    Phase 2 (Near-Term) : Edge On-Device Inference (ONNX/TFLite) : Offline Telemetry Buffering : Self-Calibrating Motion Anchor
-    Phase 3 (Medium-Term) : Federated Split-Learning : Differential Privacy Guarantees : Zero-Knowledge Biometric Proofs (ZK-SNARKs)
-    Phase 4 (Long-Term) : Decentralized Syndicate Detection : Cross-Platform Identity Attestation : Continuous Fleet-Wide Graph Analytics
-```
-
-1. **Edge On-Device Inference (ONNX / TFLite)**:
-   Export Bidirectional GRU triplet encoders to quantized mobile runtimes. Biometric feature extraction runs locally on the driver's device, transmitting only 128-byte embeddings over cellular networks to preserve bandwidth and privacy.
-2. **Federated Split-Learning**:
-   Train and refine per-driver behavioral centroids locally on mobile devices without raw accelerometer or stroke data ever leaving the handset, providing formal Differential Privacy guarantees.
-3. **Zero-Knowledge Identity Verification (ZK-SNARKs)**:
-   Enable drivers to prove biometric continuity across multiple gig platforms (e.g. Uber, DoorDash, Grab) simultaneously without sharing underlying biometric templates or exposing private trip history.
-4. **Cross-Fleet Threat Intelligence**:
-   Graph-based detection of coordinated account-rental rings and illegal broker syndicates operating across multiple delivery services.
-
----
-
-## 6. Quickstart & How to Run
-
-### 1. Prerequisites & Installation
-Ensure Python 3.10+ is installed. Clone the repository and install all dependencies:
+### 1. Installation
+Ensure Python 3.10+ and Node.js 18+ are installed.
 ```powershell
+# Clone the repository
+git clone https://github.com/krupam26/Hackforge_CaseBlitz.git
+cd Hackforge_CaseBlitz
+
+# Install Python backend & ML dependencies
 python -m pip install -r requirements.txt
+
+# Install frontend dependencies
+cd frontend
+npm install
+cd ..
 ```
 
-### 2. Start the FastAPI Service & Live Dashboard
-From the repository root:
-```powershell
-python -m uvicorn backend.app.main:app --reload --port 8000
+### 2. Configure Environment (.env)
+Create a `.env` file in the project root:
+```env
+# Optional Groq Cloud Key for real-time natural language reason vectors
+GROQ_API_KEY="your-groq-api-key-here"
+REASON_VECTOR_GROQ_MODEL="qwen/qwen3.8-27b"
+
+# Admin Console Credentials
+ASLIKAUN_ADMIN_USERNAME="admin@aslikaun.ai"
+ASLIKAUN_ADMIN_PASSWORD="aslikaun"
+ASLIKAUN_TOKEN_SECRET="aslikaun-production-secure-token-secret-key-32chars"
 ```
-- **Fleet Command Dashboard**: [http://localhost:8000/dashboard/](http://localhost:8000/dashboard/)
-- **Interactive Swagger Documentation**: [http://localhost:8000/docs](http://localhost:8000/docs)
 
-### 3. Run All Automated Verification Suites
+### 3. Launch Services
+
+**Terminal 1 — Backend API Service:**
+```powershell
+python run_server.py
+```
+*Backend runs at `http://127.0.0.1:8000` (Swagger docs available at `http://127.0.0.1:8000/docs`).*
+
+**Terminal 2 — Frontend Dev Server:**
+```powershell
+cd frontend
+npm run dev
+```
+*Frontend runs at `http://localhost:3000`.*
+
+### 4. Direct Operational Links
+* **Landing Page**: [http://localhost:3000/](http://localhost:3000/)
+* **Admin Login**: [http://localhost:3000/auth](http://localhost:3000/auth) *(Click "Log in as Fleet Admin" for instant access)*
+* **Admin Operations Dashboard**: [http://localhost:3000/fleet-dashboard.html](http://localhost:3000/fleet-dashboard.html)
+
+### 5. Automated Verification Suites
 
 ```powershell
-# Run the 4 industry-grade capabilities verification suite (100% pass)
-python -m pytest tests/test_industry_grade_ml.py -v
-
-# Run backend API regression suite (100% pass)
+# Run the complete backend test suite (6/6 passing)
 python -m pytest backend/tests/test_api.py -v
 
-# Verify Two-Axis Combiner across all 4 quadrants
-python ml/scripts/test_combiner.py
-
-# Verify multimodal Fisher fusion benchmark (reproduces EER 0.160 / AUC 0.922)
-python ml/scripts/evaluate_fusion.py
-
-# Verify adversarial red-team defenses (boiling-frog, split-rental, legit changes)
-python ml/scripts/test_redteam.py
-
-# Verify Touch Triplet Encoder on H-MOG holdout pool
-python ml/scripts/evaluate_touch_holdout.py
+# Verify frontend TypeScript types and build bundle
+cd frontend
+npm run lint
+npm run build
 ```
 
 ---
 
-## 7. Security & Privacy Audit Verification
+## 6. Security, Privacy & Safety Architecture
 
-- **Zero Information Leakage**: No telemetry sessions, database entries, or API logs contain unhashed passwords, credit card numbers, or raw face images.
-- **Clean Configuration**: API keys and environment configurations are loaded strictly via `.env` with `.env.example` templates committed. No credentials exist in the Git history.
-- **Safety-First Ergonomics**: AsliKaun enforces safe-pause gating, preventing verification modals while drivers are in motion.
+- **Zero PII Exposure**: No raw biometric waveforms, camera video, or sensitive passwords are saved in database tables or logs.
+- **Safety Interlock**: Physical verification challenges are strictly deferred whenever the driver's vehicle is in motion (`speed > 2.0 mph`), protecting drivers from traffic accidents.
+- **Auditability**: Every decision, anchor re-baseline, and human review is logged with cryptographic session hashes and audit timestamps.

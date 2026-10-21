@@ -46,7 +46,7 @@ export default function App() {
   };
 
   if (isAuthPage) {
-    return <AuthPage initialMode={initialMode} />;
+    return <AuthPage />;
   }
 
   return (
