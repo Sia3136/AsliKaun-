@@ -145,7 +145,7 @@ class RiderModelBundle:
 
         return bundle
 
-    def score(self, session: dict, generate_reason: bool = True) -> dict:
+    def score(self, session: dict, generate_reason: bool = True, operational_phase: str | None = None) -> dict:
         """Returns the combiner's quadrant/decision/trust_score dict,
         plus `p_values` (per-signal, for the explanation/dashboard) and
         `reason_vector` (only populated when the decision escalates and
@@ -169,10 +169,23 @@ class RiderModelBundle:
                     "trust_score": None, "p_values": {}}
 
         beh = fisher_combine(p_values)
-        behavior_alpha = self.threshold_info["threshold"] if self.threshold_info else 0.29
+
+        # Operational phase resolution (transit relaxes for vibration, stationary tightens)
+        phase = operational_phase or session.get("operational_phase")
+        if not phase:
+            v_spd = float(session.get("vehicle_speed_mph") or 0.0)
+            phase = "transit" if v_spd > 2.0 else "full"
+
+        if self.threshold_info and "phase_thresholds" in self.threshold_info and phase in self.threshold_info["phase_thresholds"]:
+            behavior_alpha = float(self.threshold_info["phase_thresholds"][phase])
+        else:
+            behavior_alpha = float(self.threshold_info["threshold"]) if (self.threshold_info and "threshold" in self.threshold_info) else 0.29
+
         result = classify(ctx, beh, context_threshold=CONTEXT_THRESHOLD, behavior_alpha=behavior_alpha)
         result["p_values"] = p_values
         result["threshold_info"] = self.threshold_info
+        result["operational_phase"] = phase
+        result["calibrated_alpha"] = behavior_alpha
 
         if generate_reason and result["decision"] != "continue":
             reason = explain(session, result, p_values)

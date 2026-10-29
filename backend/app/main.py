@@ -1521,7 +1521,7 @@ def ingest_session(
             history_payloads = [decode_json(r["payload_json"], {}) for r in history_rows]
             history_payloads = [p for p in history_payloads if p]
             try:
-                real_model_eval = evaluate_session_with_real_models(body, history_payloads)
+                real_model_eval = evaluate_session_with_real_models(body, history_payloads, operational_phase=operational_phase)
             except Exception as e:
                 logger.warning("[main] evaluate_session_with_real_models errored (%s), falling back", e)
                 real_model_eval = None
@@ -1747,6 +1747,7 @@ def ingest_session(
             "baseline_status": "fast_baseline_updated" if update_fast else "fast_baseline_frozen",
             "timeseries_diagnostics": timeseries_diagnostics,
             "operational_phase": operational_phase,
+            "calibrated_alpha": calibrated_alpha,
             "threshold_info": threshold_data if threshold_data else None,
             "timestamp": body.timestamp.isoformat(),
             "safe_pause_info": safe_pause_info,

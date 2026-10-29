@@ -510,7 +510,7 @@ _BUNDLE_CACHE: dict[str, tuple[int, "RiderModelBundle"]] = {}
 BUNDLE_REFIT_EVERY_N_SESSIONS = 5
 
 
-def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict]) -> dict[str, Any] | None:
+def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict], operational_phase: str | None = None) -> dict[str, Any] | None:
     """Scores with the REAL validated trained models
     (ml/inference/rider_model_bundle.py — the ones that actually won on
     real H-MOG/ODIDMob data, see ml/README.md's Phase 2 results)
@@ -587,6 +587,7 @@ def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict]
                 except Exception as save_err:
                     logger.warning("Failed to save bundle to disk: %s", save_err)
 
+    resolved_phase = operational_phase or getattr(payload, "operational_phase", None)
     current_session = {
         "driver_id": getattr(payload, "driver_id", None),
         "session_id": "current",
@@ -598,10 +599,12 @@ def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict]
         "touch_events": payload.touch_events,
         "gps": payload.gps,
         "accept_latency_ms": payload.accept_latency_ms,
+        "vehicle_speed_mph": getattr(payload, "vehicle_speed_mph", None),
+        "operational_phase": resolved_phase,
     }
 
     try:
-        result = bundle.score(current_session, generate_reason=False)
+        result = bundle.score(current_session, generate_reason=False, operational_phase=resolved_phase)
     except Exception as e:
         logger.warning("RiderModelBundle.score failed (%s), falling back to heuristic", e)
         return None
