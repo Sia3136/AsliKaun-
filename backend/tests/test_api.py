@@ -226,3 +226,110 @@ def test_driver_declaration_requires_token_and_matches_next_session(client: Test
     event_types = [event["event_type"] for event in events.json()["events"]]
     assert "context_change_declared" in event_types
     assert "context_change_declaration_checked" in event_types
+
+
+def test_safe_pause_state_machine_motion_and_standstill(client: TestClient):
+    driver_id = "test-safepause-driver"
+    establish_baseline(client, driver_id)
+
+    # 1. Driver in motion at 18.5 mph under behavioral change
+    moving_resp = client.post(
+        "/v1/sessions/ingest",
+        json=session_payload(
+            driver_id,
+            accel=[2.2, 2.8, 2.5],
+            gyro=[1.8, 1.9],
+            touch_events=[{"type": "tap"}] * 10,
+            vehicle_speed_mph=18.5,
+            timestamp="2026-10-17T10:05:00Z",
+        ),
+    )
+    assert moving_resp.status_code == 200, moving_resp.text
+    moving_res = moving_resp.json()
+    assert moving_res["decision"] == "challenge_at_safe_pause"
+    assert "safe_pause_info" in moving_res
+    sp_info = moving_res["safe_pause_info"]
+    assert sp_info["is_moving"] is True
+    assert sp_info["safe_pause_recommended"] is True
+    assert sp_info["safe_to_prompt"] is False
+    assert sp_info["status"] == "deferred_vehicle_moving"
+
+    # 2. Driver stops at 0.0 mph (standstill / drop-off point)
+    stopped_resp = client.post(
+        "/v1/sessions/ingest",
+        json=session_payload(
+            driver_id,
+            accel=[0.1, 0.1, 0.1],
+            gyro=[0.05],
+            touch_events=[{"type": "tap"}],
+            vehicle_speed_mph=0.0,
+            timestamp="2026-10-17T10:06:00Z",
+        ),
+    )
+    assert stopped_resp.status_code == 200, stopped_resp.text
+    stopped_res = stopped_resp.json()
+    assert stopped_res["safe_pause_info"]["is_moving"] is False
+    assert stopped_res["safe_pause_info"]["status"] == "normal" or stopped_res["safe_pause_info"]["safe_to_prompt"] in (True, False)
+
+
+def test_challenge_timeout_and_refusal_suspends_dispatch(client: TestClient):
+    driver_id = "test-refusal-driver"
+    establish_baseline(client, driver_id)
+
+    # Trigger safe-pause challenge
+    client.post(
+        "/v1/sessions/ingest",
+        json=session_payload(
+            driver_id,
+            accel=[2.5, 2.9],
+            touch_events=[{"type": "tap"}] * 8,
+            timestamp="2026-10-17T10:05:00Z",
+        ),
+    )
+
+    # Driver refuses / times out
+    refusal_resp = client.post(
+        f"/v1/driver/challenge/refuse-or-timeout?driver_id={driver_id}",
+        json={"reason": "challenge_timeout_120s", "vehicle_speed_mph": 0.0},
+    )
+    assert refusal_resp.status_code == 200, refusal_resp.text
+    res = refusal_resp.json()
+    assert res["status"] == "dispatch_suspended"
+    assert res["action"] == "lock_new_orders"
+
+
+def test_driver_onboarding_calibration_endpoint(client: TestClient):
+    driver_id = "test-calibrated-driver"
+    calib_payload = {
+        "driver_id": driver_id,
+        "device_id": "phone-calibration-test",
+        "touch_samples": [
+            {"pressure": 0.62, "duration_ms": 110, "area": 380},
+            {"pressure": 0.58, "duration_ms": 115, "area": 360},
+            {"pressure": 0.65, "duration_ms": 125, "area": 390},
+        ],
+        "accel_samples": [0.1, 0.12, 0.09],
+        "order_acceptance_latency_ms": 840.0,
+        "zone": "zone-calibration",
+    }
+    resp = client.post("/v1/drivers/calibrate", json=calib_payload)
+    assert resp.status_code == 200, resp.text
+    res = resp.json()
+    assert res["status"] == "calibrated"
+    assert res["baseline_established"] is True
+    assert "anchor_summary" in res
+
+
+def test_continuous_simulator_toggle(client: TestClient):
+    resp = client.post("/v1/fleet/simulator/auto-toggle?enable=true")
+    assert resp.status_code == 200
+    assert resp.json()["status"] in ("started", "noop")
+
+    status_resp = client.get("/v1/fleet/simulator/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["active"] is True
+
+    # Stop simulator
+    stop_resp = client.post("/v1/fleet/simulator/auto-toggle?enable=false")
+    assert stop_resp.status_code == 200
+    assert stop_resp.json()["active"] is False

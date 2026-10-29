@@ -171,7 +171,15 @@ def extract_touch_features(payload: Any) -> dict[str, float | None]:
             "status": "unavailable_no_events",
         }
 
-    pressures = [float(t["pressure"]) for t in touch_events if "pressure" in t and t["pressure"] is not None]
+    pressures = []
+    for t in touch_events:
+        p = t.get("pressure")
+        if p is not None and p > 0 and p != 0.5:
+            pressures.append(float(p))
+        elif t.get("area") and float(t["area"]) > 0:
+            pressures.append(float(np.clip((float(t["area"]) - 150.0) / 750.0, 0.15, 0.95)))
+        elif p is not None:
+            pressures.append(float(p))
     intervals = []
     offsets = [float(t["t_offset_ms"]) for t in touch_events if "t_offset_ms" in t and t["t_offset_ms"] is not None]
     if len(offsets) > 1:
@@ -232,6 +240,9 @@ def extract_gps_features(payload: Any) -> dict[str, Any]:
         }
 
     speeds = [float(p["speed"]) for p in gps_points if "speed" in p and p["speed"] is not None]
+    veh_speed = getattr(payload, "vehicle_speed_mph", None)
+    if veh_speed is not None and veh_speed >= 0:
+        speeds.append(float(veh_speed))
     return {
         "gps_count": len(gps_points),
         "has_gps": True,

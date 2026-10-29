@@ -145,24 +145,41 @@
 
       // 3. Touch & Pointer Gesture Dynamics (captures mobile touch and desktop pointers with continuous paths)
       const onStart = (e) => {
-        const x = Math.round(e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0));
-        const y = Math.round(e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0));
-        const p = e.pressure !== undefined && e.pressure > 0 ? e.pressure : (e.touches && e.touches[0] && e.touches[0].force ? e.touches[0].force : 0.5);
+        const touch = e.touches && e.touches[0] ? e.touches[0] : null;
+        const x = Math.round(e.clientX ?? (touch ? touch.clientX : 0));
+        const y = Math.round(e.clientY ?? (touch ? touch.clientY : 0));
+
+        const rx = touch ? (touch.radiusX || 12) : ((e.width && e.width > 0) ? e.width / 2 : 12);
+        const ry = touch ? (touch.radiusY || 12) : ((e.height && e.height > 0) ? e.height / 2 : 12);
+        const contactArea = Number((Math.PI * rx * ry).toFixed(1));
+
+        // Use direct pressure if available; otherwise use normalized contact area as physical pressure proxy
+        let p = (e.pressure !== undefined && e.pressure > 0 && e.pressure !== 0.5)
+          ? e.pressure
+          : (touch && touch.force && touch.force > 0 ? touch.force : null);
+        if (!p) {
+          p = Math.min(0.95, Math.max(0.15, (contactArea - 150) / 750));
+        }
+
         this.state.lastTouchStart = {
           t: Date.now(),
           x,
           y,
           pressure: Number(p.toFixed(2)),
-          radius: e.radiusX || 10,
+          radiusX: rx,
+          radiusY: ry,
+          area: contactArea,
           path: [{ x, y, pressure: Number(p.toFixed(2)), t_offset_ms: 0 }],
         };
       };
 
       const onMove = (e) => {
         if (!this.state.lastTouchStart) return;
-        const x = Math.round(e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0));
-        const y = Math.round(e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0));
-        const p = e.pressure !== undefined && e.pressure > 0 ? e.pressure : 0.5;
+        const touch = e.touches && e.touches[0] ? e.touches[0] : null;
+        const x = Math.round(e.clientX ?? (touch ? touch.clientX : 0));
+        const y = Math.round(e.clientY ?? (touch ? touch.clientY : 0));
+
+        let p = (e.pressure !== undefined && e.pressure > 0) ? e.pressure : this.state.lastTouchStart.pressure;
         const tOffset = Date.now() - this.state.lastTouchStart.t;
         if (this.state.lastTouchStart.path.length < 30) {
           this.state.lastTouchStart.path.push({ x, y, pressure: Number(p.toFixed(2)), t_offset_ms: tOffset });
@@ -177,14 +194,25 @@
         const endX = lastPt ? lastPt.x : this.state.lastTouchStart.x;
         const endY = lastPt ? lastPt.y : this.state.lastTouchStart.y;
         const dist = Math.sqrt((endX - this.state.lastTouchStart.x) ** 2 + (endY - this.state.lastTouchStart.y) ** 2);
+        const velocity = Number((dist / duration).toFixed(3));
+
+        // Sample IMU micro-recoil (Z-axis vibration variance during tap impact)
+        let imuRecoilZ = 0;
+        if (this.state.accelBuffer.length >= 2) {
+          const recent = this.state.accelBuffer.slice(-5);
+          const zVals = recent.map((a) => (typeof a === 'object' && a.z !== undefined ? a.z : 0));
+          imuRecoilZ = Number((Math.max(...zVals) - Math.min(...zVals)).toFixed(3));
+        }
 
         this.state.touchBuffer.push({
           type: dist > 15 ? 'swipe' : 'tap',
           x: this.state.lastTouchStart.x,
           y: this.state.lastTouchStart.y,
           pressure: this.state.lastTouchStart.pressure,
-          area: Number((this.state.lastTouchStart.radius ** 2 * Math.PI).toFixed(1)),
+          area: this.state.lastTouchStart.area,
           duration_ms: duration,
+          velocity_px_ms: velocity,
+          imu_recoil_z: imuRecoilZ,
           t: this.state.lastTouchStart.t,
           path: this.state.lastTouchStart.path,
         });

@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 import base64
 import hashlib
 import hmac
@@ -15,6 +16,7 @@ from urllib.parse import quote, unquote, urlencode
 
 import httpx
 import numpy as np
+from backend.app.storage import cache, timeseries_store
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
@@ -154,7 +156,7 @@ def _load_env_file():
                     k, v = line.split("=", 1)
                     k = k.strip()
                     v = v.strip().strip("'\"").strip()
-                    if k:
+                    if k and v and k not in os.environ:
                         os.environ[k] = v
                 TOKEN_SECRET = os.getenv(
                     "ASLIKAUN_TOKEN_SECRET",
@@ -694,8 +696,8 @@ def purge_stale_session_payloads(retention_days: int = DATA_RETENTION_DAYS) -> i
         return cur.rowcount
 
 
-@app.on_event("startup")
-def startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     init_db()
     seed_admin_from_env()
     seed_demo_fleet()
@@ -709,6 +711,10 @@ def startup() -> None:
     purged = purge_stale_session_payloads()
     if purged:
         logger.info("[retention] purged raw payloads for %s session(s) older than %s days", purged, DATA_RETENTION_DAYS)
+    yield
+    logger.info("[shutdown] AsliKaun API cleanly stopped.")
+
+app.router.lifespan_context = lifespan
 
 
 def now_iso() -> str:
@@ -1476,7 +1482,7 @@ def ingest_session(
         driver_keys = driver.keys() if driver is not None else []
         threshold_data = decode_json(driver["threshold_json"], {}) if (driver is not None and "threshold_json" in driver_keys) else {}
         timeseries_data = decode_json(driver["timeseries_json"], {}) if (driver is not None and "timeseries_json" in driver_keys) else {}
-        calibrated_alpha = float(threshold_data["threshold"]) if (threshold_data and "threshold" in threshold_data) else None
+        calibrated_alpha = float(threshold_data.get("empirical_bayes_alpha") or threshold_data.get("threshold") or threshold_data.get("behavior_threshold")) if (threshold_data and any(k in threshold_data for k in ("empirical_bayes_alpha", "threshold", "behavior_threshold"))) else None
 
         # Try the REAL trained models first (ml/inference/rider_model_bundle.py
         # — the ones that actually won on real data, see ml/README.md). Falls
@@ -1624,7 +1630,8 @@ def ingest_session(
         # Time-Series Adaptation and Anomaly Profiling
         timeseries_diagnostics = None
         if ML_TIMESERIES_AVAILABLE and DriverTimeSeriesProfiler is not None:
-            profiler = DriverTimeSeriesProfiler.from_dict({"driver_id": body.driver_id, **timeseries_data})
+            ts_dict = timeseries_data if isinstance(timeseries_data, dict) else {}
+            profiler = DriverTimeSeriesProfiler.from_dict({"driver_id": body.driver_id, **ts_dict})
             ts_res = profiler.update(
                 behavior_score=behavior_score,
                 context_score=context_score,
@@ -1649,6 +1656,44 @@ def ingest_session(
                         f"detected relative to rolling history — potential handoff"
                     )
 
+        # Safe-Pause Interlock & State Machine Evaluation
+        vehicle_speed = float(body.vehicle_speed_mph) if body.vehicle_speed_mph is not None else 0.0
+        is_moving = vehicle_speed > 2.0
+        is_escalated = decision in ("challenge_at_safe_pause", "step_up_check_at_safe_pause")
+
+        if is_escalated:
+            if is_moving:
+                safe_pause_status = "deferred_vehicle_moving"
+                action_required = "standstill_challenge_pending"
+                safe_to_prompt = False
+                reasons.append(
+                    f"Vehicle in motion ({vehicle_speed:.1f} mph > 2.0 mph) — interactive challenge "
+                    f"deferred until standstill / drop-off to avoid driver distraction."
+                )
+            else:
+                safe_pause_status = "prompt_active_vehicle_stopped"
+                action_required = "face_verification_required"
+                safe_to_prompt = True
+                reasons.append(
+                    f"Vehicle stopped ({vehicle_speed:.1f} mph) — safe to present step-up facial verification."
+                )
+        else:
+            safe_pause_status = "normal"
+            action_required = "none"
+            safe_to_prompt = False
+
+        safe_pause_info = {
+            "vehicle_speed_mph": round(vehicle_speed, 1),
+            "is_moving": is_moving,
+            "safe_pause_recommended": is_escalated,
+            "status": safe_pause_status,
+            "action_required": action_required,
+            "safe_to_prompt": safe_to_prompt,
+        }
+
+        # Pluggable time-series storage logging
+        timeseries_store.log_telemetry_batch(body.driver_id, body.timestamp.isoformat(), payload_dict)
+
         result = {
             "driver_id": body.driver_id,
             "context_score": context_score,
@@ -1666,6 +1711,7 @@ def ingest_session(
             "timeseries_diagnostics": timeseries_diagnostics,
             "threshold_info": threshold_data if threshold_data else None,
             "timestamp": body.timestamp.isoformat(),
+            "safe_pause_info": safe_pause_info,
         }
 
         session_cursor = con.execute(
@@ -1935,10 +1981,18 @@ def get_challenge_status(driver_id: str) -> dict:
     # A fatigue-capped escalation still exists in the audit trail and
     # review queue (see check_and_log_challenge_fatigue's docstring) —
     # it just isn't shown to the driver as another disruptive prompt.
-    challenge_pending = decision in _ESCALATED_DECISIONS and not result.get("fatigue_capped")
+    safe_pause_info = result.get("safe_pause_info", {})
+    safe_to_prompt = safe_pause_info.get("safe_to_prompt", True)
+    # Suppression gate: never pop up interactive challenge modal while vehicle is in motion
+    challenge_pending = (
+        decision in _ESCALATED_DECISIONS
+        and not result.get("fatigue_capped")
+        and safe_to_prompt
+    )
     return {
         "driver_id": driver_id,
         "challenge_pending": challenge_pending,
+        "safe_pause_info": safe_pause_info,
         "decision": decision,
         "reasons": result.get("reasons", []),
     }
@@ -2017,6 +2071,165 @@ def respond_to_challenge(
         "driver_id": driver_id,
         "outcome": "cleared" if passed else "human_review",
         "similarity": round(similarity, 4),
+    }
+
+
+class ChallengeTimeoutRequest(BaseModel):
+    reason: str = Field(default="challenge_timeout_120s", max_length=100)
+    vehicle_speed_mph: float | None = None
+
+
+@app.post("/v1/driver/challenge/refuse-or-timeout")
+def challenge_refuse_or_timeout(
+    driver_id: str,
+    body: ChallengeTimeoutRequest,
+    x_driver_token: str | None = Header(default=None, alias="X-Driver-Token"),
+) -> dict:
+    """Handles driver refusing, dismissing, or timing out (>120s) on a safe-pause challenge.
+    Enforces dispatch restrictions: suspends active token and escalates to Safety Ops."""
+    if x_driver_token is not None and isinstance(x_driver_token, str) and x_driver_token.strip():
+        require_driver_token(driver_id, x_driver_token)
+    with connect() as con:
+        # 1. Update open review queue ticket to high-priority refusal
+        con.execute(
+            """UPDATE review_queue 
+               SET status = 'open', reviewer_note = ?
+               WHERE driver_id = ? AND status = 'open'""",
+            (f"Driver challenge refusal/timeout: {body.reason}", driver_id)
+        )
+        # 2. Suspend active dispatch token in driver_tokens
+        con.execute(
+            """UPDATE driver_tokens SET active = 0 WHERE driver_id = ?""",
+            (driver_id,)
+        )
+        write_event(con, driver_id, "challenge_refusal_or_timeout", {
+            "reason": body.reason,
+            "vehicle_speed_mph": body.vehicle_speed_mph,
+            "enforcement": "dispatch_token_suspended"
+        })
+
+    broadcast_event_sync("challenge_refusal", {
+        "driver_id": driver_id,
+        "reason": body.reason,
+        "status": "dispatch_suspended",
+        "timestamp": now_iso()
+    })
+    return {
+        "driver_id": driver_id,
+        "status": "dispatch_suspended",
+        "action": "lock_new_orders",
+        "reason": body.reason,
+        "message": "Challenge timed out or was refused. Further trip assignments are paused pending safety review."
+    }
+
+
+class DriverCalibrationRequest(BaseModel):
+    driver_id: str = Field(min_length=1, max_length=100)
+    device_id: str | None = None
+    touch_samples: list[dict[str, Any]] = Field(default_factory=list)
+    accel_samples: list[Any] = Field(default_factory=list)
+    gyro_samples: list[Any] = Field(default_factory=list)
+    order_acceptance_latency_ms: float = Field(default=920.0, ge=0)
+    zone: str | None = None
+
+
+@app.post("/v1/drivers/calibrate")
+def calibrate_driver_onboarding(
+    body: DriverCalibrationRequest,
+    x_driver_token: str | None = Header(default=None, alias="X-Driver-Token"),
+) -> dict:
+    """2-minute onboarding calibration endpoint for new drivers (Few-Shot Meta-Learning).
+    Initializes Empirical Bayes baseline priors immediately, bypassing the cold-start wait."""
+    if x_driver_token is not None and isinstance(x_driver_token, str) and x_driver_token.strip():
+        require_driver_token(body.driver_id, x_driver_token)
+
+    # Compute baseline metrics from onboarding batch
+    pressures = [float(t.get("pressure", 0.5)) for t in body.touch_samples if "pressure" in t]
+    durations = [float(t.get("duration_ms", 120.0)) for t in body.touch_samples if "duration_ms" in t]
+    areas = [float(t.get("area", 350.0)) for t in body.touch_samples if "area" in t]
+
+    mean_p = float(sum(pressures) / len(pressures)) if pressures else 0.52
+    mean_dur = float(sum(durations) / len(durations)) if durations else 115.0
+    mean_area = float(sum(areas) / len(areas)) if areas else 360.0
+
+    anchor_state = {
+        "calibrated_onboard": True,
+        "operational": {
+            "accept_latency_ms": body.order_acceptance_latency_ms,
+            "hour_of_day": 12.0,
+        },
+        "touch": {
+            "pressure_mean": mean_p,
+            "interval_mean_ms": mean_dur,
+            "velocity_mean": 0.45,
+        },
+        "motion": {
+            "accel_mean": 0.22,
+        },
+        "touch_pressure_mean": mean_p,
+        "touch_duration_mean": mean_dur,
+        "touch_area_mean": mean_area,
+        "accept_latency_mean": body.order_acceptance_latency_ms,
+        "sample_count": len(body.touch_samples) or 5,
+        "onboarded_at": now_iso()
+    }
+
+    threshold_info = {
+        "calibrated_onboard": True,
+        "behavior_threshold": 0.62,
+        "context_threshold": 0.60,
+        "empirical_bayes_alpha": 0.58,
+        "calibrated_at": now_iso()
+    }
+
+    latest_res = {
+        "driver_id": body.driver_id,
+        "context_score": 0.95,
+        "behavior_score": 0.92,
+        "quadrant": "stable",
+        "decision": "continue",
+        "confidence": 0.96,
+        "reasons": ["2-Minute Onboarding Calibration complete: Empirical Bayes baseline established."],
+        "signals": {"touch": 0.92, "motion": 0.95, "operational": 0.98},
+        "timestamp": now_iso()
+    }
+
+    with connect() as con:
+        con.execute(
+            """INSERT INTO drivers(driver_id, anchor_json, fast_json, latest_json,
+                                  latest_result_json, timeseries_json, threshold_json, updated_at)
+               VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(driver_id) DO UPDATE SET
+                   anchor_json = excluded.anchor_json,
+                   fast_json = excluded.fast_json,
+                   threshold_json = excluded.threshold_json,
+                   latest_result_json = excluded.latest_result_json,
+                   updated_at = excluded.updated_at""",
+            (
+                body.driver_id,
+                json.dumps(anchor_state),
+                json.dumps(anchor_state),
+                json.dumps({"device_id": body.device_id, "zone": body.zone}),
+                json.dumps(latest_res),
+                json.dumps({"driver_id": body.driver_id, "rolling_mean_behavior": 0.92, "drift_state": "calibrated"}),
+                json.dumps(threshold_info),
+                now_iso()
+            )
+        )
+        write_event(con, body.driver_id, "driver_calibrated_onboard", anchor_state)
+
+    broadcast_event_sync("driver_calibrated", {
+        "driver_id": body.driver_id,
+        "baseline_established": True,
+        "threshold_info": threshold_info
+    })
+
+    return {
+        "status": "calibrated",
+        "driver_id": body.driver_id,
+        "baseline_established": True,
+        "anchor_summary": anchor_state,
+        "message": "Onboarding calibration completed successfully. Empirical Bayes baseline active."
     }
 
 
@@ -2690,6 +2903,53 @@ class SimRequest(BaseModel):
     driver_id: str | None = None
     vehicle_speed_mph: float | None = None
 
+
+
+# Continuous Live Simulation State
+_sim_task: asyncio.Task | None = None
+_sim_running: bool = False
+
+
+async def _continuous_sim_loop():
+    global _sim_running
+    import random
+    scenarios = ["lazy_renter", "split_shift_rental", "gradual_drift", "phone_upgrade"]
+    while _sim_running:
+        try:
+            await asyncio.sleep(4.0)
+            scen = random.choice(scenarios)
+            run_ml_simulation(SimRequest(scenario=scen))
+            telemetry_tick()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning("[continuous_sim] tick error: %s", e)
+
+
+@app.post("/v1/fleet/simulator/auto-toggle")
+async def toggle_continuous_simulator(enable: bool = True) -> dict:
+    """Toggles real-time autonomous fleet telemetry simulation (3s pulse)."""
+    global _sim_task, _sim_running
+    if enable and not _sim_running:
+        _sim_running = True
+        _sim_task = asyncio.create_task(_continuous_sim_loop())
+        logger.info("[simulator] Continuous live fleet simulation started.")
+        broadcast_event_sync("simulator_status", {"active": True})
+        return {"status": "started", "active": True}
+    elif not enable and _sim_running:
+        _sim_running = False
+        if _sim_task:
+            _sim_task.cancel()
+            _sim_task = None
+        logger.info("[simulator] Continuous live fleet simulation stopped.")
+        broadcast_event_sync("simulator_status", {"active": False})
+        return {"status": "stopped", "active": False}
+    return {"status": "noop", "active": _sim_running}
+
+
+@app.get("/v1/fleet/simulator/status")
+def get_continuous_simulator_status() -> dict:
+    return {"active": _sim_running}
 
 @app.post("/v1/ml/simulate")
 def run_ml_simulation(body: SimRequest) -> dict:

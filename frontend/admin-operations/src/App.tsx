@@ -1197,6 +1197,7 @@ export default function App() {
   const [activeCaseModal, setActiveCaseModal] = useState<ReviewCase | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isAutoSimActive, setIsAutoSimActive] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   // Authenticated Operator State
@@ -1216,6 +1217,16 @@ export default function App() {
   const notify = (text: string) => {
     setMessage(text);
     window.setTimeout(() => setMessage(""), 2800);
+  };
+
+  const toggleAutoSimulator = async () => {
+    try {
+      const next = !isAutoSimActive;
+      setIsAutoSimActive(next);
+      await fetch(`/v1/fleet/simulator/auto-toggle?enable=${next}`, { method: "POST" });
+    } catch (e) {
+      console.warn("Simulator toggle failed:", e);
+    }
   };
 
   // Sync live scores from backend on mount or on user request
@@ -1344,8 +1355,39 @@ export default function App() {
       return;
     }
 
-    // 3. Ingest live fleet telemetry
+    // 3. Ingest live fleet telemetry & connect real-time SSE stream
     fetchLiveScores();
+
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource("/v1/events/stream");
+      eventSource.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          if (
+            parsed.event === "fleet_update" ||
+            parsed.event === "session_scored" ||
+            parsed.event === "review_resolved" ||
+            parsed.event === "challenge_refusal" ||
+            parsed.event === "driver_calibrated" ||
+            parsed.event === "telemetry_tick"
+          ) {
+            fetchLiveScores();
+          }
+          if (parsed.event === "simulator_status") {
+            setIsAutoSimActive(Boolean(parsed.data?.active));
+          }
+        } catch {}
+      };
+    } catch (e) {
+      console.warn("EventSource setup skipped:", e);
+    }
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
   }, []);
 
   // Fleet Map Actions
@@ -1526,13 +1568,23 @@ export default function App() {
 
         <div className="header-right">
           <button
+            className={`live-btn ${isAutoSimActive ? "active-pulse" : ""}`}
+            onClick={toggleAutoSimulator}
+            title="Toggle continuous autonomous telemetry simulation (every 4 seconds)"
+            style={isAutoSimActive ? { borderColor: "#10b981", color: "#10b981" } : undefined}
+          >
+            <i style={isAutoSimActive ? { background: "#10b981" } : undefined} />
+            {isAutoSimActive ? "Simulation Streaming" : "Stream Live Telemetry"}
+          </button>
+
+          <button
             className="live-btn"
             onClick={fetchLiveScores}
             disabled={isRefreshing}
             title="Click to refresh live fleet scores from backend"
           >
             <i/>
-            {isRefreshing ? "Syncing..." : "Live Ingest · 84 ms"}
+            {isRefreshing ? "Syncing..." : "Live Ingest"}
           </button>
 
           <button className="export" onClick={exportFleet}>

@@ -135,7 +135,11 @@ def touch_stroke_sequence_from_schema(session: dict) -> np.ndarray | None:
                 if len(path) >= 3:
                     angles = np.arctan2(np.diff(ys), np.diff(xs))
                     v[idx["curvature_std"]] = float(np.std(np.diff(angles)))
-                v[idx["pressure_mean"]] = float(np.mean(ps))
+                p_mean = float(np.mean(ps))
+                if (p_mean == 0.5 or p_mean == 0.0) and float(e.get("area", 0.0)) > 0:
+                    area = float(e.get("area", 0.0))
+                    p_mean = float(np.clip((area - 150.0) / 750.0, 0.15, 0.95))
+                v[idx["pressure_mean"]] = p_mean
                 v[idx["pressure_var"]] = float(np.var(ps))
                 v[idx["pressure_slope"]] = float((ps[-1] - ps[0]) / dt)
             except Exception:
