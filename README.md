@@ -1,33 +1,42 @@
 # AsliKaun — Continuous Identity Intelligence & Behavioral Biometrics
 
-> **Continuous multi-modal behavioral authentication and identity intelligence for delivery fleets and ride-hailing platforms.**
+> **Passive, continuous multi-modal behavioral authentication and identity intelligence for delivery fleets and ride-hailing platforms.**
 > 
-> *Eliminating unauthorized account sharing, subleasing ("rentals"), and driver substitutions without dangerous mid-shift selfie disruptions.*
+> *Eliminates unauthorized account sharing, "ghost rentals", and illicit driver substitutions without dangerous mid-shift selfie disruptions.*
 
 ---
 
-## 1. Executive Overview & Problem Statement
+## 1. Executive Summary & Problem Statement
 
-In the on-demand gig economy, account sharing and illicit profile subleasing pose severe public safety, insurance, and regulatory liabilities. Conventional platforms rely on **periodic mid-shift facial verification (selfie checks)**, which introduce two critical failures:
-1. **Safety Hazard**: Interrupting couriers mid-shift forces drivers to stop dangerously in traffic or glance at their phones while operating motorcycles.
-2. **High False-Positive Friction**: Legitimate life events—such as buying a new phone, changing cellular carriers, or delivering in a new geographic zone—collapse classical single-score fraud models, triggering wrongful account suspensions.
+In the on-demand gig economy, driver account sharing and illicit profile subleasing pose severe public safety, insurance, and regulatory liabilities. Conventional platforms rely on **periodic mid-shift facial verification (selfie checks)**, which introduce two systemic failure modes:
+1. **Critical Safety Hazard**: Mid-shift selfie prompts force couriers to stop dangerously in traffic or interact with mobile devices while riding motorcycles.
+2. **High False-Positive Friction**: Legitimate life events—such as purchasing a new phone, changing cellular network providers, or delivering in an adjacent zone—collapse classical single-score fraud models, triggering wrongful account suspensions.
 
-### The AsliKaun Paradigm: The Two-Axis Decision Matrix
+### The AsliKaun Paradigm: Two-Axis Continuous Decision Matrix
 
-AsliKaun decouples contextual environment indicators from intrinsic physical biometrics onto an orthogonal **Two-Axis Continuous Decision Matrix**:
+AsliKaun decouples environmental context indicators from intrinsic physical biometrics onto an orthogonal **Two-Axis Continuous Decision Matrix**:
 - **Context Continuity Axis ($C_{\text{ctx}} \in [0.0, 1.0]$)**: Hardware Device ID (0.40 weight), IP subnet (0.30 weight), and geohash delivery zone (0.30 weight).
-- **Behavioral Continuity Axis ($C_b \in [0.0, 1.0]$)**: Multi-modal physical biometrics (touch stroke kinematics, vehicle vibration dynamics, order acceptance latency, and courier delivery kinematics) fused via Fisher's combined probability omnibus test.
+- **Behavioral Continuity Axis ($C_b \in [0.0, 1.0]$)**: Multi-modal physical biometrics (touch stroke micro-kinematics, vehicle vibration dynamics, order acceptance latency, and courier delivery trajectories) fused via Fisher's omnibus test with conformal p-values.
 
 ```mermaid
 quadrantChart
-    title AsliKaun Two-Axis Decision Matrix
-    x-axis "Context Continuity (Device, IP, Zone) Low" --> "Context Continuity High"
-    y-axis "Behavioral Continuity Low" --> "Behavioral Continuity High"
-    quadrant-1 "STABLE (Quadrant 1): Normal Operation -> continue"
-    quadrant-2 "LEGIT_CHANGE (Quadrant 2): Phone Upgrade / New Zone -> silent rebaseline"
-    quadrant-3 "AMBIGUOUS (Quadrant 4): Context & Behavior Both Disrupted -> step_up_check"
-    quadrant-4 "HANDOFF_SIGNATURE (Quadrant 3): Same Device, New Driver -> challenge_at_safe_pause"
+    title Continuous Two-Axis Identity Matrix
+    x-axis "Low Context Continuity" --> "High Context Continuity"
+    y-axis "Low Behavioral Continuity" --> "High Behavioral Continuity"
+    quadrant-1 "Stable Operation"
+    quadrant-2 "Legitimate Life Change"
+    quadrant-3 "Ambiguous Anomaly"
+    quadrant-4 "Account Handoff Signature"
 ```
+
+### Executive Decision Matrix Specification
+
+| Quadrant | Coordinate Space | Real-World Courier Scenario | Telemetry Triggers | Platform Action | Safety & Compliance Protocol |
+| :--- | :---: | :--- | :--- | :---: | :--- |
+| **Q1: Stable Operation** | $C_{\text{ctx}} \ge 0.5$<br>$C_b \ge 0.5$ | Legitimate courier delivering on recognized device, carrier subnet, and normal zone. | Finger pressure, swipe curvature, and IMU FFT match enrolled profile. | **`continue`** | Zero courier friction. Background passive scoring continues uninterrupted. |
+| **Q2: Legitimate Change** | $C_{\text{ctx}} < 0.5$<br>$C_b \ge 0.5$ | Legitimate courier bought a new smartphone, swapped cellular SIM, or moved delivery zones. | Context shifts (new Device ID / IP), but physical biometrics perfectly match enrolled driver. | **`rebaseline`**<br>*(Silent)* | Context centroid safely updated without penalizing, challenging, or suspending honest driver. |
+| **Q3: Handoff Signature** | $C_{\text{ctx}} \ge 0.5$<br>$C_b < 0.5$ | Illicit account sharing / profile subleasing ("ghost rental"). Courier handed phone to an unregistered driver. | Same hardware device, but touch pressure, swipe dynamics, and driving jerk diverge. | **`challenge_at_safe_pause`** | **Safe-Pause Interlock:** Verification modal held until verified standstill ($v \le 2.0\text{ mph}$). |
+| **Q4: Ambiguous Anomaly** | $C_{\text{ctx}} < 0.5$<br>$C_b < 0.5$ | Device theft, account takeover, or complete multi-axis disruption. | Both hardware context and physical behavioral biometrics are severely anomalous. | **`step_up_check`** | Flagged in Admin Review Queue; dispatch paused pending multi-factor resolution. |
 
 ---
 
@@ -35,55 +44,55 @@ quadrantChart
 
 ```mermaid
 flowchart TD
-    subgraph ClientLayer["1. Driver Client & Sensor Telemetry Layer"]
-        SDK["AsliKaun Mobile Telemetry SDK"]
-        TOUCH["Touch Strokes & Micro-Pressure (12-dim)"]
-        MOTION["3-Axis Accelerometer & Gyroscope (21-dim FFT)"]
+    subgraph ClientLayer["1. Mobile Telemetry & Sensor Layer"]
+        SDK["AsliKaun Telemetry SDK"]
+        TOUCH["Touch Micro-Pressure & Kinematics"]
+        MOTION["3-Axis Accelerometer & Gyroscope FFT"]
         GPS["Adaptive Micro-Leg GPS Kinematics"]
-        OPS["Dispatch Acceptance Latency (3-dim)"]
+        OPS["Dispatch Response Latency"]
 
         TOUCH & MOTION & GPS & OPS --> SDK
     end
 
-    subgraph IngestionLayer["2. Backend Ingestion & Security Filter (FastAPI)"]
-        SDK -->|POST /v1/sessions/ingest| TOKEN_GATE{"Token & Rate Limiter<br/>X-Driver-Token"}
-        TOKEN_GATE -->|Pass| SENSOR_AUDIT["Adversarial Sensor Authenticity Analyzer<br/>(IMU LSB Entropy + Lagged Autocorrelation)"]
-        SENSOR_AUDIT -->|Authentic| PHASE_DETECTOR["Operational Phase Classifier<br/>(Transit vs Stationary vs Interaction)"]
-        SENSOR_AUDIT -->|Mock / Replay| ESCALATE_MOCK["Flag Injection & Safe Pause<br/>challenge_at_safe_pause"]
+    subgraph IngestionLayer["2. Backend Ingestion & Security Filter"]
+        SDK -->|"POST /v1/sessions/ingest"| TOKEN_GATE{"Token & Rate Limiter"}
+        TOKEN_GATE -->|Valid Token| SENSOR_AUDIT["Adversarial Sensor Authenticity Analyzer"]
+        SENSOR_AUDIT -->|Authentic Telemetry| PHASE_DETECTOR["Operational Phase Classifier"]
+        SENSOR_AUDIT -->|Mock or Replay Detected| ESCALATE_MOCK["Flag Injection & Safe Pause"]
     end
 
-    subgraph MLLayer["3. AsliKaun Machine Learning Engine"]
+    subgraph MLLayer["3. Machine Learning Inference Engine"]
         PHASE_DETECTOR --> ML_BRIDGE["ML Bridge & In-Memory Bundle Cache"]
-        ML_BRIDGE --> OP_MOD["Operational Cadence Isolation Forest"]
-        ML_BRIDGE --> MOT_MOD["Bidirectional GRU Triplet Encoder (Motion)"]
-        ML_BRIDGE --> TCH_MOD["Bidirectional GRU Triplet Encoder (Touch)"]
-        ML_BRIDGE --> GPS_MOD["Kinematic Micro-Leg Delivery Encoder (ODIDMob)"]
+        ML_BRIDGE --> OP_MOD["Operational Cadence Forest"]
+        ML_BRIDGE --> MOT_MOD["Motion BiGRU Triplet Encoder"]
+        ML_BRIDGE --> TCH_MOD["Touch BiGRU Triplet Encoder"]
+        ML_BRIDGE --> GPS_MOD["Micro-Leg Delivery Encoder"]
 
-        OP_MOD & MOT_MOD & TCH_MOD & GPS_MOD --> CONFORMAL["Split-Conformal Calibration<br/>(Empirical p-values under H₀)"]
-        CONFORMAL --> FUSION["Fisher's Omnibus Multimodal Fusion<br/>X² = -2 Σ ln(p_k) ~ χ²(2K)"]
-        FUSION --> STRATIFY["Phase-Stratified Empirical Bayes Prior<br/>(Transit α=0.58 vs Curbside α=0.71)"]
+        OP_MOD & MOT_MOD & TCH_MOD & GPS_MOD --> CONFORMAL["Split-Conformal Calibration"]
+        CONFORMAL --> FUSION["Fisher Omnibus Multimodal Fusion"]
+        FUSION --> STRATIFY["Phase-Stratified Empirical Bayes Prior"]
         
-        STRATIFY --> ASYNC_FIT{"Refit Due?<br/>(Interval = 5 Sessions)"}
-        ASYNC_FIT -->|Submit Refit| ASYNC_WORKER["AsyncBundleWorker<br/>(Non-Blocking ThreadPoolExecutor)"]
-        ASYNC_WORKER -->|Fit Complete| HOT_SWAP["Atomic Memory Cache Swap & Disk Cache"]
+        STRATIFY --> ASYNC_FIT{"Refit Interval Due?"}
+        ASYNC_FIT -->|Submit Refit| ASYNC_WORKER["AsyncBundleWorker ThreadPool"]
+        ASYNC_WORKER -->|Fit Complete| HOT_SWAP["Atomic Memory Cache Swap"]
         
-        STRATIFY --> MATRIX["Two-Axis Combiner Matrix<br/>(Context C_ctx × Behavior C_b)"]
-        STRATIFY --> DUAL_TIME["Dual-Timescale Frozen Identity Anchor<br/>(Boiling-Frog Slow Takeover Detector)"]
-        STRATIFY --> DRIFT_GUARD["Bounded CUSUM Profiler<br/>(Max Silent Drift Limit ≤ 0.24)"]
+        STRATIFY --> MATRIX["Two-Axis Combiner Matrix"]
+        STRATIFY --> DUAL_TIME["Dual-Timescale Identity Anchor"]
+        STRATIFY --> DRIFT_GUARD["Bounded CUSUM Profiler"]
     end
 
-    subgraph ResolutionLayer["4. Escalation, Safety & Operations Control"]
-        MATRIX --> SAFE_GATE{"Safe-Pause Gate<br/>Vehicle Speed > 2.0 mph?"}
-        SAFE_GATE -->|Vehicle Moving| QUEUE_DEFER["Safe-Queue Deferral<br/>(Suppressed until Standstill)"]
-        SAFE_GATE -->|At Standstill (0.0 mph)| DISPATCH["Dispatch Verification Challenge"]
+    subgraph ResolutionLayer["4. Safety Interlock & Resolution"]
+        MATRIX --> SAFE_GATE{"Vehicle Motion Gate"}
+        SAFE_GATE -->|Vehicle in Motion| QUEUE_DEFER["Safe-Queue Deferral"]
+        SAFE_GATE -->|Vehicle at Standstill| DISPATCH["Dispatch Verification Challenge"]
 
-        DISPATCH -->|POST /v1/drivers/{id}/challenge/respond| LIVENESS["Passive 3D Anti-Spoofing & Liveness<br/>(2D FFT Moiré + Laplacian Focus)"]
-        LIVENESS -->|Spoof / Replay| REJECT_SPOOF["Reject Presentation Attack<br/>outcome: spoof_rejected"]
-        LIVENESS -->|Live Match| RE_ANCHOR["Auto-Clear Challenge & Re-Anchor Baseline<br/>assimilate_verified_challenge()"]
+        DISPATCH -->|"POST /challenge/respond"| LIVENESS["Passive 3D Anti-Spoofing & Liveness"]
+        LIVENESS -->|Spoof Attack| REJECT_SPOOF["Reject Presentation Attack"]
+        LIVENESS -->|Live Match| RE_ANCHOR["Auto-Clear & Re-Anchor Baseline"]
 
-        DISPATCH --> GROQ["Groq Cloud LLM (Qwen-3.8-27B)<br/>Plain-Language Reason Vector"]
-        GROQ --> REVIEW_QUEUE["Admin Human Triage Queue<br/>(Outbound Webhook / SSE)"]
-        REVIEW_QUEUE --> DASHBOARD["Unified Cyber-Defense Admin Console<br/>(Continuity Matrix, Drift Tracker, Simulator)"]
+        DISPATCH --> GROQ["Groq Cloud LLM Reason Vector"]
+        GROQ --> REVIEW_QUEUE["Admin Human Triage Queue"]
+        REVIEW_QUEUE --> DASHBOARD["Unified Operations Console"]
     end
 ```
 
@@ -171,20 +180,20 @@ flowchart LR
     end
 
     subgraph Backend["FastAPI Control Plane"]
-        FASTAPI["FastAPI (Python 3.10-3.14)"]
+        FASTAPI["FastAPI Python 3.10 to 3.14"]
         PYDANTIC["Pydantic v2 Schema Validation"]
-        SQLITE["SQLite 3 (WAL Mode Concurrent Reads)"]
+        SQLITE["SQLite 3 WAL Mode"]
         AUTH["HMAC-SHA256 & JWT Tokens"]
     end
 
     subgraph ML_Engine["Machine Learning Subsystem"]
         PYTORCH["PyTorch Deep Metric Encoders"]
-        SCIPY["NumPy & SciPy (FFT, Conformal)"]
+        SCIPY["NumPy & SciPy FFT Conformal"]
         VISION["FaceNet & 2D FFT Moiré Vision"]
-        LLM["Groq Cloud API (Qwen-3.8-27B)"]
+        LLM["Groq Cloud API Qwen-3.8-27B"]
     end
 
-    Frontend <-->|REST + SSE| Backend
+    Frontend <-->|REST and SSE| Backend
     Backend <-->|In-Memory Bridge| ML_Engine
 ```
 

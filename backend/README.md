@@ -24,48 +24,48 @@ AsliKaun solves these systemic failures by decoupling contextual signals from ph
 ```mermaid
 flowchart TD
     subgraph Client["Driver Mobile Client / Telemetry SDK"]
-        T["Touch Kinematics (Pressure, Area, Length, Jerk)"]
-        M["IMU Acceleration & Gyroscope (10-50 Hz)"]
+        T["Touch Kinematics"]
+        M["IMU Acceleration & Gyroscope"]
         G["Adaptive Micro-Leg GPS Traces"]
         O["Dispatch Response Latency"]
         T & M & G & O --> BATCH["Continuous Session Telemetry Payload"]
     end
 
     subgraph BackendGateway["FastAPI Gateway & Security Filter"]
-        BATCH -->|POST /v1/sessions/ingest| TOKEN_GATE{"Token & Rate Limiter<br/>X-Driver-Token"}
-        TOKEN_GATE -->|Valid| SENSOR_AUDIT["Adversarial Sensor Authenticity Analyzer<br/>(IMU LSB Entropy + Lagged Autocorrelation)"]
-        TOKEN_GATE -->|Invalid / Forged| REJECT_AUTH["HTTP 401 / 403 Forbidden"]
+        BATCH -->|"POST /v1/sessions/ingest"| TOKEN_GATE{"Token & Rate Limiter"}
+        TOKEN_GATE -->|Valid Token| SENSOR_AUDIT["Adversarial Sensor Authenticity Analyzer"]
+        TOKEN_GATE -->|Invalid or Forged| REJECT_AUTH["HTTP 401 / 403 Forbidden"]
     end
 
     subgraph Processing["Ingestion & ML Orchestration"]
-        SENSOR_AUDIT -->|Mock / Replay Detected| ESCALATE_MOCK["Flag Attack & Escalation<br/>challenge_at_safe_pause"]
-        SENSOR_AUDIT -->|Authentic Telemetry| PHASE_DETECTOR["Operational Phase Classifier<br/>(Transit vs Stationary vs Interaction)"]
+        SENSOR_AUDIT -->|Mock or Replay Detected| ESCALATE_MOCK["Flag Attack & Safe Pause"]
+        SENSOR_AUDIT -->|Authentic Telemetry| PHASE_DETECTOR["Operational Phase Classifier"]
         
         PHASE_DETECTOR --> ML_BRIDGE["ML Bridge & In-Memory Bundle Cache"]
-        ML_BRIDGE --> ROUTE_CHECK{"Driver History<br/>≥ 10 Sessions?"}
+        ML_BRIDGE --> ROUTE_CHECK{"Driver History"}
         
-        ROUTE_CHECK -->|No (< 10 Sessions)| HEURISTIC["Empirical Bayes Two-Axis Scoring<br/>(Cold-Start Mitigation)"]
-        ROUTE_CHECK -->|Yes (≥ 10 Sessions)| REAL_BUNDLE["Real Deep PyTorch Bundle Scoring<br/>(Sub-50ms In-Memory Cache)"]
+        ROUTE_CHECK -->|Cold Start| HEURISTIC["Empirical Bayes Two-Axis Scoring"]
+        ROUTE_CHECK -->|Warm History| REAL_BUNDLE["Real Deep PyTorch Bundle Scoring"]
         
-        REAL_BUNDLE --> ASYNC_TRIGGER{"Refit Due?<br/>(Interval = 5 Sessions)"}
-        ASYNC_TRIGGER -->|Submit Refit| WORKER["AsyncBundleWorker<br/>(ThreadPoolExecutor Background Task)"]
-        WORKER -->|Refit Complete| HOT_SWAP["Atomic Memory Cache Swap & Disk Cache"]
+        REAL_BUNDLE --> ASYNC_TRIGGER{"Refit Due?"}
+        ASYNC_TRIGGER -->|Submit Refit| WORKER["AsyncBundleWorker ThreadPool"]
+        WORKER -->|Refit Complete| HOT_SWAP["Atomic Memory Cache Swap"]
     end
 
     subgraph Decision["Two-Axis Matrix & Safety Interlock"]
-        REAL_BUNDLE & HEURISTIC --> MATRIX["Two-Axis Combiner Matrix<br/>(Context Continuity C_ctx × Behavioral Continuity C_b)"]
-        MATRIX --> DRIFT_GUARD["Longitudinal CUSUM Drift Profiler<br/>(Bounded Drift Limit ≤ 0.24)"]
+        REAL_BUNDLE & HEURISTIC --> MATRIX["Two-Axis Combiner Matrix"]
+        MATRIX --> DRIFT_GUARD["Longitudinal CUSUM Drift Profiler"]
         
-        DRIFT_GUARD --> SAFE_GATE{"Vehicle In Motion?<br/>Speed > 2.0 mph"}
-        SAFE_GATE -->|Speed > 2.0 mph| DEFER["Safe-Queue Deferral<br/>(standstill_challenge_pending)"]
-        SAFE_GATE -->|Speed ≤ 2.0 mph| DISPATCH["Dispatch Interactive Challenge<br/>(face_verification_required)"]
+        DRIFT_GUARD --> SAFE_GATE{"Vehicle Motion Check"}
+        SAFE_GATE -->|Vehicle in Motion| DEFER["Safe-Queue Deferral"]
+        SAFE_GATE -->|Vehicle at Standstill| DISPATCH["Dispatch Interactive Challenge"]
     end
 
-    subgraph Resolution["Step-Up Challenge & Self-Supervised Re-Anchoring"]
-        DISPATCH -->|POST /v1/drivers/{id}/challenge/respond| LIVENESS["Passive 3D Anti-Spoofing & Liveness<br/>(2D FFT Moiré + Laplacian Focus Variance)"]
-        LIVENESS -->|Screen Replay / Print| REJECT_SPOOF["Reject Presentation Attack<br/>outcome: spoof_rejected"]
-        LIVENESS -->|Genuine Selfie| COSINE["FaceNet Cosine Similarity<br/>sim ≥ 0.60"]
-        COSINE -->|Match Confirmed| CLEAR["Auto-Clear Challenge & Re-Anchor Baseline<br/>assimilate_verified_challenge()"]
+    subgraph Resolution["Step-Up Challenge & Re-Anchoring"]
+        DISPATCH -->|"POST /challenge/respond"| LIVENESS["Passive 3D Anti-Spoofing & Liveness"]
+        LIVENESS -->|Screen Replay or Print| REJECT_SPOOF["Reject Presentation Attack"]
+        LIVENESS -->|Genuine Selfie| COSINE["FaceNet Cosine Similarity"]
+        COSINE -->|Match Confirmed| CLEAR["Auto-Clear & Re-Anchor Baseline"]
     end
 ```
 
