@@ -303,7 +303,55 @@ def _detect_leg_boundaries(points: list[dict]) -> tuple[list[float], list[float]
         boundary_idx.append(len(points) - 1)
 
     if len(boundary_idx) - 1 < _MIN_LEGS:
-        return None
+        # Adaptive kinematic micro-leg segmentation fallback:
+        # When explicit standstill stops (<1.5 m/s for 15s) are fewer than _MIN_LEGS
+        # (e.g. single-leg delivery sprint, highway cruising, or sparse pings),
+        # detect kinematic inflection points (directional pivots, speed inflection)
+        # to segment continuous trips into natural kinematic legs so the validated
+        # GRU Trajectory Triplet Encoder can still score the route.
+        if len(points) >= 6:
+            candidates = []
+            # 1. Directional pivot points (significant turns > ~28 deg / 0.5 rad)
+            if len(lat) >= 3:
+                d_lat = np.diff(lat)
+                d_lon = np.diff(lon)
+                bearing = np.arctan2(d_lon, d_lat)
+                turn = np.mod(np.diff(bearing) + np.pi, 2 * np.pi) - np.pi
+                for idx in np.where(np.abs(turn) > 0.5)[0] + 1:
+                    candidates.append(int(idx))
+
+            # 2. Speed inflection transitions (acceleration sign changes with notable delta)
+            valid_speed_clean = np.nan_to_num(speed, nan=0.0)
+            if len(valid_speed_clean) >= 4:
+                accel = np.diff(valid_speed_clean)
+                for idx in np.where((accel[:-1] * accel[1:] < -0.3))[0] + 1:
+                    candidates.append(int(idx))
+
+            # Filter candidate indices to be spaced by at least 2 points
+            candidates = sorted(set(candidates))
+            adaptive_boundaries = [0]
+            for c in candidates:
+                if 2 <= c <= len(points) - 3 and (c - adaptive_boundaries[-1] >= 2):
+                    adaptive_boundaries.append(c)
+                    if len(adaptive_boundaries) >= 4:
+                        break
+
+            # 3. If still only 1 leg and total path distance >= 100m, split at midpoint
+            total_path_dist = float(np.nansum(seg_dist))
+            if len(adaptive_boundaries) == 1 and total_path_dist >= 100.0:
+                mid = len(points) // 2
+                if 2 <= mid <= len(points) - 2:
+                    adaptive_boundaries.append(mid)
+
+            if adaptive_boundaries[-1] != len(points) - 1:
+                adaptive_boundaries.append(len(points) - 1)
+
+            if len(adaptive_boundaries) - 1 >= _MIN_LEGS:
+                boundary_idx = adaptive_boundaries
+            else:
+                return None
+        else:
+            return None
 
     r_dis_lst = [
         float(seg_dist[boundary_idx[k]:boundary_idx[k + 1]].sum())

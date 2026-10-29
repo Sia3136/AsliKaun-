@@ -41,14 +41,14 @@ try:
     from backend.app.ml_bridge import (
         ML_FACE_AVAILABLE, embed_face_image, evaluate_session_ml,
         evaluate_session_with_real_models, evaluate_with_rider_calibration,
-        face_similarity, warmup_bundles,
+        face_similarity, check_face_liveness_image, warmup_bundles,
     )
 except ImportError:
     try:
         from app.ml_bridge import (
             ML_FACE_AVAILABLE, embed_face_image, evaluate_session_ml,
             evaluate_session_with_real_models, evaluate_with_rider_calibration,
-            face_similarity, warmup_bundles,
+            face_similarity, check_face_liveness_image, warmup_bundles,
         )
     except ImportError:
         evaluate_session_ml = None
@@ -56,8 +56,16 @@ except ImportError:
         evaluate_with_rider_calibration = None
         embed_face_image = None
         face_similarity = None
+        check_face_liveness_image = None
         warmup_bundles = None
         ML_FACE_AVAILABLE = False
+
+try:
+    from ml.models.sensor_authenticity import verify_sensor_authenticity
+    ML_SENSOR_AUTHENTICITY_AVAILABLE = True
+except ImportError:
+    verify_sensor_authenticity = None
+    ML_SENSOR_AUTHENTICITY_AVAILABLE = False
 
 try:
     from ml.timeseries.driver_timeseries import DriverTimeSeriesProfiler
@@ -1482,7 +1490,22 @@ def ingest_session(
         driver_keys = driver.keys() if driver is not None else []
         threshold_data = decode_json(driver["threshold_json"], {}) if (driver is not None and "threshold_json" in driver_keys) else {}
         timeseries_data = decode_json(driver["timeseries_json"], {}) if (driver is not None and "timeseries_json" in driver_keys) else {}
-        calibrated_alpha = float(threshold_data.get("empirical_bayes_alpha") or threshold_data.get("threshold") or threshold_data.get("behavior_threshold")) if (threshold_data and any(k in threshold_data for k in ("empirical_bayes_alpha", "threshold", "behavior_threshold"))) else None
+        
+        # Physical operational phase detection from real-time telematics
+        vehicle_speed = float(getattr(body, "vehicle_speed_mph", 0.0) or 0.0)
+        has_touches = bool(getattr(body, "touch_events", None))
+        if vehicle_speed > 2.0:
+            operational_phase = "transit"
+        elif has_touches:
+            operational_phase = "interaction"
+        else:
+            operational_phase = "stationary"
+
+        phase_thresholds = threshold_data.get("phase_thresholds", {}) if isinstance(threshold_data, dict) else {}
+        if phase_thresholds and operational_phase in phase_thresholds:
+            calibrated_alpha = float(phase_thresholds[operational_phase])
+        else:
+            calibrated_alpha = float(threshold_data.get("empirical_bayes_alpha") or threshold_data.get("threshold") or threshold_data.get("behavior_threshold")) if (threshold_data and any(k in threshold_data for k in ("empirical_bayes_alpha", "threshold", "behavior_threshold"))) else None
 
         # Try the REAL trained models first (ml/inference/rider_model_bundle.py
         # — the ones that actually won on real data, see ml/README.md). Falls
@@ -1627,6 +1650,20 @@ def ingest_session(
                     f"escalated straight to priority human review instead."
                 ]
 
+        # Adversarial Sensor Authenticity Audit (MEMS entropy & looped replay detection)
+        sensor_auth = None
+        if ML_SENSOR_AUTHENTICITY_AVAILABLE and verify_sensor_authenticity is not None:
+            sensor_auth = verify_sensor_authenticity(payload_dict)
+            if not sensor_auth.get("is_authentic", True):
+                attack_type = sensor_auth.get("attack_detected", "sensor_spoofing")
+                reasons.append(
+                    f"Adversarial sensor audit flagged {attack_type} "
+                    f"({', '.join(sensor_auth.get('flags', []))}) — potential hardware/Frida spoofing"
+                )
+                if decision == "continue":
+                    decision = "challenge_at_safe_pause"
+                    quadrant = "handoff_signature"
+
         # Time-Series Adaptation and Anomaly Profiling
         timeseries_diagnostics = None
         if ML_TIMESERIES_AVAILABLE and DriverTimeSeriesProfiler is not None:
@@ -1709,9 +1746,11 @@ def ingest_session(
             "fatigue_capped": fatigue_capped,
             "baseline_status": "fast_baseline_updated" if update_fast else "fast_baseline_frozen",
             "timeseries_diagnostics": timeseries_diagnostics,
+            "operational_phase": operational_phase,
             "threshold_info": threshold_data if threshold_data else None,
             "timestamp": body.timestamp.isoformat(),
             "safe_pause_info": safe_pause_info,
+            "sensor_authenticity": sensor_auth,
         }
 
         session_cursor = con.execute(
@@ -2029,6 +2068,27 @@ def respond_to_challenge(
         return {"driver_id": driver_id, "outcome": "human_review", "reason": "no_face_enrollment_on_file"}
 
     image = _decode_face_image(body.image_base64)
+
+    # 1. Evaluate 2D/3D presentation attack and anti-spoofing liveness
+    liveness = check_face_liveness_image(image) if check_face_liveness_image is not None else {"is_live": True}
+    if not liveness.get("is_live", True):
+        attack_type = liveness.get("attack_type", "presentation_attack_spoof")
+        with connect() as con:
+            write_event(con, driver_id, "challenge_spoof_rejected", {
+                "liveness_score": liveness.get("liveness_score"),
+                "attack_type": attack_type,
+                "flags": liveness.get("flags", []),
+            })
+        return {
+            "driver_id": driver_id,
+            "outcome": "spoof_rejected",
+            "similarity": None,
+            "is_live": False,
+            "liveness": liveness,
+            "reason": f"Anti-spoofing rejected presentation attack: {attack_type} (liveness={liveness.get('liveness_score')})",
+        }
+
+    # 2. Extract FaceNet embedding and evaluate cosine similarity
     challenge_embedding = embed_face_image(image)
     if challenge_embedding is None:
         with connect() as con:
@@ -2042,28 +2102,43 @@ def respond_to_challenge(
     with connect() as con:
         if passed:
             driver_row = con.execute(
-                "SELECT latest_result_json FROM drivers WHERE driver_id = ?", (driver_id,)
+                "SELECT * FROM drivers WHERE driver_id = ?", (driver_id,)
             ).fetchone()
             if driver_row is not None:
-                result = decode_json(driver_row["latest_result_json"], {})
+                driver_d = dict(driver_row)
+                result = decode_json(driver_d.get("latest_result_json"), {})
                 if result.get("decision") in _ESCALATED_DECISIONS:
                     result["decision"] = "continue"
                     result.setdefault("reasons", []).append(
-                        f"Mid-trip challenge passed (face similarity {round(similarity, 3)}) — auto-cleared"
+                        f"Mid-trip challenge passed (face similarity {round(similarity, 3)}, liveness={liveness.get('liveness_score', 1.0)}) — auto-cleared"
                     )
                     con.execute(
                         "UPDATE drivers SET latest_result_json = ?, updated_at = ? WHERE driver_id = ?",
                         (json.dumps(result), now_iso(), driver_id),
                     )
+
+                # 3. Self-Supervised Re-Anchoring: safely assimilate verified ground-truth identity
+                if ML_TIMESERIES_AVAILABLE and DriverTimeSeriesProfiler is not None:
+                    ts_dict = decode_json(driver_d.get("timeseries_json"), {})
+                    profiler = DriverTimeSeriesProfiler.from_dict({"driver_id": driver_id, **ts_dict})
+                    profiler.assimilate_verified_challenge(0.95, method="face_step_up_liveness_verified")
+                    con.execute(
+                        "UPDATE drivers SET timeseries_json = ? WHERE driver_id = ?",
+                        (json.dumps(profiler.to_dict()), driver_id),
+                    )
+
             con.execute(
                 """UPDATE review_queue SET status='resolved', resolved_at=?, resolution='cleared',
                        reviewer_id='auto:face_challenge', reviewer_note=?
                    WHERE driver_id=? AND status='open'""",
-                (now_iso(), f"Auto-cleared: face similarity {round(similarity, 3)}", driver_id),
+                (now_iso(), f"Auto-cleared: face similarity {round(similarity, 3)} (liveness={liveness.get('liveness_score', 1.0)})", driver_id),
             )
             if ML_DETECTORS_AVAILABLE:
                 reset_frozen_anchor(con, driver_id)
-            write_event(con, driver_id, "challenge_passed", {"similarity": round(similarity, 4)})
+            write_event(con, driver_id, "challenge_passed", {
+                "similarity": round(similarity, 4),
+                "liveness_score": liveness.get("liveness_score", 1.0)
+            })
         else:
             write_event(con, driver_id, "challenge_failed_or_inconclusive", {"similarity": round(similarity, 4)})
 
@@ -2071,6 +2146,8 @@ def respond_to_challenge(
         "driver_id": driver_id,
         "outcome": "cleared" if passed else "human_review",
         "similarity": round(similarity, 4),
+        "is_live": liveness.get("is_live", True),
+        "liveness_score": liveness.get("liveness_score", 1.0),
     }
 
 
@@ -2126,6 +2203,7 @@ def challenge_refuse_or_timeout(
 class DriverCalibrationRequest(BaseModel):
     driver_id: str = Field(min_length=1, max_length=100)
     device_id: str | None = None
+    phase: str | None = Field(default="full")
     touch_samples: list[dict[str, Any]] = Field(default_factory=list)
     accel_samples: list[Any] = Field(default_factory=list)
     gyro_samples: list[Any] = Field(default_factory=list)
@@ -2174,11 +2252,23 @@ def calibrate_driver_onboarding(
         "onboarded_at": now_iso()
     }
 
+    calibrated_phase = getattr(body, "phase", None) or "full"
+    base_alpha = 0.58
+    phase_thresholds = {
+        "transit": round(base_alpha * 0.88, 4),      # 0.5104 (absorbs vibration / road noise)
+        "stationary": round(base_alpha * 1.08, 4),   # 0.6264 (stricter curbside threshold)
+        "interaction": round(base_alpha * 1.00, 4),  # 0.5800 (handoff/app usage)
+        "full": round(base_alpha * 1.00, 4),
+    }
+
     threshold_info = {
         "calibrated_onboard": True,
         "behavior_threshold": 0.62,
         "context_threshold": 0.60,
-        "empirical_bayes_alpha": 0.58,
+        "empirical_bayes_alpha": phase_thresholds.get(calibrated_phase, base_alpha),
+        "base_alpha": base_alpha,
+        "calibrated_phase": calibrated_phase,
+        "phase_thresholds": phase_thresholds,
         "calibrated_at": now_iso()
     }
 

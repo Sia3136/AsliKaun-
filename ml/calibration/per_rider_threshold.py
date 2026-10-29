@@ -31,6 +31,19 @@ from ml.calibration.fusion import fisher_combine
 
 POPULATION_FALLBACK_THRESHOLD = 0.29  # ml/scripts/evaluate_fusion.py's measured EER-balancing value
 
+# Phase calibration adjustment factors:
+# - transit: road surface roughness, vehicle lean angle, and engine vibration naturally widen
+#   IMU/gyro variance. We apply a calibrated relaxation factor (0.88x) to prevent false positives.
+# - stationary: curbside or parked state has very low physical noise; tighter threshold (1.08x)
+#   immediately catches an impostor touching or hijacking the parked phone.
+# - interaction: active delivery actions (swiping to confirm delivery, tapping order details).
+PHASE_CALIBRATION_FACTORS = {
+    "transit": 0.88,
+    "stationary": 1.08,
+    "interaction": 1.00,
+    "full": 1.00,
+}
+
 
 def min_calib_for_target_far(target_far: float) -> int:
     """Minimum calibration-set size for a threshold to resolve this
@@ -48,8 +61,9 @@ def per_rider_threshold(calib_fused_p_values: list[float], target_far: float = 0
     required_n = min_calib_for_target_far(target_far)
 
     if n < 5:
-        return {
-            "threshold": POPULATION_FALLBACK_THRESHOLD,
+        threshold = POPULATION_FALLBACK_THRESHOLD
+        res = {
+            "threshold": threshold,
             "source": "population_fallback",
             "target_far": target_far,
             "n_calib": n,
@@ -59,45 +73,75 @@ def per_rider_threshold(calib_fused_p_values: list[float], target_far: float = 0
                 f"threshold until more sessions accumulate"
             ),
         }
+    else:
+        sorted_p = np.sort(calib_fused_p_values)
+        if n >= required_n:
+            idx = int(np.floor(target_far * (n + 1))) - 1
+            idx = max(0, min(idx, n - 1))
+            threshold = float(sorted_p[idx])
+            res = {
+                "threshold": round(threshold, 4),
+                "source": "per_rider_calibrated",
+                "target_far": target_far,
+                "n_calib": n,
+                "achieved_resolution": 1.0 / (n + 1),
+                "note": f"fully calibrated from this rider's own {n} calibration sessions",
+            }
+        else:
+            # Empirical Bayes / Credibility weighting for 5 <= n < required_n:
+            n_0 = 10.0
+            weight_rider = float(n / (n + n_0))
+            effective_percentile = max(target_far * 100.0, (1.0 / (n + 1)) * 100.0)
+            raw_quantile = float(np.percentile(sorted_p, effective_percentile))
+            blended = float(weight_rider * raw_quantile + (1.0 - weight_rider) * POPULATION_FALLBACK_THRESHOLD)
+            threshold = blended
+            res = {
+                "threshold": round(blended, 4),
+                "source": "empirical_bayes_calibrated",
+                "target_far": target_far,
+                "n_calib": n,
+                "weight_rider": round(weight_rider, 3),
+                "raw_quantile": round(raw_quantile, 4),
+                "achieved_resolution": 1.0 / (n + 1),
+                "note": (
+                    f"empirically calibrated with {round(weight_rider*100, 1)}% rider credibility weight "
+                    f"over {n} sessions blended with population prior"
+                ),
+            }
 
-    sorted_p = np.sort(calib_fused_p_values)
-
-    if n >= required_n:
-        idx = int(np.floor(target_far * (n + 1))) - 1
-        idx = max(0, min(idx, n - 1))
-        threshold = float(sorted_p[idx])
-        return {
-            "threshold": round(threshold, 4),
-            "source": "per_rider_calibrated",
-            "target_far": target_far,
-            "n_calib": n,
-            "achieved_resolution": 1.0 / (n + 1),
-            "note": f"fully calibrated from this rider's own {n} calibration sessions",
-        }
-
-    # Empirical Bayes / Credibility weighting for 5 <= n < required_n:
-    # Blend the rider's personal calibration empirical quantile with the population prior.
-    # Credibility weight w_n = n / (n + n_0), where n_0 = 10 (half-weight at 10 sessions).
-    n_0 = 10.0
-    weight_rider = float(n / (n + n_0))
-    # Minimum resolvable quantile for this n
-    effective_percentile = max(target_far * 100.0, (1.0 / (n + 1)) * 100.0)
-    raw_quantile = float(np.percentile(sorted_p, effective_percentile))
-    blended = float(weight_rider * raw_quantile + (1.0 - weight_rider) * POPULATION_FALLBACK_THRESHOLD)
-
-    return {
-        "threshold": round(blended, 4),
-        "source": "empirical_bayes_calibrated",
-        "target_far": target_far,
-        "n_calib": n,
-        "weight_rider": round(weight_rider, 3),
-        "raw_quantile": round(raw_quantile, 4),
-        "achieved_resolution": 1.0 / (n + 1),
-        "note": (
-            f"empirically calibrated with {round(weight_rider*100, 1)}% rider credibility weight "
-            f"over {n} sessions blended with population prior"
-        ),
+    # Attach phase-conditioned thresholds
+    res["phase_thresholds"] = {
+        p: round(float(np.clip(res["threshold"] * f, 0.05, 0.95)), 4)
+        for p, f in PHASE_CALIBRATION_FACTORS.items()
     }
+    return res
+
+
+def stratified_per_rider_threshold(
+    calib_fused_p_values: list[float],
+    phase: str = "full",
+    target_far: float = 0.01,
+) -> dict:
+    """Calculates an adaptive Empirical Bayes threshold stratified by the courier's
+    operational state (stationary, transit, interaction)."""
+    base = per_rider_threshold(calib_fused_p_values, target_far=target_far)
+    factor = PHASE_CALIBRATION_FACTORS.get(phase, 1.00)
+    adjusted = round(float(np.clip(base["threshold"] * factor, 0.05, 0.95)), 4)
+
+    phase_thresholds = {
+        p: round(float(np.clip(base["threshold"] * f, 0.05, 0.95)), 4)
+        for p, f in PHASE_CALIBRATION_FACTORS.items()
+    }
+
+    result = dict(base)
+    result.update({
+        "operational_phase": phase,
+        "phase_factor": factor,
+        "phase_adjusted_threshold": adjusted,
+        "base_threshold": base["threshold"],
+        "phase_thresholds": phase_thresholds,
+    })
+    return result
 
 
 def compute_calib_fused_p_values(rider_signal_models, calib_sessions: list, extractors: dict) -> list[float]:

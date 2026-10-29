@@ -51,13 +51,17 @@ except ImportError:
 
 try:
     from ml.inference.rider_model_bundle import RiderModelBundle
-    from ml.inference.bundle_store import save_bundle, load_bundle, has_persisted_bundle, list_persisted_bundles
+    from ml.inference.bundle_store import save_bundle, load_bundle, has_persisted_bundle, list_persisted_bundles, GLOBAL_BUNDLE_WORKER
     ML_RIDER_BUNDLE_AVAILABLE = True
 except ImportError:
     ML_RIDER_BUNDLE_AVAILABLE = False
 
 try:
-    from ml.models.face_verification import cosine_similarity as _face_cosine_similarity, embed_face as _embed_face
+    from ml.models.face_verification import (
+        cosine_similarity as _face_cosine_similarity,
+        embed_face as _embed_face,
+        check_face_liveness as _check_face_liveness,
+    )
     ML_FACE_AVAILABLE = True
 except ImportError:
     ML_FACE_AVAILABLE = False
@@ -74,6 +78,13 @@ def embed_face_image(image) -> np.ndarray | None:
 
 def face_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return _face_cosine_similarity(a, b)
+
+
+def check_face_liveness_image(image) -> dict:
+    """Evaluates presentation attack and anti-spoofing characteristics of a challenge selfie."""
+    if not ML_FACE_AVAILABLE:
+        return {"is_live": True, "liveness_score": 1.0, "attack_type": "none", "metrics": {}}
+    return _check_face_liveness(image)
 
 # Minimum raw session history (from the `sessions` table) before attempting
 # the REAL trained models — below this, RiderModelBundle.fit()'s own
@@ -528,38 +539,53 @@ def evaluate_session_with_real_models(payload: Any, history_payloads: list[dict]
     cached = _BUNDLE_CACHE.get(driver_id) if driver_id else None
     bundle = None
 
-    if cached is not None and len(history_payloads) - cached[0] < BUNDLE_REFIT_EVERY_N_SESSIONS:
+    if cached is not None:
         bundle = cached[1]
+        # Check if due for background non-blocking refit
+        if len(history_payloads) - cached[0] >= BUNDLE_REFIT_EVERY_N_SESSIONS and driver_id:
+            if not GLOBAL_BUNDLE_WORKER.is_training(driver_id):
+                split = int(len(history_payloads) * 0.7)
+                enroll, calib = history_payloads[:split], history_payloads[split:]
+                if len(enroll) >= 5 and len(calib) >= 5:
+                    def _on_async_refit_complete(d_id, new_bundle, n_sess):
+                        _BUNDLE_CACHE[d_id] = (n_sess, new_bundle)
+                    GLOBAL_BUNDLE_WORKER.submit_fit(
+                        driver_id, enroll, calib, on_complete=_on_async_refit_complete
+                    )
     else:
         # Check disk cache if not in memory
         loaded_disk = load_bundle(driver_id) if (driver_id and ML_RIDER_BUNDLE_AVAILABLE) else None
-        if loaded_disk is not None and len(history_payloads) - loaded_disk[0] < BUNDLE_REFIT_EVERY_N_SESSIONS:
+        if loaded_disk is not None:
             bundle = loaded_disk[1]
             if driver_id:
                 _BUNDLE_CACHE[driver_id] = (loaded_disk[0], bundle)
+            if len(history_payloads) - loaded_disk[0] >= BUNDLE_REFIT_EVERY_N_SESSIONS and driver_id:
+                if not GLOBAL_BUNDLE_WORKER.is_training(driver_id):
+                    split = int(len(history_payloads) * 0.7)
+                    enroll, calib = history_payloads[:split], history_payloads[split:]
+                    if len(enroll) >= 5 and len(calib) >= 5:
+                        def _on_async_refit_complete(d_id, new_bundle, n_sess):
+                            _BUNDLE_CACHE[d_id] = (n_sess, new_bundle)
+                        GLOBAL_BUNDLE_WORKER.submit_fit(
+                            driver_id, enroll, calib, on_complete=_on_async_refit_complete
+                        )
         else:
             split = int(len(history_payloads) * 0.7)
             enroll, calib = history_payloads[:split], history_payloads[split:]
             if len(enroll) < 5 or len(calib) < 5:
-                if loaded_disk is not None:
-                    bundle = loaded_disk[1]
-                    if driver_id:
-                        _BUNDLE_CACHE[driver_id] = (loaded_disk[0], bundle)
-                else:
-                    return None
-            else:
-                try:
-                    bundle = RiderModelBundle.fit(enroll, calib)
-                except Exception as e:
-                    logger.warning("RiderModelBundle.fit failed (%s), falling back to heuristic", e)
-                    return None
+                return None
+            try:
+                bundle = RiderModelBundle.fit(enroll, calib)
+            except Exception as e:
+                logger.warning("RiderModelBundle.fit failed (%s), falling back to heuristic", e)
+                return None
 
-                if driver_id:
-                    _BUNDLE_CACHE[driver_id] = (len(history_payloads), bundle)
-                    try:
-                        save_bundle(driver_id, bundle, len(history_payloads), {"fitted_at": datetime.now(timezone.utc).isoformat()})
-                    except Exception as save_err:
-                        logger.warning("Failed to save bundle to disk: %s", save_err)
+            if driver_id:
+                _BUNDLE_CACHE[driver_id] = (len(history_payloads), bundle)
+                try:
+                    save_bundle(driver_id, bundle, len(history_payloads), {"fitted_at": datetime.now(timezone.utc).isoformat()})
+                except Exception as save_err:
+                    logger.warning("Failed to save bundle to disk: %s", save_err)
 
     current_session = {
         "driver_id": getattr(payload, "driver_id", None),
