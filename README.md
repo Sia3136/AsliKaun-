@@ -225,7 +225,7 @@ flowchart LR
 ## 7. Quickstart & Local Execution
 
 ### 1. Installation
-Ensure Python 3.10+ and Node.js 18+ are installed.
+Ensure Python 3.10+ and Node.js 20.19+ are installed. The frontend uses Vite 8, which does not support Node.js 18.
 ```powershell
 # Clone the repository
 git clone https://github.com/krupam26/Hackforge_CaseBlitz.git
