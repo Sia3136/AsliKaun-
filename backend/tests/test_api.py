@@ -166,6 +166,52 @@ def test_behavior_change_queues_review_and_admin_can_resolve(client: TestClient)
     assert resolved_queue.json()["reviews"][0]["resolution"] == "needs_follow_up"
 
 
+def test_selfie_submission_falls_back_to_dynamic_human_review(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    driver_id = "test-dynamic-selfie-review-driver"
+    establish_baseline(client, driver_id)
+    challenge = client.post(
+        "/v1/sessions/ingest",
+        json=session_payload(
+            driver_id,
+            accel=[2.0, 2.5, 2.2],
+            gyro=[1.5, 1.8],
+            touch_events=[{"type": "tap"}] * 12,
+            accept_latency_ms=3500,
+            timestamp="2026-10-17T10:05:00Z",
+        ),
+    )
+    assert challenge.status_code == 200
+
+    headers = admin_headers(client)
+    token_response = client.post(
+        f"/v1/admin/drivers/{driver_id}/driver-token", headers=headers
+    )
+    assert token_response.status_code == 200
+    driver_token = token_response.json()["driver_token"]
+
+    try:
+        import app.main as main
+    except ImportError:
+        import backend.app.main as main
+    monkeypatch.setattr(main, "ML_FACE_AVAILABLE", False)
+
+    response = client.post(
+        f"/v1/drivers/{driver_id}/challenge/respond",
+        headers={"X-Driver-Token": driver_token},
+        json={"image_base64": "not-retained-by-fallback"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["outcome"] == "human_review"
+    assert response.json()["reason"] == "face_verification_unavailable"
+
+    queue = client.get(
+        "/v1/review-queue", headers=headers, params={"driver_id": driver_id}
+    )
+    assert queue.status_code == 200, queue.text
+    assert queue.json()["count"] == 1
+    assert "Driver verification submitted" in queue.json()["reviews"][0]["reviewer_note"]
+
+
 def test_admin_routes_reject_missing_token(client: TestClient):
     response = client.get("/v1/fleet/scores")
     assert response.status_code == 401

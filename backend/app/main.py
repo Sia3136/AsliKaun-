@@ -2341,7 +2341,18 @@ def respond_to_challenge(
     require_driver_token(driver_id, x_driver_token)
 
     if not ML_FACE_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Face verification is not available on this deployment")
+        # Keep the request visible to Safety Ops even when optional local face
+        # models are not installed. The image is intentionally discarded.
+        _queue_verification_review(
+            driver_id,
+            "human_review",
+            "face_verification_unavailable",
+        )
+        return {
+            "driver_id": driver_id,
+            "outcome": "human_review",
+            "reason": "face_verification_unavailable",
+        }
 
     with connect() as con:
         enrollment = con.execute(

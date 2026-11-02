@@ -1340,7 +1340,76 @@ function Verification({
           ? "review"
           : "ready",
   );
-  const selfieInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState("");
+  const [cameraActive, setCameraActive] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (stage !== "safe") {
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+      setCameraActive(false);
+      if (videoRef.current) videoRef.current.srcObject = null;
+    }
+  }, [stage]);
+
+  const startCamera = async () => {
+    setCameraError("");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("Live camera access is unavailable in this browser. Use a secure connection or try the file capture option.");
+      return;
+    }
+    try {
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 } },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      setCameraActive(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch (error) {
+      setCameraError(error instanceof DOMException && error.name === "NotAllowedError"
+        ? "Camera permission was denied. Allow camera access and try again."
+        : "Unable to start the camera. Check that no other app is using it.");
+    }
+  };
+
+  const captureSelfie = async () => {
+    const video = videoRef.current;
+    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0) {
+      setCameraError("Camera preview is not ready yet. Please wait a moment and try again.");
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const base64 = canvas.toDataURL("image/jpeg", 0.88).split(",")[1] ?? "";
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    setCameraActive(false);
+    setStage("progress");
+    try {
+      const result = await respondToChallenge(base64);
+      if (result?.outcome === "cleared") setStage("success");
+      else if (result?.outcome === "human_review") setStage("review");
+      else setStage("failed");
+    } catch {
+      setStage("failed");
+    }
+  };
 
   if (stage === "progress") {
     return (
@@ -1416,36 +1485,20 @@ function Verification({
             auto-suspended on this alone.
           </p>
         </section>
-        <input
-          ref={selfieInputRef}
-          type="file"
-          accept="image/*"
-          capture="user"
-          style={{ display: "none" }}
-          onChange={async (event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (!file) return;
-            setStage("progress");
-            try {
-              const base64 = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
-              });
-              const result = await respondToChallenge(base64);
-              if (result?.outcome === "cleared") setStage("success");
-              else if (result?.outcome === "human_review") setStage("review");
-              else setStage("failed");
-            } catch {
-              setStage("failed");
-            }
-          }}
-        />
-        <Button onClick={() => selfieInputRef.current?.click()}>
-          I'm safely stopped — take selfie
-        </Button>
+        <div className="face-camera-frame">
+          <video ref={videoRef} autoPlay muted playsInline aria-label="Live selfie camera preview" />
+          <div className="face-guide" aria-hidden="true" />
+        </div>
+        {cameraError && <p className="camera-error" role="alert">{cameraError}</p>}
+        {!cameraActive ? (
+          <Button onClick={() => void startCamera()}>
+            Start live camera
+          </Button>
+        ) : (
+          <Button onClick={() => void captureSelfie()}>
+            Capture selfie
+          </Button>
+        )}
         <Button variant="ghost" onClick={back}>
           Do this later
         </Button>

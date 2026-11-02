@@ -316,7 +316,14 @@ export async function respondToChallenge(imageBase64: string): Promise<{ outcome
       headers: { "Content-Type": "application/json", "X-Driver-Token": DRIVER_TOKEN },
       body: JSON.stringify({ image_base64: imageBase64 }),
     });
-    return await response.json();
+    const result = await response.json() as { outcome?: string; detail?: string; reason?: string };
+    if (!response.ok) {
+      return {
+        outcome: "human_review",
+        reason: result.detail || `Verification request failed with HTTP ${response.status}`,
+      };
+    }
+    return result as { outcome: string; similarity?: number; reason?: string };
   } catch (error) {
     console.error("[AsliKaun] Failed to submit challenge response", error);
     return null;
