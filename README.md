@@ -241,19 +241,35 @@ cd ..
 ```
 
 ### 2. Configure Environment (.env)
-Create a `.env` file in the project root:
-```env
-# Optional Groq Cloud Key for real-time natural language reason vectors
-GROQ_API_KEY="your-groq-api-key-here"
-REASON_VECTOR_GROQ_MODEL="qwen/qwen3.8-27b"
+Create a `.env` file in the project root by copying `.env.example`.
+For the browser clients, copy `frontend/.env.example` to
+`frontend/.env` and, when needed, set the same Vite variables in
+`frontend/mobile-app/.env`:
 
-# Admin Console Credentials
-ASLIKAUN_ADMIN_USERNAME="admin@aslikaun.ai"
-ASLIKAUN_ADMIN_PASSWORD="aslikaun"
-ASLIKAUN_TOKEN_SECRET="aslikaun-production-secure-token-secret-key-32chars"
+```env
+DATABASE_URL="postgresql://appuser:localpassword@localhost:5432/appdb"
+REDIS_URL="redis://localhost:6379"
+ASLIKAUN_ASYNC_INGEST="true"
+ASLIKAUN_REQUIRE_DEVICE_SIGNATURE="false"
+ASLIKAUN_TOKEN_SECRET="replace-for-local-development"
 ```
 
+Do not commit `.env` files or real credentials. The example values are for
+local development only.
+
 ### 3. Launch Services
+
+On Windows, run `.\start-dev.ps1` from the repository root to start the backend, wait for `/docs`, and then start the frontend.
+
+For the PostgreSQL + Redis local deployment, ensure `.env` contains
+`DATABASE_URL`, `REDIS_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and
+`POSTGRES_DB`, then initialize the services and schema:
+
+```powershell
+docker compose up -d
+python -m pip install -r backend/requirements.txt
+python -c "from backend.app import database; database.init_postgres_schema()"
+```
 
 **Terminal 1 — Backend API Service:**
 ```powershell
@@ -266,14 +282,48 @@ python run_server.py
 cd frontend
 npm run dev
 ```
-*Frontend runs at `http://localhost:3000`.*
+*Landing page and fleet dashboard run at `http://localhost:3000`.*
+
+**Terminal 2b — Driver Mobile Web App:**
+```powershell
+cd frontend/mobile-app
+npm run dev
+```
+*Driver app runs at `http://localhost:8443`. Its `/v1` and `/health` requests
+are proxied to FastAPI; it is not directly coupled to the admin dashboard.*
+
+**Terminal 3 — Redis Streams worker:**
+```powershell
+python -m backend.worker
+```
+
+With `ASLIKAUN_ASYNC_INGEST=true`, ingestion returns `202 Accepted`; poll the
+returned `/v1/sessions/jobs/{job_id}` URL for the scored result.
 
 ### 4. Direct Operational Links
 * **Landing Page**: [http://localhost:3000/](http://localhost:3000/)
 * **Admin Login**: [http://localhost:3000/auth](http://localhost:3000/auth) *(Click "Log in as Fleet Admin" for instant access)*
 * **Admin Operations Dashboard**: [http://localhost:3000/fleet-dashboard.html](http://localhost:3000/fleet-dashboard.html)
+* **Driver Mobile App**: [http://localhost:8443/](http://localhost:8443/)
 
-### 5. Automated Verification Suites
+### 5. Verification Request Flow
+
+The driver and admin frontends remain separate applications. They communicate
+only through the FastAPI backend for the verification workflow:
+
+1. A telemetry decision creates a safe-pause challenge.
+2. The mobile app polls `GET /v1/drivers/{driver_id}/challenge-status` and
+   prompts the driver only when the vehicle is safely stopped.
+3. The driver captures a selfie and submits it to
+   `POST /v1/drivers/{driver_id}/challenge/respond`.
+4. A clear live face match auto-clears the challenge. Failed, spoofed, or
+   inconclusive submissions create a `verification_requests` record and an
+   admin review-queue item without storing the submitted image.
+5. The dashboard receives the `verification_submitted` SSE event and refreshes
+   the review queue. Admin resolution uses
+   `POST /v1/review-queue/{session_id}/resolve`.
+
+### 7. Automated Verification Suites
 
 ```powershell
 # Run the complete regression test suite across ML and backend (27/27 passing green)
@@ -286,7 +336,72 @@ npm run build
 
 ---
 
-## 8. Security, Privacy & Safety Architecture
+## 8. Backend & Systems Infrastructure Domain
+
+The local end-to-end path is implemented with PostgreSQL, Redis Streams,
+tenant-scoped authentication, request rate limiting, device signing support,
+and database-backed safe-pause concurrency protection.
+
+### Partially complete
+
+1. **Asynchronous ingestion:** With PostgreSQL selected and
+   `ASLIKAUN_ASYNC_INGEST=true`, `POST /v1/sessions/ingest` writes a durable job
+   and returns `202 Accepted`; `python -m backend.worker` consumes Redis Stream
+   entries and performs scoring.
+2. **Storage and isolation:** PostgreSQL is the primary transactional path,
+   migrations create tenant-scoped tables and RLS policies, and SQLite remains
+   available only as a regression-compatible local fallback.
+
+### Implemented security boundaries
+
+- Redis-backed sliding-window ingest limiting defaults to 12 batches per driver
+  per minute.
+- Tenant claims, PostgreSQL RLS, and tenant context are applied to database
+  connections.
+- Ed25519 device enrollment, canonical request signatures, timestamps, nonces,
+  rotation, and revocation are supported. Enable enforcement with
+  `ASLIKAUN_REQUIRE_DEVICE_SIGNATURE=true`.
+- Safe-pause transitions use state-version compare-and-swap updates.
+- Raw submitted verification images are processed transiently and are not
+  persisted; raw telemetry retention is controlled by
+  `ASLIKAUN_RAW_RETENTION_HOURS` and defaults to 48 hours.
+
+```text
+Driver Mobile Web App -> FastAPI API -> Redis Streams
+                                      -> backend.worker
+                                      -> PostgreSQL scoring and review state
+Fleet Dashboard <----- SSE/API ------┘
+```
+
+## 9. Frontend & Client SDK Domain
+
+The browser driver app includes encrypted IndexedDB offline spooling,
+exponential-backoff retries, adaptive battery-aware sampling, 50 Hz resampling,
+safe-pause selfie verification, and backend status polling. The fleet dashboard
+has live SSE updates, review actions, and persisted light/dark themes using the
+same typography system as the driver app.
+
+### Remaining platform limitations
+
+- **Battery and thermal throttling:** Use adaptive duty-cycling: short high-frequency IMU bursts during steady cruising and continuous sampling only after trigger events such as order acceptance, phone pickup, erratic braking, or sudden stops.
+- **Sample-frequency jitter:** Resample OEM-dependent motion events onto a uniform 50 Hz time grid using linear or cubic interpolation before transmission.
+- **Native background execution:** A production Android/iOS SDK with a foreground
+  service or native bridge is still required for reliable collection when the
+  browser is backgrounded or the screen is locked.
+
+```text
++--------------------------------------------------+
+|           VEHICLE STOP DETECTED                  |
+|      Identity Re-Verification Required           |
+|                                                  |
+|  Your vehicle has come to a stop. Please hold    |
+|  the camera to your face to resume dispatch.     |
+|                                                  |
+|                 [ START FACE SCAN ]              |
++--------------------------------------------------+
+```
+
+## 10. Security, Privacy & Safety Architecture
 
 - **Zero PII Exposure**: No raw biometric waveforms, camera video, or sensitive credentials are saved in database tables or logs.
 - **Safety Interlock**: Physical verification challenges are strictly deferred whenever the driver's vehicle is in motion (`speed > 2.0 mph`), protecting drivers from traffic accidents.
@@ -294,7 +409,7 @@ npm run build
 
 ---
 
-## 9. Future Scope & Production Roadmap
+## 11. Future Scope & Production Roadmap
 
 1. **Distributed Queue Spooling**: Replace local in-memory worker pools with distributed Redis + Celery / RQ workers for enterprise fleet scaling ($> 100,000$ active couriers).
 2. **On-Device Edge Inference (TFLite / ONNX Runtime)**: Quantize PyTorch triplet encoders into 8-bit quantized models running directly inside the mobile client for sub-5ms offline continuity scoring.
@@ -303,7 +418,7 @@ npm run build
 
 ---
 
-## 10. Academic & Industry References
+## 12. Academic & Industry References
 
 1. **H-MOG Dataset**: Sitova et al., *"HMOG: New Behavioral Biometric Features for Continuous Authentication on Mobile Devices"*, IEEE Transactions on Information Forensics and Security, 2016.
 2. **ODIDMob Trajectory Dataset**: Courier delivery GPS mobility traces and stop kinematics benchmark for courier identification, 2023.

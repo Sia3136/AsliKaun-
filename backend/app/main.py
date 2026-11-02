@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Stre
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from backend.app import database
 
 # SSE Event Subscriptions for real-time live frontend streaming
 _event_subscribers: set[asyncio.Queue] = set()
@@ -102,7 +103,8 @@ app = FastAPI(
 
 _default_cors_origins = (
     "http://localhost:3000,http://127.0.0.1:3000,"
-    "http://localhost:5173,http://127.0.0.1:5173"
+    "http://localhost:5173,http://127.0.0.1:5173,"
+    "http://localhost:8443,http://127.0.0.1:8443"
 )
 CORS_ORIGINS = [
     origin.strip()
@@ -145,8 +147,16 @@ TOKEN_SECRET = os.getenv(
 TOKEN_TTL_SECONDS = 8 * 60 * 60
 PASSWORD_HASH_ITERATIONS = 310_000
 CONSENT_VERSION = "2026-10-19"
-DATA_RETENTION_DAYS = 30
+# Raw biometric sensor payload is kept only for a short, configurable debug window.
+DATA_RETENTION_HOURS = max(1, int(os.getenv("ASLIKAUN_RAW_RETENTION_HOURS", "48")))
+INGEST_RATE_LIMIT = max(1, int(os.getenv("ASLIKAUN_INGEST_LIMIT_PER_MINUTE", "12")))
+INGEST_RATE_WINDOW_SECONDS = 60
 bearer_scheme = HTTPBearer(auto_error=False)
+
+def _async_ingest_enabled() -> bool:
+    return os.getenv("ASLIKAUN_ASYNC_INGEST", "false").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
 
 # Automatically load .env file from repository root if present
 def _load_env_file():
@@ -214,6 +224,10 @@ class SessionIngest(BaseModel):
     is_simulated: bool = Field(default=False)
     accept_latency_ms: float | None = Field(default=None, ge=0)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    device_key_id: str | None = Field(default=None, max_length=128)
+    device_signature: str | None = Field(default=None, max_length=4096)
+    device_nonce: str | None = Field(default=None, max_length=256)
+    device_signed_at: datetime | None = None
 
 
 
@@ -250,6 +264,11 @@ class AdminLogin(BaseModel):
     password: str = Field(min_length=1, max_length=200)
 
 
+class DeviceEnrollment(BaseModel):
+    public_key_pem: str = Field(min_length=80, max_length=4096)
+    algorithm: str = Field(default="Ed25519", pattern="^Ed25519$")
+
+
 class UserLogin(BaseModel):
     email: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=1, max_length=200)
@@ -265,12 +284,17 @@ class UserRegister(BaseModel):
 # ---------- SQLite ----------
 
 def connect() -> sqlite3.Connection:
+    if database.using_postgres():
+        return database.connect()
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     return con
 
 
 def init_db() -> None:
+    if database.using_postgres():
+        database.init_postgres_schema()
+        return
     with connect() as con:
         con.executescript("""
         CREATE TABLE IF NOT EXISTS drivers (
@@ -407,6 +431,8 @@ def init_db() -> None:
             con.execute("ALTER TABLE drivers ADD COLUMN timeseries_json TEXT NOT NULL DEFAULT '{}'")
         if "threshold_json" not in driver_columns:
             con.execute("ALTER TABLE drivers ADD COLUMN threshold_json TEXT NOT NULL DEFAULT '{}'")
+        if "state_version" not in driver_columns:
+            con.execute("ALTER TABLE drivers ADD COLUMN state_version INTEGER NOT NULL DEFAULT 0")
 
 
 def hash_password(password: str, salt: bytes | None = None) -> str:
@@ -488,8 +514,17 @@ def decode_google_oauth_state(state: str) -> dict[str, Any]:
 
 
 def create_access_token(username: str) -> str:
+    tenant_id = "default"
+    if database.using_postgres():
+        with connect() as con:
+            row = con.execute(
+                "SELECT tenant_id FROM admin_users WHERE username=?", (username,)
+            ).fetchone()
+            if row and row["tenant_id"]:
+                tenant_id = row["tenant_id"]
     payload = {
         "sub": username,
+        "tenant_id": tenant_id,
         "exp": int(time.time()) + TOKEN_TTL_SECONDS,
     }
     encoded_payload = b64url_encode(
@@ -566,18 +601,30 @@ def require_admin(
 
     token_payload = decode_access_token(credentials.credentials)
     username = str(token_payload["sub"])
+    claimed_tenant = str(token_payload.get("tenant_id", "default"))
     with connect() as con:
-        admin = con.execute(
-            "SELECT username, active FROM admin_users WHERE username = ?",
-            (username,),
-        ).fetchone()
+        if database.using_postgres():
+            admin = con.execute(
+                "SELECT username, active, tenant_id FROM admin_users WHERE username = ?",
+                (username,),
+            ).fetchone()
+        else:
+            admin = con.execute(
+                "SELECT username, active FROM admin_users WHERE username = ?",
+                (username,),
+            ).fetchone()
     if admin is None or not admin["active"]:
         raise HTTPException(
             status_code=401,
             detail="Admin account is missing or disabled",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return {"username": username}
+    actual_tenant = str(admin["tenant_id"] if database.using_postgres() else "default")
+    if actual_tenant != claimed_tenant:
+        raise HTTPException(status_code=401, detail="Token tenant is no longer valid")
+    from backend.app.tenant_context import set_tenant
+    set_tenant(actual_tenant)
+    return {"username": username, "tenant_id": actual_tenant}
 
 
 def hash_driver_token(token: str) -> str:
@@ -593,16 +640,24 @@ def require_driver_token(driver_id: str, token: str | None) -> None:
             headers={"WWW-Authenticate": "DriverToken"},
         )
     with connect() as con:
-        row = con.execute(
-            "SELECT token_hash, active FROM driver_tokens WHERE driver_id = ?",
-            (driver_id,),
-        ).fetchone()
+        if database.using_postgres():
+            row = con.execute(
+                "SELECT token_hash, active, tenant_id FROM driver_tokens WHERE driver_id = ?",
+                (driver_id,),
+            ).fetchone()
+        else:
+            row = con.execute(
+                "SELECT token_hash, active FROM driver_tokens WHERE driver_id = ?",
+                (driver_id,),
+            ).fetchone()
     if (
         row is None
         or not row["active"]
         or not hmac.compare_digest(hash_driver_token(token), row["token_hash"])
     ):
         raise HTTPException(status_code=401, detail="Invalid or inactive driver token")
+    from backend.app.tenant_context import set_tenant
+    set_tenant(str(row["tenant_id"] if database.using_postgres() else "default"))
 
 
 def seed_admin_from_env() -> None:
@@ -724,7 +779,7 @@ def seed_demo_fleet() -> None:
             )
 
 
-def purge_stale_session_payloads(retention_days: int = DATA_RETENTION_DAYS) -> int:
+def purge_stale_session_payloads(retention_hours: int = DATA_RETENTION_HOURS) -> int:
     """Nulls out `payload_json` (the raw accel/touch/gps biometric
     payload) for sessions older than `retention_days`, keeping the
     scored summary columns (scores, quadrant, decision, reasons)
@@ -732,7 +787,7 @@ def purge_stale_session_payloads(retention_days: int = DATA_RETENTION_DAYS) -> i
     long-term" policy, not just a stated intention. Returns the number
     of rows purged. Safe to call repeatedly — already-purged rows are
     skipped via the payload_json marker."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=retention_hours)).isoformat()
     with connect() as con:
         cur = con.execute(
             """UPDATE sessions SET payload_json = '{"purged": true}'
@@ -756,8 +811,23 @@ async def lifespan(app: FastAPI):
             logger.warning("[startup] warmup_bundles failed: %s", e)
     purged = purge_stale_session_payloads()
     if purged:
-        logger.info("[retention] purged raw payloads for %s session(s) older than %s days", purged, DATA_RETENTION_DAYS)
+        logger.info("[retention] purged raw payloads for %s session(s) older than %s hours", purged, DATA_RETENTION_HOURS)
+    async def retention_loop() -> None:
+        while True:
+            await asyncio.sleep(3600)
+            try:
+                count = await asyncio.to_thread(purge_stale_session_payloads)
+                if count:
+                    logger.info("[retention] purged raw payloads for %s session(s)", count)
+            except Exception:
+                logger.exception("[retention] scheduled purge failed")
+    retention_task = asyncio.create_task(retention_loop())
     yield
+    retention_task.cancel()
+    try:
+        await retention_task
+    except asyncio.CancelledError:
+        pass
     logger.info("[shutdown] AsliKaun API cleanly stopped.")
 
 app.router.lifespan_context = lifespan
@@ -1011,7 +1081,31 @@ def public_result(row: sqlite3.Row) -> dict:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "aslikaun-api"}
+    dependencies = {"database": "postgres" if database.using_postgres() else "sqlite"}
+    if os.getenv("REDIS_URL", "").strip():
+        try:
+            import redis
+            redis.Redis.from_url(os.environ["REDIS_URL"]).ping()
+            dependencies["redis"] = "ok"
+        except Exception:
+            dependencies["redis"] = "unavailable"
+    return {"status": "ok", "service": "aslikaun-api", "dependencies": dependencies}
+
+
+@app.get("/v1/sessions/jobs/{job_id}")
+def get_ingest_job(job_id: str) -> dict:
+    if not database.using_postgres():
+        raise HTTPException(status_code=404, detail="Async ingestion is disabled")
+    from backend.app.ingest_queue import read_job
+
+    job = read_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Ingest job not found")
+    if job.get("result_json"):
+        job["result"] = decode_json(job.pop("result_json"), {})
+    else:
+        job.pop("result_json", None)
+    return job
 
 
 @app.post("/v1/admin/login")
@@ -1381,17 +1475,67 @@ def ingest_session(
     body: SessionIngest,
     x_driver_token: str | None = Header(default=None, alias="X-Driver-Token"),
     x_telemetry_batch_id: str | None = Header(default=None, alias="X-Telemetry-Batch-Id"),
+    response: Response = None,
+    x_internal_worker: bool = False,
 ) -> dict:
     """Ingest a session only from the driver app/token assigned to this driver ID."""
+    # The simulator calls this handler as a normal Python function, bypassing
+    # FastAPI's dependency injection. In that case Header defaults are Header
+    # objects rather than string values.
+    if not isinstance(x_driver_token, str):
+        x_driver_token = None
+    if not isinstance(x_telemetry_batch_id, str):
+        x_telemetry_batch_id = None
     if x_driver_token is not None and isinstance(x_driver_token, str) and x_driver_token.strip():
         require_driver_token(body.driver_id, x_driver_token.strip())
+    allowed, retry_after = cache.allow_sliding_window(
+        f"aslikaun:ingest:{hashlib.sha256(body.driver_id.encode('utf-8')).hexdigest()}",
+        INGEST_RATE_LIMIT,
+        INGEST_RATE_WINDOW_SECONDS,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Ingest limit reached ({INGEST_RATE_LIMIT} batches per minute).",
+            headers={"Retry-After": str(retry_after)},
+        )
     batch_id = (x_telemetry_batch_id or "").strip()
+    if _async_ingest_enabled() and database.using_postgres() and not x_internal_worker:
+        if not batch_id:
+            batch_id = secrets.token_urlsafe(24)
+        from backend.app.ingest_queue import enqueue_job
+
+        try:
+            job_id = enqueue_job(
+                body.driver_id,
+                batch_id,
+                {
+                    "body": body.model_dump(mode="json"),
+                    "driver_token": x_driver_token,
+                    "batch_id": batch_id,
+                },
+            )
+        except Exception as exc:
+            logger.exception("Unable to enqueue telemetry job")
+            raise HTTPException(
+                status_code=503,
+                detail="Telemetry queue is unavailable; retry the request.",
+            ) from exc
+        if response is not None:
+            response.status_code = 202
+        return {
+            "job_id": job_id,
+            "batch_id": batch_id,
+            "driver_id": body.driver_id,
+            "status": "queued",
+            "poll_url": f"/v1/sessions/jobs/{job_id}",
+        }
     if batch_id:
         if len(batch_id) > 128:
             raise HTTPException(status_code=400, detail="Invalid telemetry batch ID")
         with connect() as con:
             saved = con.execute("SELECT response_json FROM telemetry_batches WHERE batch_id=? AND driver_id=?", (batch_id, body.driver_id)).fetchone()
-            if saved:
+            if saved and saved["response_json"]:
                 return decode_json(saved["response_json"], {})
     current_context = {
         "device_id": body.device_id,
@@ -1402,6 +1546,9 @@ def ingest_session(
     payload_dict = body.model_dump(mode="json")
 
     with connect() as con:
+        if database.using_postgres() and not x_internal_worker:
+            from backend.app.device_auth import verify_signed_request
+            verify_signed_request(con, body.driver_id, body)
         driver = con.execute(
             "SELECT * FROM drivers WHERE driver_id = ?", (body.driver_id,)
         ).fetchone()
@@ -2052,6 +2199,50 @@ def get_consent_status(driver_id: str) -> dict:
 FACE_MATCH_THRESHOLD = 0.6  # same uncalibrated threshold as ml/models/face_verification.py
 _ESCALATED_DECISIONS = ("challenge_at_safe_pause", "step_up_check_at_safe_pause")
 
+def _queue_verification_review(
+    driver_id: str,
+    status: str,
+    reason: str,
+    captured_at: str | None = None,
+) -> None:
+    """Persist a challenge result without retaining the submitted image."""
+    timestamp = now_iso()
+    challenge_id = secrets.token_urlsafe(18)
+    with connect() as con:
+        latest_session = con.execute(
+            "SELECT id, decision FROM sessions WHERE driver_id = ? ORDER BY id DESC LIMIT 1",
+            (driver_id,),
+        ).fetchone()
+        con.execute(
+            """INSERT INTO verification_requests
+               (challenge_id, driver_id, status, captured_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (challenge_id, driver_id, status, captured_at or timestamp, timestamp),
+        )
+        if latest_session is not None:
+            con.execute(
+                """INSERT OR IGNORE INTO review_queue
+                   (session_id, driver_id, decision, status, created_at, reviewer_note)
+                   VALUES (?, ?, ?, 'open', ?, ?)""",
+                (
+                    latest_session["id"],
+                    driver_id,
+                    latest_session["decision"] or "step_up_check_at_safe_pause",
+                    timestamp,
+                    f"Driver verification submitted: {reason}",
+                ),
+            )
+        write_event(
+            con,
+            driver_id,
+            "verification_submitted",
+            {"challenge_id": challenge_id, "status": status, "reason": reason},
+        )
+    broadcast_event_sync(
+        "verification_submitted",
+        {"driver_id": driver_id, "challenge_id": challenge_id, "status": status},
+    )
+
 
 def _decode_face_image(image_base64: str):
     """Returns a PIL.Image, or raises HTTPException(400) on bad input.
@@ -2158,8 +2349,7 @@ def respond_to_challenge(
         ).fetchone()
 
     if enrollment is None:
-        with connect() as con:
-            write_event(con, driver_id, "challenge_inconclusive", {"reason": "no_face_enrollment_on_file"})
+        _queue_verification_review(driver_id, "human_review", "no_face_enrollment_on_file")
         return {"driver_id": driver_id, "outcome": "human_review", "reason": "no_face_enrollment_on_file"}
 
     image = _decode_face_image(body.image_base64)
@@ -2168,6 +2358,11 @@ def respond_to_challenge(
     liveness = check_face_liveness_image(image) if check_face_liveness_image is not None else {"is_live": True}
     if not liveness.get("is_live", True):
         attack_type = liveness.get("attack_type", "presentation_attack_spoof")
+        _queue_verification_review(
+            driver_id,
+            "human_review",
+            f"presentation_attack:{attack_type}",
+        )
         with connect() as con:
             write_event(con, driver_id, "challenge_spoof_rejected", {
                 "liveness_score": liveness.get("liveness_score"),
@@ -2186,13 +2381,13 @@ def respond_to_challenge(
     # 2. Extract FaceNet embedding and evaluate cosine similarity
     challenge_embedding = embed_face_image(image)
     if challenge_embedding is None:
-        with connect() as con:
-            write_event(con, driver_id, "challenge_inconclusive", {"reason": "no_face_detected"})
+        _queue_verification_review(driver_id, "human_review", "no_face_detected")
         return {"driver_id": driver_id, "outcome": "human_review", "reason": "no_face_detected"}
 
     enrolled_embedding = np.frombuffer(base64.b64decode(enrollment["embedding_b64"]), dtype="float32")
     similarity = face_similarity(enrolled_embedding, challenge_embedding)
     passed = similarity >= FACE_MATCH_THRESHOLD
+    review_reason = f"face_match_below_threshold:{round(similarity, 4)}" if not passed else None
 
     with connect() as con:
         if passed:
@@ -2207,10 +2402,18 @@ def respond_to_challenge(
                     result.setdefault("reasons", []).append(
                         f"Mid-trip challenge passed (face similarity {round(similarity, 3)}, liveness={liveness.get('liveness_score', 1.0)}) — auto-cleared"
                     )
-                    con.execute(
-                        "UPDATE drivers SET latest_result_json = ?, updated_at = ? WHERE driver_id = ?",
-                        (json.dumps(result), now_iso(), driver_id),
+                    state_update = con.execute(
+                        """UPDATE drivers
+                           SET latest_result_json = ?, state_version = state_version + 1,
+                               updated_at = ?
+                           WHERE driver_id = ? AND state_version = ?""",
+                        (json.dumps(result), now_iso(), driver_id, int(driver_d.get("state_version", 0))),
                     )
+                    if state_update.rowcount != 1:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="Safe-pause state changed concurrently; retry the challenge",
+                        )
 
                 # 3. Self-Supervised Re-Anchoring: safely assimilate verified ground-truth identity
                 if ML_TIMESERIES_AVAILABLE and DriverTimeSeriesProfiler is not None:
@@ -2236,6 +2439,9 @@ def respond_to_challenge(
             })
         else:
             write_event(con, driver_id, "challenge_failed_or_inconclusive", {"similarity": round(similarity, 4)})
+
+    if review_reason:
+        _queue_verification_review(driver_id, "human_review", review_reason)
 
     return {
         "driver_id": driver_id,
@@ -2551,6 +2757,65 @@ def issue_driver_token(
         "header_name": "X-Driver-Token",
         "note": "Copy this token now. It is stored as a hash and cannot be retrieved later.",
     }
+
+
+@app.post("/v1/admin/drivers/{driver_id}/device-keys")
+def enroll_device_key(
+    driver_id: str,
+    body: DeviceEnrollment,
+    admin: dict[str, str] = Depends(require_admin),
+) -> dict:
+    """Register a device public key; the private key never leaves the device."""
+    from backend.app.device_auth import new_key_id
+
+    key_id = new_key_id()
+    timestamp = now_iso()
+    with connect() as con:
+        driver = con.execute(
+            "SELECT driver_id FROM drivers WHERE driver_id=?", (driver_id,)
+        ).fetchone()
+        if driver is None:
+            con.execute(
+                """INSERT INTO drivers(driver_id, anchor_json, fast_json, latest_json,
+                   latest_result_json, updated_at) VALUES(?, '{}', '{}', '{}', '{}', ?)""",
+                (driver_id, timestamp),
+            )
+        con.execute(
+            """INSERT INTO device_keys
+               (key_id, driver_id, public_key_pem, algorithm, active, created_at)
+               VALUES (?, ?, ?, ?, 1, ?)""",
+            (key_id, driver_id, body.public_key_pem, body.algorithm, timestamp),
+        )
+        write_event(
+            con,
+            driver_id,
+            "device_key_enrolled",
+            {"key_id": key_id, "algorithm": body.algorithm, "admin_username": admin["username"]},
+        )
+    return {
+        "driver_id": driver_id,
+        "key_id": key_id,
+        "algorithm": body.algorithm,
+        "created_at": timestamp,
+        "note": "Store the private key only in the device secure keystore.",
+    }
+
+
+@app.post("/v1/admin/drivers/{driver_id}/device-keys/{key_id}/revoke")
+def revoke_device_key(
+    driver_id: str,
+    key_id: str,
+    admin: dict[str, str] = Depends(require_admin),
+) -> dict:
+    with connect() as con:
+        result = con.execute(
+            """UPDATE device_keys SET active=FALSE, revoked_at=?
+               WHERE key_id=? AND driver_id=?""",
+            (now_iso(), key_id, driver_id),
+        )
+        if result.rowcount != 1:
+            raise HTTPException(status_code=404, detail="Device key not found")
+    return {"driver_id": driver_id, "key_id": key_id, "status": "revoked"}
 
 
 @app.get("/v1/admin/drivers/{driver_id}/declarations")
@@ -3476,5 +3741,3 @@ def serve_root_png(filename: str) -> Any:
         if candidate.exists():
             return FileResponse(str(candidate), media_type="image/png")
     raise HTTPException(status_code=404)
-
-

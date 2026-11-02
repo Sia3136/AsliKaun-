@@ -335,6 +335,12 @@ def test_continuous_simulator_toggle(client: TestClient):
     assert stop_resp.json()["active"] is False
 
 
+def test_simulation_direct_call_does_not_use_fastapi_header_defaults(client: TestClient):
+    response = client.post("/v1/ml/simulate", json={"scenario": "lazy_renter"})
+    assert response.status_code == 200, response.text
+    assert response.json()["scenario"] == "lazy_renter"
+
+
 def test_telemetry_batch_retry_is_idempotent_and_records_stop_event_once(client: TestClient):
     driver_id = "test-idempotent-stop-batch"
     payload = session_payload(driver_id, client_events=[{

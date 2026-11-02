@@ -84,6 +84,32 @@ flowchart TD
 | **Explainable AI (XAI)** | **Groq Cloud LLM (`qwen/qwen3.8-27b`)** | Sub-300ms natural-language translation of complex multi-axis geometric variances into plain-English, auditor-ready reason vectors; deterministic offline rule fallback. |
 | **Real-Time Client Sync** | **Server-Sent Events (SSE)** | Unidirectional, lightweight event streaming from server to fleet consoles with automatic reconnection, zero WebSocket protocol negotiation overhead. |
 
+## Local PostgreSQL + Redis deployment
+
+The local end-to-end deployment uses PostgreSQL 16 as the transactional store
+and Redis 7 Streams for asynchronous telemetry ingestion. Copy the local
+development values from `.env.example` into the repository `.env` file; do not
+commit that file.
+
+```powershell
+docker compose up -d
+python -m pip install -r backend/requirements.txt
+python -c "from backend.app import database; database.init_postgres_schema()"
+python run_server.py
+```
+
+Run the telemetry worker in a second terminal:
+
+```powershell
+python -m backend.worker
+```
+
+When `ASLIKAUN_ASYNC_INGEST=true`, `POST /v1/sessions/ingest` returns
+`202 Accepted` with a job ID. Poll `/v1/sessions/jobs/{job_id}` for the
+result. Device signing can be enforced with
+`ASLIKAUN_REQUIRE_DEVICE_SIGNATURE=true`; administrators enroll public keys at
+`POST /v1/admin/drivers/{driver_id}/device-keys`.
+
 ---
 
 ## 4. Design Rationale, Trade-Offs & Why These Choices

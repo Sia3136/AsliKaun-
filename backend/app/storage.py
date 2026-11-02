@@ -10,10 +10,28 @@ import os
 import time
 import logging
 import json
+import threading
 from typing import Any
 
 logger = logging.getLogger("aslikaun.storage")
 
+def _load_local_env() -> None:
+    env_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+    if not os.path.exists(env_file):
+        return
+    try:
+        with open(env_file, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+    except OSError:
+        return
+
+
+_load_local_env()
 REDIS_URL = os.getenv("REDIS_URL", "").strip()
 CLICKHOUSE_URL = os.getenv("CLICKHOUSE_URL", "").strip()
 
@@ -23,6 +41,7 @@ CLICKHOUSE_URL = os.getenv("CLICKHOUSE_URL", "").strip()
 class InMemoryCache:
     def __init__(self) -> None:
         self._store: dict[str, tuple[str, float | None]] = {}
+        self._lock = threading.Lock()
 
     def get(self, key: str) -> str | None:
         if key not in self._store:
@@ -42,6 +61,20 @@ class InMemoryCache:
 
     def exists(self, key: str) -> bool:
         return self.get(key) is not None
+
+    def allow_sliding_window(self, key: str, limit: int, window_seconds: int) -> tuple[bool, int]:
+        now = time.time()
+        with self._lock:
+            values = self._store.get(key, ("[]", None))[0]
+            try:
+                attempts = [stamp for stamp in json.loads(values) if now - stamp < window_seconds]
+            except (TypeError, ValueError):
+                attempts = []
+            if len(attempts) >= limit:
+                return False, max(1, int(window_seconds - (now - attempts[0])))
+            attempts.append(now)
+            self._store[key] = (json.dumps(attempts), now + window_seconds)
+            return True, 0
 
 
 class RedisCacheWrapper:
@@ -77,18 +110,52 @@ class RedisCacheWrapper:
         except Exception:
             return False
 
+    def allow_sliding_window(self, key: str, limit: int, window_seconds: int) -> tuple[bool, int]:
+        # One atomic Redis script keeps the per-driver window consistent across workers.
+        script = """
+        local now = tonumber(ARGV[1]); local window = tonumber(ARGV[2]); local max = tonumber(ARGV[3])
+        redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now-window)
+        local count = redis.call('ZCARD', KEYS[1])
+        if count >= max then
+          local first = redis.call('ZRANGE', KEYS[1], 0, 0, 'WITHSCORES')
+          return {0, math.max(1, math.ceil(window-(now-tonumber(first[2]))))}
+        end
+        redis.call('ZADD', KEYS[1], now, ARGV[4]); redis.call('EXPIRE', KEYS[1], window)
+        return {1, 0}
+        """
+        try:
+            result = self.client.eval(script, 1, key, time.time(), window_seconds, limit, f"{time.time_ns()}")
+            return bool(result[0]), int(result[1])
+        except Exception as e:
+            logger.warning("[redis] sliding-window limit failed closed: %s", e)
+            return False, window_seconds
+
 
 def get_cache_backend():
     """Initializes and returns Redis client if available, else InMemoryCache."""
     if REDIS_URL:
-        try:
-            import redis
-            client = redis.from_url(REDIS_URL)
-            client.ping()
-            logger.info("[storage] connected to external Redis cache at %s", REDIS_URL)
-            return RedisCacheWrapper(client)
-        except Exception as e:
-            logger.warning("[storage] Redis configured at %s but connection failed (%s); using in-memory cache", REDIS_URL, e)
+        import redis
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                client = redis.from_url(
+                    REDIS_URL,
+                    socket_connect_timeout=5,
+                    socket_timeout=5,
+                    retry_on_timeout=True,
+                )
+                client.ping()
+                logger.info("[storage] connected to external Redis cache at %s", REDIS_URL)
+                return RedisCacheWrapper(client)
+            except Exception as exc:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(1)
+        logger.warning(
+            "[storage] Redis configured at %s but connection failed (%s); using in-memory cache",
+            REDIS_URL,
+            last_error,
+        )
     return InMemoryCache()
 
 
@@ -124,4 +191,3 @@ class TimeSeriesBackend:
 
 cache = get_cache_backend()
 timeseries_store = TimeSeriesBackend()
-

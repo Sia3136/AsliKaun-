@@ -379,6 +379,11 @@ main, footer {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.nav-theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 [data-theme="light"] .nav-theme-toggle {
   border-color: rgba(20, 35, 65, 0.1);
   color: #64748b;
@@ -2183,4 +2188,3 @@ footer {
   background: rgba(56, 189, 248, 0.15);
   color: #38bdf8;
 }
-

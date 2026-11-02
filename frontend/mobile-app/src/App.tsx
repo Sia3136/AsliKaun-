@@ -401,6 +401,14 @@ function Header({
       </button>
       <div className="header-actions">
         <button
+          className="icon-button"
+          onClick={() => window.open("http://localhost:3000/fleet-dashboard.html", "_blank", "noopener,noreferrer")}
+          aria-label="Open fleet operations dashboard"
+          title="Open fleet operations dashboard"
+        >
+          <Icon name="route" />
+        </button>
+        <button
           className="icon-button notification-button"
           onClick={onNotifications}
           aria-label="Open notifications"

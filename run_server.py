@@ -2,6 +2,7 @@
 
 Boots FastAPI + ML Bridge + Static Web Server on http://localhost:8000.
 """
+import os
 import sys
 from pathlib import Path
 import uvicorn
@@ -19,4 +20,11 @@ if __name__ == "__main__":
     print("  * Operations Admin Dashboard:   http://localhost:8000/dashboard.html")
     print("  * Driver Mobile App Demo:       http://localhost:8000/driver-app-demo.html")
     print("  * API Documentation (Swagger):  http://localhost:8000/docs")
-    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["backend", "frontend"])
+    reload_enabled = os.getenv("ASLIKAUN_RELOAD", "0").strip().lower() in {"1", "true", "yes", "on"}
+    uvicorn.run(
+        "backend.app.main:app",
+        host=os.getenv("ASLIKAUN_HOST", "127.0.0.1"),
+        port=int(os.getenv("ASLIKAUN_PORT", "8000")),
+        reload=reload_enabled,
+        reload_dirs=["backend", "frontend"] if reload_enabled else None,
+    )

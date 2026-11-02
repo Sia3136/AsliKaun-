@@ -1189,6 +1189,10 @@ export type AuthUser = {
 
 // --- MAIN APPLICATION ---
 export default function App() {
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    const saved = localStorage.getItem("tm_theme");
+    return saved === "dark" ? "dark" : "light";
+  });
   const [page, setPage] = useState<Page>("Continuity matrix");
   const [message, setMessage] = useState("");
   const [drivers, setDrivers] = useState<Driver[]>(INITIAL_DRIVERS);
@@ -1199,6 +1203,11 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAutoSimActive, setIsAutoSimActive] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("tm_theme", theme);
+  }, [theme]);
 
   // Authenticated Operator State
   const [currentUser, setCurrentUser] = useState<AuthUser>(() => {
@@ -1368,6 +1377,7 @@ export default function App() {
             parsed.event === "fleet_update" ||
             parsed.event === "session_scored" ||
             parsed.event === "review_resolved" ||
+            parsed.event === "verification_submitted" ||
             parsed.event === "challenge_refusal" ||
             parsed.event === "driver_calibrated" ||
             parsed.event === "telemetry_tick"
@@ -1567,6 +1577,27 @@ export default function App() {
         </nav>
 
         <div className="header-right">
+          <button
+            className="theme-toggle-admin"
+            onClick={() => window.open("http://localhost:8443/", "_blank", "noopener,noreferrer")}
+            aria-label="Open driver mobile app"
+            title="Open driver mobile app"
+          >
+            <span aria-hidden="true">↗</span>
+            <span>Driver app</span>
+          </button>
+
+          <button
+            className="theme-toggle-admin"
+            onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-pressed={theme === "light"}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          >
+            <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+            <span>{theme === "dark" ? "Light" : "Dark"}</span>
+          </button>
+
           <button
             className={`live-btn ${isAutoSimActive ? "active-pulse" : ""}`}
             onClick={toggleAutoSimulator}

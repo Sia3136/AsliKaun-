@@ -41,6 +41,7 @@ export const Navbar: React.FC<NavbarProps> = ({ theme, onToggleTheme }) => {
             className="nav-theme-toggle"
             id="themeToggle"
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            aria-pressed={theme === 'light'}
             title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             onClick={onToggleTheme}
           >

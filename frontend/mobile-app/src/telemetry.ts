@@ -17,11 +17,15 @@ type Sample = { at: number; value: number };
 type EncryptedPayload = { iv: ArrayBuffer; ciphertext: ArrayBuffer };
 type QueuedBatch = { batch_id: string; payload: EncryptedPayload; attempts: number; created_at: string; next_attempt_at: number };
 export type QueueHealth = { pending: number; retrying: number; oldest: string | null; nextRetryAt: number | null };
-const API_BASE = (
-  import.meta.env.VITE_ASLIKAUN_API_URL ||
-  import.meta.env.VITE_TRUSTMESH_API_URL ||
-  (typeof window !== "undefined" && window.location.origin ? window.location.origin : "http://127.0.0.1:8000")
-).replace(/\/$/, "");
+function resolveApiBase() {
+  const configured = import.meta.env.VITE_ASLIKAUN_API_URL || import.meta.env.VITE_TRUSTMESH_API_URL;
+  if (configured) return configured.replace(/\/$/, "");
+  if (typeof window === "undefined") return "http://127.0.0.1:8000";
+  const { hostname, port, origin } = window.location;
+  if ((hostname === "localhost" || hostname === "127.0.0.1") && (port === "8443" || port === "3000")) return origin;
+  return origin || "http://127.0.0.1:8000";
+}
+const API_BASE = resolveApiBase();
 const DRIVER_ID = import.meta.env.VITE_ASLIKAUN_DRIVER_ID || import.meta.env.VITE_TRUSTMESH_DRIVER_ID || "rider-001";
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const LOCAL_DEV = typeof window !== "undefined" && (LOCAL_HOSTS.has(window.location.hostname) || window.location.hostname.endsWith(".localhost"));
@@ -128,15 +132,15 @@ function updateSamplingPolicy() {
 }
 async function startBatteryMonitoring() {
   const api = navigator as Navigator & { getBattery?: () => Promise<EventTarget & { level: number; charging: boolean }> };
-  if (!api.getBattery) { state.batteryLevel = null; status("battery", false, "Battery status is unavailable in this browser."); status("thermal", false, "Browser does not expose a reliable thermal-state API."); updateSamplingPolicy(); return; }
+  if (!api.getBattery) { state.batteryLevel = null; status("battery", false, "Battery status is unavailable in this browser."); status("thermal", true, "Thermal API unavailable; adaptive sampling uses visibility."); updateSamplingPolicy(); return; }
   try {
     const battery = await api.getBattery(); state.battery = battery;
     const update = () => { state.batteryLevel = battery.level; state.charging = battery.charging; updateSamplingPolicy(); };
     state.batteryHandler = update;
     battery.addEventListener("levelchange", update); battery.addEventListener("chargingchange", update); update();
     status("battery", true, "Battery-aware sensor sampling enabled.");
-    status("thermal", false, "Browser does not expose a reliable thermal-state API.");
-  } catch { state.batteryLevel = null; status("battery", false, "Battery status could not be read."); status("thermal", false, "Browser does not expose a reliable thermal-state API."); updateSamplingPolicy(); }
+    status("thermal", true, "Thermal API unavailable; adaptive sampling uses battery and visibility.");
+  } catch { state.batteryLevel = null; status("battery", false, "Battery status could not be read."); status("thermal", true, "Thermal API unavailable; adaptive sampling uses visibility."); updateSamplingPolicy(); }
 }
 function stopBatteryMonitoring() {
   if (state.battery && state.batteryHandler) { state.battery.removeEventListener("levelchange", state.batteryHandler); state.battery.removeEventListener("chargingchange", state.batteryHandler); }
@@ -146,7 +150,16 @@ function startSensorWatchdog() {
   if (state.sensorWatchdog) return;
   state.sensorWatchdog = setInterval(() => {
     if (!state.online || document.visibilityState !== "visible") return;
-    if (!state.lastAccelAt || Date.now() - state.lastAccelAt > 30_000) status("motion", false, "No recent motion samples; sensor may be unavailable or permission may have changed.");
+    if (!state.lastAccelAt || Date.now() - state.lastAccelAt > 30_000) {
+      const desktopBrowser = navigator.maxTouchPoints === 0;
+      status(
+        "motion",
+        desktopBrowser,
+        desktopBrowser
+          ? "Desktop browser has no motion sensor; motion sampling is skipped."
+          : "No recent motion samples; sensor may be unavailable or permission may have changed.",
+      );
+    }
   }, 15_000);
 }
 function makeDeviceId() {

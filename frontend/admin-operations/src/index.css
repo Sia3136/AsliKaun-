@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap');
 @import 'tailwindcss';
 
 :root {
@@ -18,6 +18,70 @@ button { font: inherit; }
               radial-gradient(circle at 82% 88%, rgba(56, 189, 248, 0.07), transparent 32%),
               #08090d;
   color: #f8fafc;
+}
+
+[data-theme="light"] .app {
+  background: #f5f7fb;
+  color: #172033;
+}
+
+[data-theme="light"] header {
+  background: rgba(255, 255, 255, 0.94);
+  color: #172033;
+  border-bottom-color: #dbe3ee;
+  box-shadow: 0 4px 24px rgba(27, 44, 75, 0.08);
+}
+
+[data-theme="light"] .brand b {
+  color: #172033;
+}
+
+[data-theme="light"] nav button {
+  color: #526179;
+}
+
+[data-theme="light"] nav button:hover {
+  color: #172033;
+  background: #eef3f9;
+}
+
+.theme-toggle-admin {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+  padding: 8px 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.theme-toggle-admin:hover,
+.theme-toggle-admin:focus-visible {
+  border-color: #10b981;
+  color: #ffffff;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.theme-toggle-admin:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
+}
+
+[data-theme="light"] .theme-toggle-admin {
+  background: #f8fafc;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+
+[data-theme="light"] .theme-toggle-admin:hover,
+[data-theme="light"] .theme-toggle-admin:focus-visible {
+  color: #0f172a;
+  background: #ecfdf5;
 }
 
 header {
@@ -1173,3 +1237,317 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
 @keyframes pulse { 50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0.3); } }
 @keyframes live { 50% { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0.15); } }
 @keyframes reveal { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+/* The operations console is light by default. Keep the dark palette available
+   through the header toggle, while ensuring every dashboard surface follows
+   the selected theme. */
+[data-theme="light"] {
+  color: #172033;
+  background: #f5f7fb;
+}
+
+[data-theme="light"] body {
+  background: #f5f7fb;
+}
+
+[data-theme="light"] .app {
+  background: linear-gradient(135deg, #f8fafc 0%, #eef4f8 100%);
+  color: #172033;
+}
+
+[data-theme="light"] header {
+  background: rgba(255, 255, 255, 0.96);
+  color: #172033;
+  border-bottom: 1px solid #dbe3ee;
+  box-shadow: 0 4px 24px rgba(27, 44, 75, 0.08);
+}
+
+[data-theme="light"] .brand b,
+[data-theme="light"] .page-title h1,
+[data-theme="light"] .panel-head h2,
+[data-theme="light"] .inspector h3,
+[data-theme="light"] .section-title,
+[data-theme="light"] .metric strong,
+[data-theme="light"] .table-title h3,
+[data-theme="light"] .chart-card h3 {
+  color: #172033;
+}
+
+[data-theme="light"] nav button {
+  color: #526179;
+}
+
+[data-theme="light"] nav button:hover {
+  color: #172033;
+  background: #eef3f9;
+}
+
+[data-theme="light"] .metric,
+[data-theme="light"] .panel,
+[data-theme="light"] .inspector {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: #dbe3ee;
+  box-shadow: 0 12px 30px rgba(27, 44, 75, 0.09);
+}
+
+[data-theme="light"] .metric:hover {
+  box-shadow: 0 14px 34px rgba(27, 44, 75, 0.14);
+  border-color: #b8c8d8;
+}
+
+[data-theme="light"] .updated,
+[data-theme="light"] .panel-head p,
+[data-theme="light"] .metric-label,
+[data-theme="light"] .metric small,
+[data-theme="light"] .inspector p,
+[data-theme="light"] .facts span,
+[data-theme="light"] .section-title small,
+[data-theme="light"] .signal small,
+[data-theme="light"] .chart-labels,
+[data-theme="light"] .chart-bottom,
+[data-theme="light"] .chart-legend,
+[data-theme="light"] .map-foot,
+[data-theme="light"] .threshold-x,
+[data-theme="light"] .threshold-y,
+[data-theme="light"] .x-title,
+[data-theme="light"] .y-title {
+  color: #64748b;
+}
+
+[data-theme="light"] .updated span {
+  color: #526179;
+}
+
+[data-theme="light"] .facts b,
+[data-theme="light"] .signal > div:first-child {
+  color: #334155;
+}
+
+[data-theme="light"] .legend,
+[data-theme="light"] .chips,
+[data-theme="light"] .scenario,
+[data-theme="light"] .model-cards > div,
+[data-theme="light"] .dot span {
+  background: #f8fafc;
+  border-color: #dbe3ee;
+  color: #334155;
+}
+
+[data-theme="light"] .matrix {
+  border-color: #b8c8d8;
+  background:
+    linear-gradient(90deg, transparent 59.8%, rgba(71, 85, 105, 0.16) 60%, transparent 60.2%),
+    linear-gradient(0deg, transparent 28.8%, rgba(71, 85, 105, 0.16) 29%, transparent 29.2%),
+    linear-gradient(90deg, rgba(226, 232, 240, 0.8) 50%, rgba(241, 245, 249, 0.9) 50%);
+}
+
+[data-theme="light"] .matrix:after {
+  background:
+    linear-gradient(rgba(71, 85, 105, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 85, 105, 0.1) 1px, transparent 1px);
+}
+
+[data-theme="light"] .dot {
+  border-color: #ffffff;
+}
+
+[data-theme="light"] .dot span {
+  color: #172033;
+  background: #ffffff;
+}
+
+[data-theme="light"] .inspector-top,
+[data-theme="light"] .facts,
+[data-theme="light"] .case,
+[data-theme="light"] th,
+[data-theme="light"] td,
+[data-theme="light"] .modal-header {
+  border-color: #dbe3ee;
+}
+
+[data-theme="light"] .bar {
+  background: #e2e8f0;
+}
+
+[data-theme="light"] .reason {
+  background: #ecfdf5;
+  border-color: #a7e3c5;
+}
+
+[data-theme="light"] .reason p {
+  color: #405466;
+}
+
+[data-theme="light"] .safe {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+[data-theme="light"] .secondary,
+[data-theme="light"] .export {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+[data-theme="light"] .secondary:hover,
+[data-theme="light"] .export:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+[data-theme="light"] .chips button {
+  color: #64748b;
+}
+
+[data-theme="light"] .chips button.active {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+[data-theme="light"] .case > div:nth-child(2) b,
+[data-theme="light"] .case p,
+[data-theme="light"] td {
+  color: #334155;
+}
+
+[data-theme="light"] .case > div:nth-child(2) span,
+[data-theme="light"] .case small,
+[data-theme="light"] th {
+  color: #64748b;
+}
+
+[data-theme="light"] tbody tr:hover,
+[data-theme="light"] .case:hover {
+  background: #f1f5f9;
+}
+
+[data-theme="light"] .model-cards > div:hover {
+  box-shadow: 0 10px 25px rgba(27, 44, 75, 0.12);
+  border-color: #b8c8d8;
+}
+
+[data-theme="light"] .model-cards span {
+  color: #64748b;
+}
+
+[data-theme="light"] .model-cards > div.featured {
+  color: #172033;
+}
+
+[data-theme="light"] .modal-backdrop {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+[data-theme="light"] .modal-card {
+  background: #ffffff;
+  border-color: #dbe3ee;
+  box-shadow: 0 20px 50px rgba(27, 44, 75, 0.2);
+}
+
+[data-theme="light"] .modal-header h3,
+[data-theme="light"] .modal-body {
+  color: #172033;
+}
+
+[data-theme="light"] .gridline {
+  stroke: rgba(71, 85, 105, 0.16);
+}
+
+/* Match the driver app's calm, editorial light surface on the operations
+   console while retaining the existing information-dense layout. */
+[data-theme="light"] {
+  font-family: "Inter", "DM Sans", sans-serif;
+  color: #252522;
+  background: #f2efea;
+}
+
+[data-theme="light"] .app {
+  background: #fffefc;
+  color: #252522;
+}
+
+[data-theme="light"] header {
+  background: rgba(255, 254, 252, 0.95);
+  border-bottom-color: #eae6df;
+  box-shadow: 0 4px 24px rgba(42, 37, 31, 0.08);
+}
+
+[data-theme="light"] .panel,
+[data-theme="light"] .metric,
+[data-theme="light"] .inspector,
+[data-theme="light"] .model-cards > div,
+[data-theme="light"] .scenario {
+  background: #fffefc;
+  border-color: #eae6df;
+  box-shadow: 0 8px 24px rgba(42, 37, 31, 0.06);
+}
+
+[data-theme="light"] .panel-head h2,
+[data-theme="light"] .page-title h1,
+[data-theme="light"] .table-title h3,
+[data-theme="light"] .chart-card h3,
+[data-theme="light"] .inspector h3,
+[data-theme="light"] .metric strong {
+  font-family: "Newsreader", Georgia, serif;
+  font-weight: 500;
+  color: #252522;
+}
+
+[data-theme="light"] .panel-head p,
+[data-theme="light"] .metric-label,
+[data-theme="light"] .metric small,
+[data-theme="light"] .inspector p,
+[data-theme="light"] .facts span,
+[data-theme="light"] .section-title small,
+[data-theme="light"] .chart-labels,
+[data-theme="light"] .chart-bottom,
+[data-theme="light"] .chart-legend {
+  color: #77736d;
+}
+
+[data-theme="light"] .secondary,
+[data-theme="light"] .export {
+  background: #f8f6f2;
+  border-color: #eae6df;
+  color: #252522;
+}
+
+[data-theme="light"] .secondary:hover,
+[data-theme="light"] .export:hover {
+  background: #fff0e6;
+  border-color: #f0c5a9;
+}
+
+[data-theme="light"] .primary {
+  background: linear-gradient(135deg, #f47738, #e96b2c);
+  border-color: #e96b2c;
+  box-shadow: 0 4px 14px rgba(244, 119, 56, 0.25);
+}
+
+[data-theme="light"] .chips,
+[data-theme="light"] .legend {
+  background: #f8f6f2;
+  border-color: #eae6df;
+}
+
+[data-theme="light"] .chips button.active {
+  background: #fff0e6;
+  color: #e96b2c;
+}
+
+/* Use the same mobile-app type pairing in both dashboard themes. */
+[data-theme="dark"] {
+  font-family: "Inter", "DM Sans", sans-serif;
+}
+
+[data-theme="dark"] .page-title h1,
+[data-theme="dark"] .panel-head h2,
+[data-theme="dark"] .table-title h3,
+[data-theme="dark"] .chart-card h3,
+[data-theme="dark"] .inspector h3,
+[data-theme="dark"] .section-title,
+[data-theme="dark"] .scenario h3 {
+  font-family: "Newsreader", Georgia, serif;
+  font-weight: 500;
+}
