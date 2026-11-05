@@ -10,6 +10,7 @@ Validates:
 7. Self-supervised ground-truth re-anchoring of the time-series profiler.
 """
 import base64
+import importlib
 import io
 import os
 import time
@@ -21,7 +22,8 @@ os.environ["ASLIKAUN_INGEST_LIMIT_PER_MINUTE"] = "1000"
 
 from fastapi.testclient import TestClient
 
-from backend.app.main import app, connect, hash_driver_token
+import backend.app.main as _main_module
+from backend.app.main import connect, hash_driver_token
 
 
 def _generate_telemetry_payload(
@@ -115,8 +117,51 @@ def _make_face_image(kind: str = "live") -> str:
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-def test_ml_pipeline_end_to_end_regression():
-    client = TestClient(app)
+def test_ml_pipeline_end_to_end_regression(monkeypatch, tmp_path_factory):
+    # Isolated DB, same pattern as test_api.py's `client` fixture — this
+    # test previously had no DB override at all, so it silently ran
+    # against whatever DB_PATH the process already resolved to (the real
+    # dev database when run alone, or test_api.py's leftover temp DB when
+    # run after it in the same session — order-dependent either way).
+    # Both are wrong for a test that writes drivers/sessions/tokens.
+    db_path = tmp_path_factory.mktemp("aslikaun_e2e_test") / "test.db"
+    monkeypatch.setenv("ASLIKAUN_DB", str(db_path))
+    monkeypatch.setenv("TRUST_JUGGLER_DB", str(db_path))
+    importlib.reload(_main_module)
+    # The identity-matching step (MTCNN face detection + FaceNet embedding,
+    # ml/models/face_verification.py's embed_face) needs a real photograph
+    # to find a face in — no procedurally generated image (gradient blob,
+    # drawn cartoon face, or the moiré-pattern "screen_replay" fixture
+    # below) is in its training distribution, so embed_face() legitimately
+    # returns None on all of them (confirmed empirically, not assumed).
+    # That's a real, separate thing to test with real photographic data
+    # elsewhere; it's not what this E2E test is for. This test is about
+    # the API orchestration (calibrate -> ingest -> escalate -> enroll ->
+    # challenge -> liveness/spoof-check -> clear), so the identity-match
+    # step is mocked to a fixed deterministic embedding, keeping the real,
+    # texture-based anti-spoofing/liveness check (check_face_liveness,
+    # Fourier/Laplacian/chrominance analysis — NOT MTCNN-dependent) real
+    # and untouched below, since that one genuinely can and does
+    # distinguish the "live" vs "screen_replay" synthetic fixtures.
+    # NOTE: dividing a float32 array by a bare np.sqrt(...) (float64)
+    # silently upcasts the result to float64 — doubles the byte size and
+    # corrupts the round-trip through driver_face_enrollment's
+    # np.frombuffer(..., dtype="float32") reader. Cast back explicitly.
+    fixed_embedding = (np.ones(512, dtype=np.float32) / np.sqrt(512)).astype(np.float32)
+    monkeypatch.setattr("backend.app.main.embed_face_image", lambda image: fixed_embedding)
+
+    # Use the freshly reloaded module's `app`, not the stale top-level
+    # import above — reload() rebinds `main.app` to a brand new FastAPI()
+    # instance; the earlier `from ... import app` still points at the
+    # pre-reload instance, which would silently run against the wrong app.
+    # `with` (not a bare TestClient(...)) triggers the lifespan startup
+    # event, which runs init_db() — without it the fresh isolated DB has
+    # no schema at all (confirmed: "no such table: drivers" without this).
+    with TestClient(_main_module.app) as client:
+        _run_e2e_regression(client, monkeypatch, fixed_embedding)
+
+
+def _run_e2e_regression(client: TestClient, monkeypatch, fixed_embedding: np.ndarray) -> None:
     driver_id = f"regress-courier-{int(time.time())}"
 
     # 1. Onboarding calibration
@@ -172,10 +217,10 @@ def test_ml_pipeline_end_to_end_regression():
     # 5. Provision Driver Token & Reference Face Enrollment
     driver_token = "test-e2e-token-123"
     live_b64 = _make_face_image("live")
-    enrolled_img = Image.open(io.BytesIO(base64.b64decode(live_b64)))
-    from ml.models.face_verification import embed_face
-    enrolled_emb = embed_face(enrolled_img)
-    assert enrolled_emb is not None
+    # Enrollment stores whatever embed_face_image() would produce for the
+    # driver's reference photo; since that call is mocked above to the
+    # fixed vector (see the monkeypatch comment), store that same vector
+    # directly rather than calling the real (MTCNN-dependent) embed_face.
     with connect() as con:
         con.execute(
             "INSERT OR REPLACE INTO driver_tokens(driver_id, token_hash, active, created_at) VALUES (?, ?, 1, ?)",
@@ -183,7 +228,7 @@ def test_ml_pipeline_end_to_end_regression():
         )
         con.execute(
             "INSERT OR REPLACE INTO driver_face_enrollment(driver_id, embedding_b64, enrolled_at) VALUES (?, ?, ?)",
-            (driver_id, base64.b64encode(enrolled_emb.tobytes()).decode("ascii"), "2026-10-29T10:00:00Z"),
+            (driver_id, base64.b64encode(fixed_embedding.tobytes()).decode("ascii"), "2026-10-29T10:00:00Z"),
         )
 
     # 6. Presentation Attack Anti-Spoofing Challenge Rejection

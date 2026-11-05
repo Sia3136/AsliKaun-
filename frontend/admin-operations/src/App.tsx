@@ -683,7 +683,7 @@ function ReviewQueue({
           />
           {search && (
             <button
-              style={{ background: "none", border: "none", cursor: "pointer", color: "#84928d", padding: "0 4px" }}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", padding: "0 4px" }}
               onClick={() => setSearch("")}
             >
               ×
@@ -694,7 +694,7 @@ function ReviewQueue({
 
       <div className="cases">
         {shown.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "32px", color: "#84928d" }}>
+          <div style={{ textAlign: "center", padding: "32px", color: "#94a3b8" }}>
             No review items match your current filter or query.
           </div>
         ) : (
@@ -715,7 +715,7 @@ function ReviewQueue({
                   <small>{c.status}</small>
                 </div>
                 <p>
-                  {formatTriageReason(c.reason)} <span style={{ color: "#84928d", marginLeft: "6px" }}>({c.speed})</span>
+                  {formatTriageReason(c.reason)} <span style={{ color: "#94a3b8", marginLeft: "6px" }}>({c.speed})</span>
                 </p>
                 <div className="case-actions">
                   <button className="secondary" onClick={() => onOpenCaseModal(c)}>
@@ -798,9 +798,14 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
           ))}
         </div>
 
-        <div style={{ marginTop: "14px", background: "#f8fbf9", border: "1px solid #dce9e4", padding: "12px 16px", borderRadius: "8px" }}>
-          <b style={{ fontSize: "11px", color: "#174b3a" }}>{selectedModel} Architecture Details:</b>
-          <p style={{ margin: "4px 0 0", fontSize: "11px", color: "#455952", lineHeight: 1.5 }}>
+        {/* Was hardcoded to the old light "hospital mint green" palette
+            (#f8fbf9/#174b3a/#455952) via inline styles, so it never
+            picked up the dashboard's dark-theme CSS overrides the way
+            class-based components like .panel/.metric do — rendered as
+            a stray white card on the dark page regardless of theme. */}
+        <div style={{ marginTop: "14px", background: "rgba(16, 185, 129, 0.06)", border: "1px solid rgba(16, 185, 129, 0.2)", padding: "12px 16px", borderRadius: "8px" }}>
+          <b style={{ fontSize: "11px", color: "#10b981" }}>{selectedModel} Architecture Details:</b>
+          <p style={{ margin: "4px 0 0", fontSize: "11px", color: "#94a3b8", lineHeight: 1.5 }}>
             {modelDetails[selectedModel]}
           </p>
         </div>
@@ -820,7 +825,7 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
           ].map((x) => (
             <div key={x[0] as string} style={{ cursor: "pointer" }} onClick={() => onNotify(`Cohort ${x[0]}: ${x[1]}% false-challenge rate across ${x[2]}`)}>
               <label>
-                <span>{x[0]} <small style={{ color: "#84928d", marginLeft: "4px" }}>({x[2]})</small></span>
+                <span>{x[0]} <small style={{ color: "#94a3b8", marginLeft: "4px" }}>({x[2]})</small></span>
                 <b>{x[1]}%</b>
               </label>
               <i>
@@ -1121,8 +1126,8 @@ function Simulator({
               <span className="status red" style={{ fontSize: "10px" }}>{result.decision}</span>
               <b>{result.scenario} classified as {result.quadrant}</b>
             </div>
-            <p style={{ margin: "4px 0 8px", fontSize: "11px", color: "#374d44" }}>{result.reason}</p>
-            <div style={{ display: "flex", gap: "16px", fontSize: "11px", color: "#687a74" }}>
+            <p style={{ margin: "4px 0 8px", fontSize: "11px", color: "#cbd5e1" }}>{result.reason}</p>
+            <div style={{ display: "flex", gap: "16px", fontSize: "11px", color: "#94a3b8" }}>
               <span>Context Continuity: <b>{result.contextScore ?? "N/A"}</b></span>
               <span>Behavior Continuity: <b>{result.behaviorScore ?? "N/A"}</b></span>
               <span>Target Driver: <b>{result.driverId}</b></span>
@@ -1138,7 +1143,7 @@ function Simulator({
           </div>
           <button
             onClick={() => setResult(null)}
-            style={{ fontSize: "18px", color: "#687a74", background: "none", border: "none", cursor: "pointer", height: "fit-content" }}
+            style={{ fontSize: "18px", color: "#94a3b8", background: "none", border: "none", cursor: "pointer", height: "fit-content" }}
             aria-label="Dismiss simulation result"
           >
             ×
@@ -1190,8 +1195,16 @@ export type AuthUser = {
 // --- MAIN APPLICATION ---
 export default function App() {
   const [theme, setTheme] = useState<"light" | "dark">(() => {
+    // Default to dark: the whole dashboard shell (nav, page background,
+    // auth screen) renders dark unconditionally, but several components
+    // (.metric stat cards among them) only get their dark styling under
+    // `[data-theme="dark"]` overrides and fall back to an old, unfinished
+    // light palette otherwise. Defaulting new visitors to "light" (no
+    // saved preference yet) produced a half-dark/half-washed-out-white
+    // page on first load — confirmed via computed styles showing the
+    // stat cards at rgb(255,254,252) against the dark shell around them.
     const saved = localStorage.getItem("tm_theme");
-    return saved === "dark" ? "dark" : "light";
+    return saved === "light" ? "light" : "dark";
   });
   const [page, setPage] = useState<Page>("Continuity matrix");
   const [message, setMessage] = useState("");
@@ -1637,7 +1650,7 @@ export default function App() {
                   <b>{currentUser.name}</b>
                   <span>{currentUser.organization || "Fleet Operations"} · {currentUser.email}</span>
                   <div style={{ marginTop: "4px" }}>
-                    <span style={{ fontSize: "11px", color: "#174b3a", background: "#eef9f4", padding: "2px 6px", borderRadius: "4px", fontWeight: 600 }}>
+                    <span style={{ fontSize: "11px", color: "#10b981", background: "rgba(16, 185, 129, 0.12)", padding: "2px 6px", borderRadius: "4px", fontWeight: 600 }}>
                       {currentUser.provider === "google" ? "Google Workspace" : "Enterprise Session"}
                     </span>
                   </div>
@@ -1735,7 +1748,7 @@ export default function App() {
                 <span className={`status ${activeCaseModal.status === "RESOLVED" ? "green" : "amber"}`}>
                   {activeCaseModal.status}
                 </span>
-                <small style={{ color: "#84928d", marginLeft: "auto" }}>{activeCaseModal.timestamp}</small>
+                <small style={{ color: "#94a3b8", marginLeft: "auto" }}>{activeCaseModal.timestamp}</small>
               </div>
 
               <div className="facts" style={{ margin: "10px 0" }}>

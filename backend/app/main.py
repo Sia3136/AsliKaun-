@@ -2948,6 +2948,18 @@ def driver_events(
         ]}
 
 
+# NOT CURRENTLY CALLED BY ANY FRONTEND (confirmed by a repo-wide search,
+# 2026-11-05). This is a second, parallel verification flow alongside
+# /v1/drivers/{id}/challenge/respond (the one the mobile app actually
+# calls — automated MTCNN/FaceNet match + texture-based liveness check).
+# This one is the more privacy-conscious design: it never auto-matches or
+# even stores the face image, just logs that a capture happened and waits
+# for an admin/external liveness provider's decision via
+# decide_verification() below. Looks like it was meant to replace the
+# automated flow, but the frontend was never pointed at it. Before
+# building anything new on EITHER flow, confirm with the team which one
+# is meant to be canonical — see CONTEXT.md's "two competing verification
+# systems" note.
 @app.post("/v1/drivers/{driver_id}/verification")
 def submit_verification(
     driver_id: str,

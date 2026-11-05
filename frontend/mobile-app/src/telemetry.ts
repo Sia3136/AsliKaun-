@@ -28,8 +28,29 @@ function resolveApiBase() {
 const API_BASE = resolveApiBase();
 const DRIVER_ID = import.meta.env.VITE_ASLIKAUN_DRIVER_ID || import.meta.env.VITE_TRUSTMESH_DRIVER_ID || "rider-001";
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
-const LOCAL_DEV = typeof window !== "undefined" && (LOCAL_HOSTS.has(window.location.hostname) || window.location.hostname.endsWith(".localhost"));
+// RFC1918 private-network IPs: testing camera/motion sensors needs a real
+// phone, which means loading this app over the dev machine's LAN address
+// (e.g. 192.168.1.23:5173), not localhost. Without this, the demo driver
+// token below silently stays empty on that host and the whole
+// challenge/selfie flow fails before any network call — indistinguishable
+// from the feature itself being broken. This only widens where the
+// non-secret demo token auto-applies; it does not touch the HTTPS
+// requirement in telemetryPolicy.ts, which is a real security boundary
+// browsers also independently enforce for sensor permissions.
+function isPrivateLanHost(hostname: string): boolean {
+  return /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)
+    || /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)
+    || /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname);
+}
+const LOCAL_DEV = typeof window !== "undefined" && (
+  LOCAL_HOSTS.has(window.location.hostname)
+  || window.location.hostname.endsWith(".localhost")
+  || isPrivateLanHost(window.location.hostname)
+);
 const DRIVER_TOKEN = import.meta.env.VITE_ASLIKAUN_DRIVER_TOKEN || import.meta.env.VITE_TRUSTMESH_DRIVER_TOKEN || (LOCAL_DEV ? "demo-driver-token-2026" : "");
+if (typeof window !== "undefined" && isPrivateLanHost(window.location.hostname) && !import.meta.env.VITE_ASLIKAUN_DRIVER_TOKEN) {
+  console.info("[AsliKaun] Running on a LAN address; using the non-secret demo driver token for local device testing. Set VITE_ASLIKAUN_DRIVER_TOKEN for anything beyond local testing.");
+}
 const ZONE_STORAGE_KEY = "aslikaun_coarse_zone_v1";
 const DB_NAME = "aslikaun-telemetry-v1";
 const DB_STORE = "outbox";
@@ -290,11 +311,13 @@ export function goOffline() {
   status("collection", false, "Telemetry paused while offline.");
 }
 export type ChallengeStatus = { driver_id: string; challenge_pending: boolean; decision?: string; reasons?: string[] };
+export type ChallengeResponseResult = { outcome: string; similarity?: number; reason?: string };
 
 /** Poll whether the backend has escalated this driver to a mid-trip
  * safe-pause identity challenge. Call on a timer while online. */
 export async function getChallengeStatus(): Promise<ChallengeStatus | null> {
-  const issue = transportError() || credentialError(); if (issue) { status("security", false, issue); return null; }
+  const issue = transportError() || credentialError();
+  if (issue) { status("security", false, issue); console.warn("[AsliKaun] Challenge polling disabled:", issue); return null; }
   try {
     const response = await fetch(`${API_BASE}/v1/drivers/${DRIVER_ID}/challenge-status`, { headers: { "X-Driver-Token": DRIVER_TOKEN } });
     if (!response.ok) return null;
@@ -307,9 +330,22 @@ export async function getChallengeStatus(): Promise<ChallengeStatus | null> {
 /** Submit a selfie (base64, no data: URI prefix) in response to a
  * pending challenge. Backend checks it against the driver's enrolled
  * face and auto-clears on a clear match; anything else is left for
- * human review, never auto-banned. */
-export async function respondToChallenge(imageBase64: string): Promise<{ outcome: string; similarity?: number; reason?: string } | null> {
-  const issue = transportError() || credentialError(); if (issue) { status("security", false, issue); return null; }
+ * human review, never auto-banned.
+ *
+ * Distinguishes a deployment/config problem (`outcome: "config_error"`
+ * — missing driver token, or the app isn't served over HTTPS) from an
+ * actual verification outcome, instead of returning `null` for both.
+ * Previously both cases looked identical to the caller, which routed a
+ * pure config problem into the same dead-end UI as "we couldn't verify
+ * your face" — see App.tsx's captureSelfie(), now handles this outcome
+ * with its own message instead of a pointless "try again". */
+export async function respondToChallenge(imageBase64: string): Promise<ChallengeResponseResult | null> {
+  const issue = transportError() || credentialError();
+  if (issue) {
+    status("security", false, issue);
+    console.error("[AsliKaun] Cannot submit challenge response:", issue);
+    return { outcome: "config_error", reason: issue };
+  }
   try {
     const response = await fetch(`${API_BASE}/v1/drivers/${DRIVER_ID}/challenge/respond`, {
       method: "POST",
@@ -323,10 +359,10 @@ export async function respondToChallenge(imageBase64: string): Promise<{ outcome
         reason: result.detail || `Verification request failed with HTTP ${response.status}`,
       };
     }
-    return result as { outcome: string; similarity?: number; reason?: string };
+    return result as ChallengeResponseResult;
   } catch (error) {
     console.error("[AsliKaun] Failed to submit challenge response", error);
-    return null;
+    return { outcome: "network_error", reason: error instanceof Error ? error.message : "Network request failed" };
   }
 }
 

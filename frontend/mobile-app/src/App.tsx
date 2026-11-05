@@ -1340,6 +1340,20 @@ function Verification({
           ? "review"
           : "ready",
   );
+  // Distinguishes WHY a selfie didn't clear, so the UI can offer the
+  // right recovery action instead of one generic dead end. A bad photo
+  // (no face found / below match threshold) is recoverable right now —
+  // offer an immediate retake. A config problem (missing driver token,
+  // app not served over HTTPS) is NOT something retaking a photo fixes;
+  // previously both looked identical to the driver ("under review,
+  // we'll notify you" / "try again" that can't possibly succeed).
+  const [failureReason, setFailureReason] = useState("");
+  // The demo scenario picker can land directly on stage==="failed" or
+  // "review" via `initial` (no real submission happened) — preserve each
+  // one's original default meaning in that case (failed = retriable,
+  // review = admin-pending, no retake). A REAL outcome from
+  // captureSelfie() below overrides this per actual submission result.
+  const [canRetakeNow, setCanRetakeNow] = useState(initial !== "review");
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState("");
@@ -1403,10 +1417,32 @@ function Verification({
     setStage("progress");
     try {
       const result = await respondToChallenge(base64);
-      if (result?.outcome === "cleared") setStage("success");
-      else if (result?.outcome === "human_review") setStage("review");
-      else setStage("failed");
+      if (result?.outcome === "cleared") {
+        setStage("success");
+      } else if (result?.outcome === "human_review") {
+        // Recoverable: a bad photo (bad lighting/angle/no face found) can
+        // genuinely be fixed by retaking it right now, so offer that
+        // instead of only a dead-end "wait for a reviewer" screen.
+        setFailureReason(result.reason === "no_face_detected"
+          ? "We couldn't clearly see your face in that photo. Try again with better lighting, facing the camera directly."
+          : "We couldn't automatically confirm it's you from that photo.");
+        setCanRetakeNow(true);
+        setStage("review");
+      } else if (result?.outcome === "config_error") {
+        // Not recoverable by retaking a photo — retrying would just fail
+        // the same way again. Surface this as a config problem, not a
+        // verification failure.
+        setFailureReason(result.reason || "Selfie verification isn't configured for this environment yet.");
+        setCanRetakeNow(false);
+        setStage("failed");
+      } else {
+        setFailureReason(result?.reason || "Something went wrong submitting your verification.");
+        setCanRetakeNow(true);
+        setStage("failed");
+      }
     } catch {
+      setFailureReason("Something went wrong submitting your verification.");
+      setCanRetakeNow(true);
       setStage("failed");
     }
   };
@@ -1445,12 +1481,15 @@ function Verification({
       <Result
         icon="alert"
         tone="error"
-        title="We couldn't complete verification."
-        text="You can try again or request help if you believe this is a mistake."
-        action="Try again"
-        onAction={() => setStage("safe")}
-        secondary="Get help"
-        onSecondary={support}
+        title={canRetakeNow ? "We couldn't complete verification." : "Verification isn't available right now."}
+        text={failureReason || "You can try again or request help if you believe this is a mistake."}
+        // A config problem (missing token, non-HTTPS) won't be fixed by
+        // retaking a photo — offering "Try again" there would just fail
+        // identically every time. Only offer it when retrying can help.
+        action={canRetakeNow ? "Try again" : "Get help"}
+        onAction={canRetakeNow ? () => setStage("safe") : support}
+        secondary={canRetakeNow ? "Get help" : undefined}
+        onSecondary={canRetakeNow ? support : undefined}
       />
     );
   }
@@ -1459,10 +1498,16 @@ function Verification({
       <Result
         icon="clock"
         tone="warning"
-        title="Your account is under review."
-        text="A support specialist has the request. We'll notify you when the status changes."
-        action="Return to app"
-        onAction={back}
+        title={canRetakeNow ? "Let's try that photo again." : "Your account is under review."}
+        text={
+          canRetakeNow
+            ? (failureReason || "We couldn't automatically confirm it's you from that photo. You can retake it now, or wait for a human reviewer.")
+            : "A support specialist has the request. We'll notify you when the status changes."
+        }
+        action={canRetakeNow ? "Retake photo" : "Return to app"}
+        onAction={canRetakeNow ? () => setStage("safe") : back}
+        secondary={canRetakeNow ? "I'll wait for review instead" : undefined}
+        onSecondary={canRetakeNow ? back : undefined}
       />
     );
   }
