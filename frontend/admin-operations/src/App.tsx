@@ -32,6 +32,15 @@ export type ReviewCase = {
   behaviorScore: number;
 };
 
+// Seed data. Narration (name/device/signals/reason) is decorative, but
+// every ID here matches a driver the BACKEND actually seeds in
+// backend/app/main.py's seed_demo_fleet(), with a matching quadrant/
+// score story — rider-042 really is seeded as handoff_signature with
+// high touch/motion anomaly, etc. Previously this list had 9 drivers;
+// 5 (rider-019/002/007/055/091) had no backend counterpart at all and
+// stayed on screen permanently as fiction no live fetch could ever
+// correct. Keep this list's IDs in sync with seed_demo_fleet() — see
+// CONTEXT.md's "seed data" section.
 const INITIAL_DRIVERS: Driver[] = [
   {
     id: "rider-042",
@@ -74,26 +83,6 @@ const INITIAL_DRIVERS: Driver[] = [
     safeStatus: "Active verified session · Normal operation",
   },
   {
-    id: "rider-019",
-    name: "Ishaan Das",
-    x: 25,
-    y: 75,
-    state: "Legit change",
-    color: "blue",
-    device: "Apple iPhone 15 Pro",
-    speed: "0.0 mph",
-    session: "#OS-8422",
-    location: "Vashi Palm Beach Road, Navi Mumbai",
-    signals: [
-      { label: "Touch biometrics", val: 91, note: "authentic typing cadence & dwell" },
-      { label: "Motion kinematics", val: 89, note: "consistent gait acceleration" },
-      { label: "Operational timing", val: 85, note: "520 ms response latency" },
-      { label: "GPS mobility", val: 24, note: "new cellular subnet · hardware upgrade" },
-    ],
-    reason: "New hardware/IP subnet detected, but touch biometrics and motor kinematics match historical anchor. Rebaselined automatically.",
-    safeStatus: "Hardware declared · Verified & rebaselined",
-  },
-  {
     id: "rider-088",
     name: "Vihaan Rao",
     x: 31,
@@ -114,46 +103,6 @@ const INITIAL_DRIVERS: Driver[] = [
     safeStatus: "Safe-pause armed · Challenge pending safe stop",
   },
   {
-    id: "rider-002",
-    name: "Aarav Shah",
-    x: 67,
-    y: 68,
-    state: "Stable identity",
-    color: "green",
-    device: "Samsung Galaxy M34",
-    speed: "14.5 mph",
-    session: "#OS-8409",
-    location: "Andheri East Transit, Mumbai",
-    signals: [
-      { label: "Touch biometrics", val: 88, note: "calibrated swipe profile" },
-      { label: "Motion kinematics", val: 86, note: "smooth bicycle dynamics" },
-      { label: "Operational timing", val: 82, note: "610 ms response" },
-      { label: "GPS mobility", val: 90, note: "familiar grid" },
-    ],
-    reason: "All biometric channels nominal. Continuity index 0.88 against 30-day anchor.",
-    safeStatus: "Active verified session · Normal operation",
-  },
-  {
-    id: "rider-007",
-    name: "Kabir Singh",
-    x: 88,
-    y: 62,
-    state: "Stable identity",
-    color: "green",
-    device: "Motorola Edge 40 Neo",
-    speed: "19.8 mph",
-    session: "#OS-8418",
-    location: "Powai Tech Park, Mumbai",
-    signals: [
-      { label: "Touch biometrics", val: 92, note: "consistent thumb radius" },
-      { label: "Motion kinematics", val: 89, note: "normal scooter vibration" },
-      { label: "Operational timing", val: 90, note: "rapid dispatch response" },
-      { label: "GPS mobility", val: 85, note: "known delivery radius" },
-    ],
-    reason: "Kinematic and operational vectors match expected driver signature.",
-    safeStatus: "Active verified session · Normal operation",
-  },
-  {
     id: "rider-014",
     name: "Neel Roy",
     x: 76,
@@ -172,46 +121,6 @@ const INITIAL_DRIVERS: Driver[] = [
     ],
     reason: "Resting session at verified pickup terminal with consistent identity telemetry.",
     safeStatus: "Active verified session · Normal operation",
-  },
-  {
-    id: "rider-055",
-    name: "Dev Malhotra",
-    x: 39,
-    y: 53,
-    state: "Legit change",
-    color: "blue",
-    device: "Nothing Phone (2)",
-    speed: "12.3 mph",
-    session: "#OS-8451",
-    location: "Thane West Commercial, Mumbai",
-    signals: [
-      { label: "Touch biometrics", val: 87, note: "anchor match preserved" },
-      { label: "Motion kinematics", val: 85, note: "expected movement profile" },
-      { label: "Operational timing", val: 83, note: "consistent tap intervals" },
-      { label: "GPS mobility", val: 38, note: "new WiFi BSSID · roaming sector" },
-    ],
-    reason: "Peripheral network switch detected; behavioral biometric verification passed.",
-    safeStatus: "Hardware declared · Verified & rebaselined",
-  },
-  {
-    id: "rider-091",
-    name: "Aditya Jain",
-    x: 65,
-    y: 24,
-    state: "Handoff signature",
-    color: "red",
-    device: "Xiaomi 13 Pro",
-    speed: "16.2 mph",
-    session: "#OS-8495",
-    location: "Lower Parel Business Bay, Mumbai",
-    signals: [
-      { label: "Touch biometrics", val: 22, note: "abnormal swipe curvature & dwell" },
-      { label: "Motion kinematics", val: 28, note: "shifted rider tilt & recoil" },
-      { label: "Operational timing", val: 19, note: "delayed button actuation" },
-      { label: "GPS mobility", val: 84, note: "identical delivery route" },
-    ],
-    reason: "Sudden shift in swipe curvature and dwell time on same delivery route. Secondary rider signature suspected.",
-    safeStatus: "Safe-pause armed · Challenge at 0 mph",
   },
 ];
 
@@ -243,68 +152,20 @@ const INITIAL_CASES: ReviewCase[] = [
     behaviorScore: 0.18,
   },
   {
-    id: "REV-1091",
-    sessionId: 1091,
-    driverId: "rider-091",
-    quadrant: "Handoff signature",
-    status: "OPEN",
-    reason: "Sudden shift in swipe curvature and dwell time on same delivery corridor.",
-    speed: "16.2 mph",
-    timestamp: "Today, 12:15 IST",
-    device: "Xiaomi 13 Pro",
-    contextScore: 0.65,
-    behaviorScore: 0.24,
-  },
-  {
     id: "REV-1014",
     sessionId: 1014,
-    driverId: "rider-019",
+    driverId: "rider-014",
     quadrant: "Legit change",
     status: "RESOLVED",
     reason: "Hardware changed; biometric profile and motor cadence remained authentic.",
     speed: "0.0 mph",
     timestamp: "Yesterday, 19:04 IST",
-    device: "Apple iPhone 15 Pro",
-    contextScore: 0.25,
-    behaviorScore: 0.75,
+    device: "Vivo V29 5G",
+    contextScore: 0.28,
+    behaviorScore: 0.89,
   },
 ];
 
-const DRIVER_DRIFT_DATA: Record<string, { alert: string; rows: Array<Array<string | number>> }> = {
-  "rider-042": {
-    alert: "Drift breach detected at session 37 — Fast EWMA collapsed",
-    rows: [
-      ["SES-0037", "Today, 14:32", "0.91", "0.41", "Handoff", "18.4 mph", "Challenge queued"],
-      ["SES-0036", "Today, 10:18", "0.88", "0.58", "Ambiguous", "0 mph", "Monitoring"],
-      ["SES-0035", "Yesterday, 19:04", "0.93", "0.72", "Stable", "12.1 mph", "No action"],
-      ["SES-0034", "Yesterday, 15:20", "0.94", "0.89", "Stable", "16.5 mph", "No action"],
-    ],
-  },
-  "rider-088": {
-    alert: "Entropy drift observed across sessions 24-28",
-    rows: [
-      ["SES-0028", "Today, 13:45", "0.31", "0.18", "Ambiguous", "28.6 mph", "Challenge queued"],
-      ["SES-0027", "Today, 09:12", "0.42", "0.35", "Ambiguous", "15.2 mph", "Monitoring"],
-      ["SES-0026", "Yesterday, 18:30", "0.68", "0.55", "Stable", "19.0 mph", "No action"],
-    ],
-  },
-  "rider-019": {
-    alert: "Hardware upgrade verified — Gaussian baseline re-anchored",
-    rows: [
-      ["SES-0045", "Today, 11:20", "0.25", "0.75", "Legit change", "0.0 mph", "Rebaselined"],
-      ["SES-0044", "Yesterday, 19:04", "0.22", "0.78", "Legit change", "14.2 mph", "Rebaselined"],
-      ["SES-0043", "Yesterday, 14:10", "0.95", "0.82", "Stable", "18.3 mph", "No action"],
-    ],
-  },
-  "rider-001": {
-    alert: "Zero drift breaches — calibrated anchor retained across 45 sessions",
-    rows: [
-      ["SES-0045", "Today, 14:15", "0.77", "0.80", "Stable", "22.1 mph", "No action"],
-      ["SES-0044", "Today, 11:00", "0.78", "0.82", "Stable", "17.4 mph", "No action"],
-      ["SES-0043", "Yesterday, 20:30", "0.75", "0.79", "Stable", "19.8 mph", "No action"],
-    ],
-  },
-};
 
 function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
   const csv = rows
@@ -489,19 +350,42 @@ function FleetMap({
 }
 
 // --- COMPONENT: Drift Tracker ---
+// The 4 drivers backend/app/main.py's seed_demo_fleet() actually
+// creates. Keep in sync with INITIAL_DRIVERS above and with
+// seed_demo_fleet() itself — see CONTEXT.md's "seed data" section.
+const SEEDED_DRIVER_IDS = ["rider-042", "rider-088", "rider-001", "rider-014"];
+
+type DriftRow = Array<string | number>;
+type DriftResponse = { driver_id: string; count: number; alert: string; rows: DriftRow[] };
+
 function DriftTracker({ onNotify }: { onNotify: (msg: string) => void }) {
   const [activeDriverId, setActiveDriverId] = useState<string>("rider-042");
-  const driftInfo = DRIVER_DRIFT_DATA[activeDriverId] || DRIVER_DRIFT_DATA["rider-042"];
+  const [drift, setDrift] = useState<DriftResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    const token = sessionStorage.getItem("aslikaun-auth-token") || sessionStorage.getItem("tm-auth-token") || "demo-admin-session-token";
+    fetch(`/v1/drivers/${activeDriverId}/drift`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data: DriftResponse) => { if (!cancelled) setDrift(data); })
+      .catch(() => { if (!cancelled) setDrift(null); })
+      .finally(() => { if (!cancelled) setIsLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeDriverId]);
+
+  const rows = drift?.rows ?? [];
 
   const exportHistory = () => {
     downloadCsv(`${activeDriverId}-session-history.csv`, [
       ["Session ID", "Timestamp", "Context Score", "Behavior Score", "Quadrant", "Vehicle Speed", "Verdict"],
-      ...driftInfo.rows,
+      ...rows,
     ]);
     onNotify(`Downloaded session history for ${activeDriverId}`);
   };
 
-  const handleRowClick = (row: Array<string | number>) => {
+  const handleRowClick = (row: DriftRow) => {
     onNotify(`Selected session ${row[0]}: ${row[4]} at ${row[5]} speed (${row[6]})`);
   };
 
@@ -513,21 +397,24 @@ function DriftTracker({ onNotify }: { onNotify: (msg: string) => void }) {
           <h2>Dual-timescale drift tracker</h2>
           <p>Continuous EWMA and anchored baseline across scored sessions</p>
         </div>
-        <div className="alert-pill">{driftInfo.alert}</div>
+        <div className="alert-pill">{isLoading ? "Loading…" : drift?.alert ?? "No session history yet"}</div>
       </div>
 
       <div style={{ display: "flex", gap: "8px", margin: "14px 0 6px" }}>
-        {Object.keys(DRIVER_DRIFT_DATA).map((id) => (
+        {SEEDED_DRIVER_IDS.map((id) => (
           <button
             key={id}
             onClick={() => setActiveDriverId(id)}
             className={`driver-pill-btn ${activeDriverId === id ? "active" : ""}`}
           >
-            {id} {id === "rider-042" ? "(Breach)" : id === "rider-088" ? "(Drift)" : id === "rider-019" ? "(Upgrade)" : "(Stable)"}
+            {id}
           </button>
         ))}
       </div>
 
+      {/* Illustrative trend shape — not plotted from the real per-session
+          values below; the table is the actual data. Session volume in
+          this seeded demo is too low for a meaningful real EWMA curve. */}
       <div className="timeline">
         <div className="chart-labels">
           <span>1.00</span>
@@ -546,7 +433,7 @@ function DriftTracker({ onNotify }: { onNotify: (msg: string) => void }) {
           <path className="anchor" d="M0 44H900"/>
           <path className="area" d="M0 49 C150 45 220 52 310 70 S460 91 540 105 S690 165 780 170 S850 182 900 188 V220H0Z"/>
           <path className="ewma" d="M0 49 C150 45 220 52 310 70 S460 91 540 105 S690 165 780 170 S850 182 900 188"/>
-          {activeDriverId === "rider-042" && <circle className="breach" cx="780" cy="170" r="7"/>}
+          {rows.some((r) => String(r[4]).toLowerCase().includes("handoff")) && <circle className="breach" cx="780" cy="170" r="7"/>}
         </svg>
         <div className="chart-bottom">
           <span>Session 1</span>
@@ -555,7 +442,7 @@ function DriftTracker({ onNotify }: { onNotify: (msg: string) => void }) {
           <span>Session 45</span>
         </div>
         <div className="chart-legend">
-          <span><i className="line solid"/>Frozen anchor (Anchor C<sub>b</sub>: 0.94)</span>
+          <span><i className="line solid"/>Frozen anchor</span>
           <span><i className="line dashed"/>Fast EWMA (Short-timescale decay)</span>
           <span><i className="circle"/>Breach threshold</span>
         </div>
@@ -563,7 +450,7 @@ function DriftTracker({ onNotify }: { onNotify: (msg: string) => void }) {
 
       <div className="table-title">
         <h3>Recent session audit ({activeDriverId})</h3>
-        <button className="secondary" onClick={exportHistory}>
+        <button className="secondary" onClick={exportHistory} disabled={rows.length === 0}>
           <Icon name="download"/> Export history
         </button>
       </div>
@@ -577,7 +464,12 @@ function DriftTracker({ onNotify }: { onNotify: (msg: string) => void }) {
           </tr>
         </thead>
         <tbody>
-          {driftInfo.rows.map((r, i) => (
+          {rows.length === 0 && !isLoading && (
+            <tr><td colSpan={7} style={{ textAlign: "center", color: "#94a3b8", padding: "20px" }}>
+              No scored sessions yet for {activeDriverId}. Ingest a session via /v1/sessions/ingest or the Simulator to populate this.
+            </td></tr>
+          )}
+          {rows.map((r, i) => (
             <tr key={String(r[0])} style={{ cursor: "pointer" }} onClick={() => handleRowClick(r)}>
               {r.map((x, j) => (
                 <td key={`${r[0]}-${j}`}>
@@ -742,22 +634,41 @@ function ReviewQueue({
 }
 
 // --- COMPONENT: Model Health ---
+type ModelHealthResponse = {
+  status: string;
+  sample_count: number;
+  summary: string;
+  calibration: { status: string; note: string };
+};
+
 function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
   const [selectedModel, setSelectedModel] = useState<string>("Fisher fusion");
   const [isVerifying, setIsVerifying] = useState(false);
+  const [health, setHealth] = useState<ModelHealthResponse | null>(null);
+
+  useEffect(() => {
+    fetch("/v1/ml/models/health")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data: ModelHealthResponse) => setHealth(data))
+      .catch(() => setHealth(null));
+  }, []);
 
   const modelDetails: Record<string, string> = {
-    "Touch triplet": "Triplet loss Siamese embedding trained on 840,000 commercial delivery taps. Extracts velocity curves, curvature entropy, and micro-dwell jitter.",
-    "Motion kinematics": "Bi-directional GRU tracking vehicle vibration absorption vs human body tilt. Detects posture changes and secondary passengers with 37% lift.",
+    "Touch triplet": "Triplet loss Siamese embedding trained on H-MOG touch telemetry. Extracts velocity curves, curvature entropy, and micro-dwell jitter.",
+    "Motion kinematics": "GRU encoder tracking vehicle vibration absorption vs human body tilt, trained on H-MOG accelerometer windows.",
     "Fisher fusion": "Parametric Fisher combination fusing log-likelihood ratio scores across touch, kinematics, and operational timing under non-stationary noise.",
   };
 
   const runVerification = () => {
     setIsVerifying(true);
-    window.setTimeout(() => {
-      setIsVerifying(false);
-      onNotify("KS-Test calibration verified: All model p-values uniform (D=0.038, p > 0.10). Zero cohort bias.");
-    }, 900);
+    fetch("/v1/ml/models/health")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data: ModelHealthResponse) => {
+        setHealth(data);
+        onNotify(`Runtime check: ${data.status} — ${data.sample_count} scored session(s). Calibration: ${data.calibration.status}.`);
+      })
+      .catch(() => onNotify("Runtime calibration check failed to reach the backend."))
+      .finally(() => setIsVerifying(false));
   };
 
   return (
@@ -767,13 +678,16 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
           <div>
             <span className="eyebrow">Model assurance</span>
             <h2>Performance & cohort fairness</h2>
-            <p>Evaluation snapshot · production calibration v2.4</p>
+            <p>
+              Offline validation snapshot (held-out H-MOG/ODIDMob test data, not live-computed) ·
+              {health ? ` live runtime: ${health.sample_count} scored session(s), calibration ${health.calibration.status}` : " live runtime status unavailable"}
+            </p>
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <span className="healthy">All models calibrated</span>
+            <span className="healthy">{health?.status === "available" ? "Runtime scoring active" : "Awaiting first scored session"}</span>
             <button className="secondary" onClick={runVerification} disabled={isVerifying}>
-              <Icon name="refresh" className={isVerifying ? "spin" : ""}/>
-              {isVerifying ? "Verifying..." : "Run calibration check"}
+              <Icon name="refresh" className={isVerifying ? "icon spin" : "icon"}/>
+              {isVerifying ? "Checking…" : "Check live runtime status"}
             </button>
           </div>
         </div>
@@ -798,11 +712,6 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
           ))}
         </div>
 
-        {/* Was hardcoded to the old light "hospital mint green" palette
-            (#f8fbf9/#174b3a/#455952) via inline styles, so it never
-            picked up the dashboard's dark-theme CSS overrides the way
-            class-based components like .panel/.metric do — rendered as
-            a stray white card on the dark page regardless of theme. */}
         <div style={{ marginTop: "14px", background: "rgba(16, 185, 129, 0.06)", border: "1px solid rgba(16, 185, 129, 0.2)", padding: "12px 16px", borderRadius: "8px" }}>
           <b style={{ fontSize: "11px", color: "#10b981" }}>{selectedModel} Architecture Details:</b>
           <p style={{ margin: "4px 0 0", fontSize: "11px", color: "#94a3b8", lineHeight: 1.5 }}>
@@ -813,17 +722,21 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
 
       <section className="panel chart-card">
         <div>
-          <span className="eyebrow">Equity monitor</span>
+          <span className="eyebrow">Equity monitor · illustrative example</span>
           <h3>False-challenge rate by cohort</h3>
         </div>
+        <p style={{ fontSize: "10.5px", color: "#64748b", margin: "2px 0 10px" }}>
+          Demonstrates the fairness-monitoring capability with example figures — this seeded demo
+          environment has not yet logged the session volume a real cohort-fairness measurement needs.
+        </p>
         <div className="bars">
           {[
-            ["Regular baseline", 0.9, "48,200 sessions"],
-            ["New phone upgrade", 1.1, "3,400 sessions"],
-            ["City relocation", 1.2, "2,150 sessions"],
-            ["Monsoon / bumpy road", 1.4, "6,800 sessions"],
+            ["Regular baseline", 0.9, "example"],
+            ["New phone upgrade", 1.1, "example"],
+            ["City relocation", 1.2, "example"],
+            ["Monsoon / bumpy road", 1.4, "example"],
           ].map((x) => (
-            <div key={x[0] as string} style={{ cursor: "pointer" }} onClick={() => onNotify(`Cohort ${x[0]}: ${x[1]}% false-challenge rate across ${x[2]}`)}>
+            <div key={x[0] as string} style={{ cursor: "pointer" }} onClick={() => onNotify(`Cohort ${x[0]}: ${x[1]}% illustrative false-challenge rate`)}>
               <label>
                 <span>{x[0]} <small style={{ color: "#94a3b8", marginLeft: "4px" }}>({x[2]})</small></span>
                 <b>{x[1]}%</b>
@@ -835,14 +748,14 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
           ))}
         </div>
         <div className="takeaway">
-          <b>0.5pp maximum variance across demographic segments</b>
-          <span>Environmental changes and device transitions stay well within safe equity bounds.</span>
+          <b>0.5pp maximum variance across demographic segments (illustrative)</b>
+          <span>Real cohort-fairness reporting needs production session volume this demo doesn't have yet.</span>
         </div>
       </section>
 
       <section className="panel chart-card">
         <div>
-          <span className="eyebrow">Statistical calibration</span>
+          <span className="eyebrow">Statistical calibration · illustrative example</span>
           <h3>Fused p-value distribution</h3>
         </div>
         <div className="histogram">
@@ -851,8 +764,8 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
               key={`${i}-${h}`}
               className={i < 3 ? "hot" : ""}
               style={{ height: `${h}%` }}
-              title={`Bin ${i}: ${h}%`}
-              onClick={() => onNotify(`Bin ${i * 0.05} - ${(i + 1) * 0.05}: ${h}% frequency (${i < 3 ? "Impostor peak" : "Uniform nominal stream"})`)}
+              title={`Bin ${i}: ${h}% (illustrative)`}
+              onClick={() => onNotify(`Bin ${i * 0.05} - ${(i + 1) * 0.05}: ${h}% illustrative frequency (${i < 3 ? "Impostor peak" : "Uniform nominal stream"})`)}
             />
           ))}
         </div>
@@ -861,8 +774,8 @@ function ModelHealth({ onNotify }: { onNotify: (msg: string) => void }) {
           <span>Normal uniformity · 1.0 (True identity)</span>
         </div>
         <div className="takeaway">
-          <b>KS calibration test passed (p = 0.94)</b>
-          <span>Normal sessions retain a flat uniform p-value distribution across all hours.</span>
+          <b>Shape matches the real offline KS calibration result (p = 0.94)</b>
+          <span>Per-bin bars here are illustrative; backend doesn't yet expose a live per-bin histogram endpoint — see `/v1/ml/models/health` for real runtime calibration status above.</span>
         </div>
       </section>
     </div>
@@ -885,10 +798,14 @@ function Simulator({
   onAddDriverToMatrix,
   onAddCaseToQueue,
   onNotify,
+  isAutoSimActive,
+  onToggleAutoSim,
 }: {
   onAddDriverToMatrix: (d: Driver) => void;
   onAddCaseToQueue: (c: ReviewCase) => void;
   onNotify: (msg: string) => void;
+  isAutoSimActive: boolean;
+  onToggleAutoSim: () => void;
 }) {
   const [running, setRunning] = useState<string | null>(null);
   const [result, setResult] = useState<SimResult | null>(null);
@@ -1116,7 +1033,18 @@ function Simulator({
           <h2>Attack & scenario simulator</h2>
           <p>Inject controlled adversarial and benign sessions into the live scoring pipeline</p>
         </div>
-        <span className="sandbox">Isolated live pipeline sandbox</span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
+          <span className="sandbox">Isolated live pipeline sandbox</span>
+          <button
+            className={`live-btn ${isAutoSimActive ? "active-pulse" : ""}`}
+            onClick={onToggleAutoSim}
+            title="Toggle continuous autonomous telemetry simulation (every 4 seconds)"
+            style={isAutoSimActive ? { borderColor: "#10b981", color: "#10b981" } : undefined}
+          >
+            <i style={isAutoSimActive ? { background: "#10b981" } : undefined} />
+            {isAutoSimActive ? "Simulation Streaming" : "Stream Live Telemetry"}
+          </button>
+        </div>
       </div>
 
       {result && (
@@ -1194,18 +1122,6 @@ export type AuthUser = {
 
 // --- MAIN APPLICATION ---
 export default function App() {
-  const [theme, setTheme] = useState<"light" | "dark">(() => {
-    // Default to dark: the whole dashboard shell (nav, page background,
-    // auth screen) renders dark unconditionally, but several components
-    // (.metric stat cards among them) only get their dark styling under
-    // `[data-theme="dark"]` overrides and fall back to an old, unfinished
-    // light palette otherwise. Defaulting new visitors to "light" (no
-    // saved preference yet) produced a half-dark/half-washed-out-white
-    // page on first load — confirmed via computed styles showing the
-    // stat cards at rgb(255,254,252) against the dark shell around them.
-    const saved = localStorage.getItem("tm_theme");
-    return saved === "light" ? "light" : "dark";
-  });
   const [page, setPage] = useState<Page>("Continuity matrix");
   const [message, setMessage] = useState("");
   const [drivers, setDrivers] = useState<Driver[]>(INITIAL_DRIVERS);
@@ -1218,9 +1134,16 @@ export default function App() {
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("tm_theme", theme);
-  }, [theme]);
+    // Light mode was a half-finished leftover from before the team's
+    // documented switch to one unified dark theme: three duplicate
+    // `[data-theme="light"] header` CSS blocks and two duplicate
+    // `.export` blocks had accumulated from past editing passes, several
+    // newer classes (.live-btn etc.) had no light variant at all, and
+    // the result was low-contrast, hard-to-read controls when light mode
+    // was active — confirmed visually. Dark is now the only theme; the
+    // toggle button and its state were removed rather than patched.
+    document.documentElement.setAttribute("data-theme", "dark");
+  }, []);
 
   // Authenticated Operator State
   const [currentUser, setCurrentUser] = useState<AuthUser>(() => {
@@ -1600,35 +1523,19 @@ export default function App() {
             <span>Driver app</span>
           </button>
 
+          {/* "Stream Live Telemetry" (the auto-simulator toggle) moved to
+              the Simulator page itself — it's a demo/dev tool that
+              generates synthetic attack telemetry, and having it in the
+              global header risked an admin leaving it on by accident
+              while monitoring real data. */}
           <button
-            className="theme-toggle-admin"
-            onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            aria-pressed={theme === "light"}
-            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          >
-            <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
-            <span>{theme === "dark" ? "Light" : "Dark"}</span>
-          </button>
-
-          <button
-            className={`live-btn ${isAutoSimActive ? "active-pulse" : ""}`}
-            onClick={toggleAutoSimulator}
-            title="Toggle continuous autonomous telemetry simulation (every 4 seconds)"
-            style={isAutoSimActive ? { borderColor: "#10b981", color: "#10b981" } : undefined}
-          >
-            <i style={isAutoSimActive ? { background: "#10b981" } : undefined} />
-            {isAutoSimActive ? "Simulation Streaming" : "Stream Live Telemetry"}
-          </button>
-
-          <button
-            className="live-btn"
+            className="live-btn live-btn-icon"
             onClick={fetchLiveScores}
             disabled={isRefreshing}
-            title="Click to refresh live fleet scores from backend"
+            title="Refresh live fleet scores from backend"
+            aria-label="Refresh live fleet scores from backend"
           >
-            <i/>
-            {isRefreshing ? "Syncing..." : "Live Ingest"}
+            <Icon name="refresh" className={isRefreshing ? "icon spin" : "icon"}/>
           </button>
 
           <button className="export" onClick={exportFleet}>
@@ -1724,6 +1631,8 @@ export default function App() {
                 notify(`Queued case #${c.id} for operator review`);
               }}
               onNotify={notify}
+              isAutoSimActive={isAutoSimActive}
+              onToggleAutoSim={toggleAutoSimulator}
             />
           )}
         </div>

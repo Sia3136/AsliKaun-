@@ -221,6 +221,33 @@ header {
   display: inline-block;
 }
 
+/* Compact icon-only variant for the header's manual-refresh button —
+   the full-text "Live Ingest" label was one of several contributors to
+   header crowding; the live SSE stream now keeps data current
+   automatically, so this is a secondary/manual action, not primary. */
+.live-btn-icon {
+  padding: 9px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.live-btn-icon .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.live-btn-icon .icon.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .live-btn.active-pulse {
   background: rgba(16, 185, 129, 0.1);
 }

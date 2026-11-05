@@ -1,6 +1,6 @@
 # AsliKaun — Features
 
-What the product does, how each piece was built, and how to exercise it yourself. Written from a direct audit of the code as of 2026-11-05, not from memory of what was planned.
+**v1** — 2026-11-05. What the product does, how each piece was built, and how to exercise it yourself. Written from a direct audit of the code, not from memory of what was planned. The API (backend + ML) is the product being marketed; the mobile app is a demo of an integration, and the admin dashboard is a reference implementation proving the API works — see `CONTEXT.md` for the positioning note and full fix history.
 
 ---
 
@@ -49,7 +49,7 @@ A driver/rider account can be handed off mid-shift to someone else (rented, shar
 - Captures a **live** selfie via `getUserMedia` (not a file picker), draws it to a canvas, sends it through `respondToChallenge()`.
 - `stage === "safe"` → camera capture → `stage === "progress"` → `"success"` / `"review"` / `"failed"` depending on outcome.
 
-**Known reliability issue — see CONTEXT.md and the error report for the full root-cause chain.** The short version: the driver token this flow requires is only ever set for `localhost`, and the flow also requires the page be served over HTTPS unless on `localhost` — so testing from a real phone over LAN (the only way to actually test a camera/motion-sensor app) silently disables the whole feature client-side, before any request reaches the backend.
+**Fixed in v1** (was: silently disabled on real-device/LAN testing — see `CONTEXT.md` for the root-cause chain). `telemetry.ts` now also recognizes private-LAN hostnames for the non-secret demo token fallback, and a config problem (missing token / non-HTTPS) now surfaces as a distinct `config_error` outcome instead of being indistinguishable from an actual verification failure. A recoverable bad photo (`no_face_detected`) now offers an immediate retake instead of a dead-end "under review" screen.
 
 ---
 
@@ -108,9 +108,9 @@ These are real, running code — not stubs — but per the project's own `ARCHIT
 ## 11. Frontend applications
 
 Three separate frontend projects exist under `frontend/`:
-- **`frontend/` (root, `src/`)** — confirmed, via `vite.config.ts`, to be the one that actually builds into `frontend/dist/`, which `backend/app/main.py` serves at `/dashboard/...` and `/fleet-dashboard.html`. This is the live admin dashboard.
-- **`frontend/mobile-app/`** — the live driver phone app (React + Vite), covered in §3. Builds to its own `dist/`.
-- **`frontend/admin-operations/`** and **`frontend/fleet-dashboard/`** — separate subprojects with their own `src/`; recent commits touched `frontend/admin-operations/src/index.css` and `App.tsx` for a theme overhaul. **Not confirmed to be wired into what `main.py` actually serves** — verify before assuming either one is live, rather than the root `frontend/` build.
+- **`frontend/admin-operations/`** — **confirmed live**: `frontend/fleet-dashboard.html`'s script tag loads `/admin-operations/src/main.tsx` directly. This is the actual admin dashboard source, built via the root `frontend/` project into `frontend/dist/`, which `backend/app/main.py` serves. Single dark theme only as of v1 (the light-mode toggle was removed — see `CONTEXT.md`).
+- **`frontend/mobile-app/`** — the live driver phone app (React + Vite), covered in §3. Builds to its own `dist/`, runs on port 8443.
+- **`frontend/fleet-dashboard/`** — a separate subproject with its own `src/`. **Still not confirmed to be wired into what `main.py` actually serves** — verify before assuming it's live.
 
 ---
 
@@ -122,12 +122,35 @@ cd C:\Users\Dell\OneDrive\Documents\Siya\hackforge
 python -m pytest backend/tests/ -q
 ```
 
-Run pytest **from the repo root**, not from `backend/` — two newer test files import `backend.app.*` as an absolute package path and fail collection if run from inside `backend/`. See the error report.
+Run pytest **from the repo root**, not from `backend/` — the project's `pytest.ini` (`pythonpath = .`) makes this work from either location now.
 
+**One command, everything live:**
+```powershell
+.\start-dev.ps1
+```
+Starts the backend (`:8000`), the driver mobile app (`:8443`), and the admin dashboard (`:3000`) together. Previously this script never started the mobile app, so the dashboard's "Driver app" button opened a dead port — fixed in v1.
+
+Or individually:
 ```powershell
 $env:KMP_DUPLICATE_LIB_OK="TRUE"
 cd backend
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
+Then `npm --prefix frontend run dev` (admin dashboard) and/or `npm --prefix frontend/mobile-app run dev` (driver app).
 
-Then open `frontend/dist/dashboard.html` (or whichever build `main.py`'s `/dashboard` route currently resolves) for admin, and `frontend/mobile-app` (`npm run dev`, or its own built `dist/`) for the driver app.
+---
+
+## 13. Seed / demo data (documented, v1)
+
+`backend/app/main.py`'s `seed_demo_fleet()` creates exactly **4 drivers** on first startup (only if the `drivers` table is empty). The admin dashboard's hardcoded decorative fallback data (`INITIAL_DRIVERS`/`INITIAL_CASES` in `frontend/admin-operations/src/App.tsx`) is kept in sync with these same 4 IDs — previously it had 5 additional fictional drivers with no backend counterpart; those were removed in v1 (see `CONTEXT.md`).
+
+| Driver ID | Story | Context score | Behavior score | Quadrant | Decision |
+|---|---|---|---|---|---|
+| `rider-001` | Stable, normal route/behavior | 0.94 | 0.92 | `stable` | `continue` |
+| `rider-014` | Legit device upgrade, same person | 0.28 | 0.89 | `legit_change` | `rebaseline` |
+| `rider-042` | Same device, sudden high tap pressure/jerk — handoff | 0.92 | 0.31 | `handoff_signature` | `challenge_at_safe_pause` |
+| `rider-088` | Both IP and touch velocity changed — ambiguous | 0.35 | 0.42 | `ambiguous` | `step_up_check_at_safe_pause` |
+
+If you add or change seeded drivers, update **both** `seed_demo_fleet()` in `backend/app/main.py` and `INITIAL_DRIVERS`/`INITIAL_CASES`/`SEEDED_DRIVER_IDS` in `frontend/admin-operations/src/App.tsx` together — keeping them in sync is what makes the dashboard's narrative (driver names, device stories, reasons) consistent with what the backend actually computes, instead of drifting into fiction again.
+
+Everything else visible in the dashboard beyond these 4 drivers (e.g. `sim-*` IDs) comes from genuinely running the Simulator page's scenario cards, or from real `/v1/sessions/ingest` calls — not from additional hardcoded fiction.

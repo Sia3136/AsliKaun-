@@ -2028,39 +2028,17 @@ def ingest_session(
     return result
 
 
-@app.get("/v1/events/stream")
-async def event_stream(
-    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
-    admin: dict[str, str] = Depends(require_admin),
-) -> StreamingResponse:
-    """Authenticated SSE stream of newly persisted fleet events; reconnect with Last-Event-ID."""
-    async def stream():
-        try:
-            cursor = max(0, int(last_event_id or "0"))
-        except ValueError:
-            cursor = 0
-        if not last_event_id:
-            with connect() as con:
-                row = con.execute("SELECT COALESCE(MAX(id),0) AS latest_id FROM events").fetchone()
-                cursor = int(row["latest_id"])
-        try:
-            while True:
-                with connect() as con:
-                    rows = con.execute(
-                        "SELECT id,driver_id,timestamp,event_type,details_json FROM events WHERE id>? ORDER BY id LIMIT 100",
-                        (cursor,),
-                    ).fetchall()
-                for row in rows:
-                    cursor = row["id"]
-                    item = {"id": cursor, "driver_id": row["driver_id"], "timestamp": row["timestamp"],
-                            "event_type": row["event_type"], "details": decode_json(row["details_json"], {})}
-                    yield f"id: {cursor}\nevent: fleet-event\ndata: {json.dumps(item)}\n\n"
-                if not rows:
-                    yield ": keep-alive\n\n"
-                await asyncio.sleep(2)
-        except asyncio.CancelledError:
-            return
-    return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+# NOTE: an admin-token-gated /v1/events/stream used to be defined here
+# (polling-cursor replay via Last-Event-ID). It was a silent duplicate of
+# the real, pub/sub-based /v1/events/stream further down (search "Real-
+# Time Event Streaming") — FastAPI matches routes in registration order,
+# so this one always won and the real one was completely unreachable.
+# Since a browser EventSource can't send an Authorization header, the
+# dashboard's live-update connection always got 401 from this route and
+# never received a single live push. Removed 2026-11-05; the pub/sub one
+# is what the frontend actually expects and is already fully wired to
+# real events (session_scored, review_resolved, fleet_update, etc.) via
+# broadcast_event_sync().
 
 
 @app.get("/v1/drivers/{driver_id}/score")
@@ -3414,7 +3392,12 @@ def get_model_health() -> dict:
     results = [decode_json(r["latest_result_json"], {}) for r in rows if latest_payloads.get(r["driver_id"], {}).get("driver_id") == r["driver_id"]]
     scored = [r for r in results if r.get("model_status")]
     statuses = sorted({str(r.get("model_status")) for r in scored})
-    adaptive = sum(1 for r in scored if r.get("threshold_info", {}).get("source") == "per_rider_calibrated")
+    # `.get("threshold_info", {})` only falls back to {} when the key is
+    # MISSING, not when it's present with value None (several scored
+    # results store it as an explicit None) — crashed with
+    # AttributeError on any such row. Found live: this endpoint had
+    # never actually been called by any frontend before this fix pass.
+    adaptive = sum(1 for r in scored if (r.get("threshold_info") or {}).get("source") == "per_rider_calibrated")
     conformal_active = any(r.get("model_status") == "per_rider_conformal_fusion" for r in scored)
     return {
         "status": "available" if scored else "no_data",

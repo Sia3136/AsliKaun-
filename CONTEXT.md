@@ -1,8 +1,8 @@
 # AsliKaun — Project Context
 
-Honest state-of-the-project as of 2026-11-05, written from a direct code audit. See `FEATURES.md` for what each piece does; this is about how well the whole thing hangs together.
+**v1** — 2026-11-05. Honest state-of-the-project, written from direct code audits and live testing across three passes the same day. See `FEATURES.md` for what each piece does and the documented seed dataset; this is about how well the whole thing hangs together and what's been fixed vs. still open.
 
-**Update, same day:** items §1, §3, §6, §7 (partially) below were fixed and verified in a follow-up pass — see "Fixed this session" at the end. The original findings are kept as-written so the reasoning stays visible; don't re-fix what's already marked done.
+**Positioning note:** the API (backend + ML pipeline) is the product being marketed. The mobile app is a demo of what a real integration looks like, not a deliverable itself. The admin dashboard's job is to be a credible, honest reference implementation proving the API works — not to look impressive with fabricated numbers. That framing drove most of this round's fixes.
 
 ---
 
@@ -10,58 +10,35 @@ Honest state-of-the-project as of 2026-11-05, written from a direct code audit. 
 
 - **The core ML signal science is real and validated**, not hand-waved: touch and motion triplet-loss encoders beat their classical baselines on held-out H-MOG data; Fisher fusion measurably outperforms single-signal scoring; conformal p-value calibration and per-rider thresholds are implemented correctly, not just claimed.
 - **The two-axis decision model is principled** — it won't escalate on a single noisy signal, which is the right instinct for a system whose false positives directly harm honest drivers' livelihoods.
-- **Fatigue capping and the auto-clear-on-match / human-review-on-anything-else asymmetry** are genuinely good product decisions, correctly implemented and tested — the system is structurally biased toward not harming honest drivers, not just biased toward catching fraud.
-- **The retention/consent/webhook/split-rental/device-auth work is real, running code**, verified by this audit to actually execute, not just exist as unused functions.
-- **The team has been honest with itself** — `ARCHITECTURE_GAP_STATUS.md` is an unusually candid self-assessment (explicitly disclaiming the "50,000 req/s" capacity claim, calling out SQLite's row-level-security limitation, naming what consent/compliance work is still missing). That document should be trusted over any more optimistic claim elsewhere.
+- **Fatigue capping and the auto-clear-on-match / human-review-on-anything-else asymmetry** are genuinely good product decisions, correctly implemented and tested.
+- **The retention/consent/webhook/split-rental/device-auth work is real, running code**, verified to actually execute — though most of it has no admin UI yet (see "still open" below).
+- **The team has been honest with itself** — `ARCHITECTURE_GAP_STATUS.md` is an unusually candid self-assessment. Trust it over any more optimistic claim elsewhere.
+- **As of this pass, the admin dashboard no longer shows fabricated data as if it were live** (see below) — a real credibility gap for an API-first product, now closed for the panels that mattered most.
 
 ---
 
-## The bads — real problems found in this audit
+## Round 3 (this pass) — fixed and verified
 
-### 1. The reported selfie-verification bug is real, root-caused, and not mysterious — FIXED
-"Worked once, then stopped" had a concrete explanation, not a flaky-AI excuse:
-- `DRIVER_TOKEN` in `frontend/mobile-app/src/telemetry.ts` only had a value on `localhost`/`127.0.0.1`/`*.localhost`. On any other host — including a phone on the same LAN, which is the only realistic way to test a camera/motion-sensor app — it was an empty string, so `getChallengeStatus()`/`respondToChallenge()` returned `null` without ever reaching the backend.
-- **Fix:** `telemetry.ts` now also recognizes RFC1918 private-LAN hostnames (192.168.x.x, 10.x.x.x, 172.16-31.x.x) as local-dev for the purpose of the non-secret demo token fallback, with a console notice so it's not silent. The HTTPS requirement in `telemetryPolicy.ts` was left untouched — it's a real security boundary, not the bug.
-- Also fixed: `respondToChallenge()`/`getChallengeStatus()` used to return `null` for a config problem (missing token/non-HTTPS) — indistinguishable from an actual verification failure. They now return a distinct `outcome: "config_error"` the UI can message correctly instead of dead-ending.
+1. **Dead SSE live-stream route, removed.** `/v1/events/stream` was defined twice; the first (admin-token-gated) always won and silently 401'd every connection attempt, since a browser `EventSource` can't send auth headers. The second, fully-wired pub/sub stream (real events: `session_scored`, `review_resolved`, `fleet_update`, etc.) was completely unreachable. Removed the dead duplicate. **Verified live**: `new EventSource("/v1/events/stream")` now connects successfully (previously always errored). The dashboard genuinely auto-updates now.
+2. **Driver app wasn't auto-started.** `start-dev.ps1` only launched the backend and admin dashboard. Now also launches `frontend/mobile-app` (port 8443) so the dashboard's "Driver app" button has something to open. The app itself was never broken — confirmed it loads, logs in, and proxies to the backend correctly once running.
+3. **Nav bar decluttered.** Removed the theme toggle (see #4) and moved "Stream Live Telemetry" (the auto-simulator toggle — a dev/demo tool) out of the global header into the Simulator page where it belongs, next to the scenario cards. "Live Ingest" shrank to an icon-only manual-refresh button now that live push (#1) keeps data current automatically.
+4. **Light theme removed.** It was a half-finished leftover: three duplicate `[data-theme="light"] header` CSS blocks and two duplicate `.export` blocks had accumulated from past edits, and newer classes (`.live-btn` etc.) had no light variant at all — low-contrast, hard-to-read controls, confirmed visually. Dark is now the only theme; the toggle button and its state were deleted rather than patched (the team had already decided on one unified dark theme).
+5. **Phantom drivers/cases removed.** `INITIAL_DRIVERS` had 9 hardcoded entries; only 4 (`rider-001`, `014`, `042`, `088`) match what the backend actually seeds. The other 5 (`rider-019`, `002`, `007`, `055`, `091`) were pure frontend fiction, permanently merged into the live Continuity Matrix and Review Queue with no backend counterpart ever able to correct them. Removed. See `FEATURES.md` for the exact, documented seed dataset.
+6. **Drift tracker was 100% fake, wired to real data.** The entire page — chart, alert banner, driver pills, session table — read from a hardcoded `DRIVER_DRIFT_DATA` constant and never called the real, working `/v1/drivers/{id}/drift` endpoint. Now fetches real per-session data per driver. **Verified live**: shows actual stored sessions (e.g. real `SES-0250`/`SES-0429` rows for rider-042 from this session's own testing), not fabricated `SES-0037` fiction.
+7. **Model health partially wired, and a real pre-existing crash fixed along the way.** The AUC/EER model cards are real, validated offline research numbers (genuinely measured during training) — now clearly labeled "offline validation snapshot, not live-computed" rather than implying a live test just ran. The page now also fetches `/v1/ml/models/health` for real runtime stats (sample count, calibration status) alongside them. **While wiring this up, found and fixed a real backend bug**: that endpoint crashed with `AttributeError` on any session with `threshold_info: None` (a `.get(key, {})` only falls back when the key is *missing*, not when it's present-and-`None`) — this endpoint had never actually been called by any frontend before, so the bug was latent. Fixed; verified live (340 real scored sessions, `conformal_active`).
+8. **Fake "Run calibration check" button, fixed.** Previously: `setTimeout` + a hardcoded canned success message ("D=0.038, p > 0.10, Zero cohort bias"), regardless of anything. Now calls the real `/v1/ml/models/health` endpoint and reports its actual response.
+9. **Fabricated cohort-fairness and p-value-histogram numbers, relabeled honestly.** "48,200 sessions" and similar implied a production scale that doesn't exist. These two panels now say "illustrative example" explicitly, with a note that real reporting needs session volume this demo doesn't have yet. Not deleted — they still demonstrate the real capability — just no longer presented as live production evidence.
 
-### 2. Two competing verification systems exist; only the older, flakier one is wired up — DOCUMENTED, NOT RESOLVED
-- The automated face-embedding system (`/v1/drivers/{id}/challenge/respond`, MTCNN + FaceNet + texture-based liveness/anti-spoofing) is what the frontend calls.
-- A second, newer `verification_requests`-backed system (`/v1/drivers/{id}/verification`) exists, explicitly designed to **never auto-match or even store the face image** — it logs the capture and waits for a human/external decision. This reads like the team's own correction of the first system's unreliability.
-- No frontend code calls the second system. It's dead on the client side. **Deliberately not deleted or merged this session** — risk of destroying in-progress work without knowing the team's intent. Added a prominent code comment at the top of the unused endpoints pointing back here. Still needs a real decision from whoever built it.
-
-### 3. MTCNN face detection is strict, and there was no retry path when it fails — FIXED
-- The project's own E2E regression test failed because its synthetic "face" image (a soft gradient blob, no actual facial features) can't be detected by MTCNN — confirmed empirically (even a hand-drawn cartoon face with eyes/nose/mouth doesn't pass; MTCNN needs real photographic texture). This was the test fixture's fault, not a backend bug.
-- **Fix:** the E2E test now mocks the identity-embedding step only (`backend.app.main.embed_face_image`), leaving the real, texture-based anti-spoofing/liveness check genuinely exercised against the synthetic "live" vs "screen_replay" fixtures (that check isn't MTCNN-dependent and does correctly tell them apart).
-- Separately, a real numpy dtype-promotion bug surfaced while fixing this (`float32_array / np.sqrt(x)` silently upcasts to float64, corrupting a byte-level round-trip) — fixed and left as a commented warning in the test.
-- **Frontend UX fix:** `no_face_detected` (a recoverable bad-photo outcome) now routes to a "Retake photo" screen instead of the old dead-end "your account is under review" screen with no way forward. Genuinely unrecoverable outcomes (`config_error`) now correctly do NOT offer a "Try again" that can't possibly succeed — they go straight to "Get help" instead.
-
-### 4. Two slow-drift detectors run redundantly — NOT ADDRESSED
-`FrozenAnchorDetector` (simple, older) and `DriverTimeSeriesProfiler` (newer, more sophisticated — distinguishes legitimate drift from attacks, sudden shifts, and split-shift patterns) both run on every ingested session and can both independently escalate a decision. Not a correctness bug, but architectural debt: redundant systems make "why did this driver get flagged" harder to answer, and the newer profiler appears to make the older detector largely obsolete. Still true as of this update.
-
-### 5. Frontend structure is fragmented across (at least) three projects — RESOLVED (was a real open question, now answered)
-`frontend/fleet-dashboard.html` loads `/admin-operations/src/main.tsx` directly — **confirmed**: `frontend/admin-operations/` IS the live source for the served admin dashboard, not a disconnected experiment as this doc originally speculated. `frontend/fleet-dashboard/` (a separate directory with its own `src/`) still has NOT been confirmed to be wired anywhere — don't assume it's live without checking the same way.
-
-### 6. Test suite has a collection-breaking path bug — FIXED
-Two newer test files imported `backend.app.X` as an absolute package path, which only resolved when pytest ran from the repo root; `cd backend && pytest` (the natural instinct, matching the older test file's own README) failed to collect them. **Fix:** added `pytest.ini` at the repo root with `pythonpath = .` and `testpaths = backend/tests`, which anchors pytest's rootdir at the repo root regardless of invocation directory. Verified: all 16 tests now collect and pass from both the repo root and from inside `backend/`.
-
-### 7. Dead/orphaned code — PARTIALLY ADDRESSED
-`frontend/mobile-app/src/verificationState.ts` is still fully written but never imported anywhere — not touched this session (low-risk cleanup, not urgent). The `verification_requests` backend endpoints (§2) are the bigger instance of this pattern and now have an explicit "not wired up" marker in code.
-
-### 8. NEW: a systemic "missing CSS class" pattern in the admin dashboard, plus a theme-default bug
-Found during a UI/UX audit (not in the original pass):
-- The dashboard's theme state defaulted new visitors to `"light"` (`frontend/admin-operations/src/App.tsx`), but light mode was never fully re-themed after the team's documented switch to a unified dark "cyber-defense" theme — several components (`.metric` stat cards among them) only had dark styling under `[data-theme="dark"]` overrides and fell back to the old, abandoned light palette otherwise. Result: a jarring half-dark/half-washed-out-white page on first load. **Fixed**: default now resolves to `"dark"` unless a saved `"light"` preference exists.
-- At least 9 component classes used in the live JSX (`.alert-pill`, `.driver-pill-btn`, `.sim-result`, `.sim-actions`, `.global-toast`, `.sandbox`, `.live-btn`/`.active-pulse`, `.hist-label`, `.takeaway`) and one whole feature area (`.user-menu-wrap`/`.user-btn`/`.user-dropdown`) had **zero matching CSS rules anywhere in the stylesheet** — they rendered as plain unstyled text/divs with no background, spacing, or visual hierarchy. The admin user-menu dropdown in particular rendered as raw floating text overlapping the page title, with no visible container. **Fixed**: added full dark-theme-consistent CSS for all of them, verified visually (drift-tracker driver pills, the alert badge, the simulator result card, and the user dropdown all now render correctly).
-- A handful of inline styles (`backend/app/main.py` wasn't affected — this was `admin-operations/src/App.tsx` only) still had hardcoded hex colors from the old light palette (`#174b3a`, `#f8fbf9`, `#455952`, `#84928d`, etc.) sitting inside otherwise-dark-themed components, since inline `style={{}}` props don't get touched by a CSS-only theme migration. **Fixed**: replaced with the established dark-theme color tokens (`#10b981` emerald accent, `#94a3b8`/`#cbd5e1` muted/body text).
-- **Worth doing, not done**: a repo-wide sweep of `frontend/mobile-app` and `frontend/fleet-dashboard` for the same two patterns (orphaned classes, hardcoded old-palette inline hex) wasn't performed — only `admin-operations` was audited this way. Given how many instances turned up in one file, it's reasonable to expect more elsewhere.
+All of the above verified via: 16/16 backend tests passing (`pytest backend/tests/`), clean TypeScript compiles and production builds for both `frontend/` and `frontend/mobile-app`, and live manual testing against a running backend (real HTTP calls, real SSE connection, real screenshots) — not just "it builds."
 
 ---
 
-## What needs to happen next, roughly in priority order
+## Still open (not touched this round — out of scope or lower priority)
 
-1. ~~Fix the selfie-verification deployment gap~~ — done, see §1.
-2. **Decide, explicitly, which verification system is canonical** (§2) and delete or finish the other one. Still open.
-3. ~~Fix the error-path UX inversion~~ — done, see §3.
-4. ~~Confirm which frontend build is actually deployed~~ — done, see §5 (it's `admin-operations/`).
-5. ~~Fix the pytest path issue~~ — done, see §6.
-6. **Run the same missing-CSS / hardcoded-old-palette sweep on `frontend/mobile-app` and `frontend/fleet-dashboard`** (§8's last bullet) — only `admin-operations` got this treatment so far.
-7. Lower priority: collapse the two drift detectors into one (§4), decide the fate of `verificationState.ts` (§7), and wire a real `vehicle_speed_mph` source into the mobile telemetry payload so the pause-aware safety gate (`FEATURES.md` §4) stops being a permanent no-op.
+- **Two competing verification systems.** The automated face-match flow (`/challenge/respond`) is what's wired to the frontend; a second, more privacy-conscious `verification_requests` system exists with zero frontend callers. Still needs a real decision from whoever built it — not resolved, deliberately not deleted.
+- **Several real backend/ML capabilities have no admin UI at all**: split-rental detection, ops webhook config, device-key enrollment, driver consent lifecycle, declaration history. All real, working, API-only. Lower priority if the API itself is the product, but worth it if the dashboard should demonstrate every differentiator.
+- **Two slow-drift detectors run redundantly** (`FrozenAnchorDetector` + `DriverTimeSeriesProfiler`) — architectural debt, not a correctness bug.
+- `frontend/mobile-app/src/verificationState.ts` — still dead code, never imported.
+- `frontend/fleet-dashboard/` (a separate directory from `frontend/admin-operations/`, which is the one that's actually live) — still not confirmed wired anywhere; don't assume it's live.
+- The mobile telemetry payload still always sends `vehicle_speed_mph: null`, so the pause-aware safe-stop gate has no real speed signal to act on yet.
+- A repo-wide sweep for the same "missing CSS class" / hardcoded-old-palette-inline-color pattern on `frontend/mobile-app` and `frontend/fleet-dashboard` — only `frontend/admin-operations` got this treatment.
