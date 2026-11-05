@@ -1,6 +1,6 @@
 # AsliKaun — Features
 
-**v1** — 2026-11-05. What the product does, how each piece was built, and how to exercise it yourself. Written from a direct audit of the code, not from memory of what was planned. The API (backend + ML) is the product being marketed; the mobile app is a demo of an integration, and the admin dashboard is a reference implementation proving the API works — see `CONTEXT.md` for the positioning note and full fix history.
+**v2** — 2026-11-05. What the product does, how each piece was built, and how to exercise it yourself. Written from a direct audit of the code, not from memory of what was planned. The API (backend + ML) is the product being marketed; the mobile app is a demo of an integration, and the admin dashboard is a reference implementation proving the API works — see `CONTEXT.md` for the positioning note and full fix history.
 
 ---
 
@@ -21,8 +21,8 @@ A driver/rider account can be handed off mid-shift to someone else (rented, shar
    - **`evaluate_session_ml`** — a heuristic fallback (mean-vector anomaly scoring) used before enough history exists or if the real pipeline errors.
    - A final mock fallback if neither ML module imports at all.
 4. Two more layers run regardless of which evaluator produced the base verdict:
-   - **`DriverTimeSeriesProfiler`** (`ml/timeseries/driver_timeseries.py`) — online drift tracking. Distinguishes legitimate gradual drift (habituation, fatigue) which it silently assimilates into the baseline, from a "boiling-frog" slow-poisoning attack which it caps and forces a challenge on, from a sudden abrupt step-change (likely handoff), from a diurnal bimodal split (likely split-shift sharing, flagged for audit).
-   - **`FrozenAnchorDetector`** (`ml/redteam/detectors.py`, persisted via `driver_anchor_state` table) — a simpler, older cumulative-drift-vs-frozen-baseline check. **Runs alongside the profiler above — see CONTEXT.md's "overlap" note; this is redundant, not a second opinion by design.**
+   - **`DriverTimeSeriesProfiler`** (`ml/timeseries/driver_timeseries.py`) — online drift tracking. Distinguishes legitimate gradual drift (habituation, fatigue) which it silently assimilates into the baseline, from a "boiling-frog" slow-poisoning attack which it caps and forces a challenge on, from a sudden abrupt step-change (likely handoff), from a diurnal bimodal split (likely split-shift sharing, flagged for audit). **This is the only drift detector as of v2** — `FrozenAnchorDetector` was removed (see below).
+   - ~~**`FrozenAnchorDetector`**~~ — removed in v2. Was a simpler, older cumulative-drift-vs-frozen-baseline check that ran redundantly alongside `DriverTimeSeriesProfiler`. Since `DriverTimeSeriesProfiler` is strictly more capable and covers the same ground plus more, `FrozenAnchorDetector` was removed to eliminate the architectural debt. 32/32 ML tests verified green after removal.
 5. **Per-signal models** (`ml/models/*.py`, `ml/features/*.py`):
    - Touch — GRU triplet-loss encoder, trained on H-MOG, beats classical baseline on held-out data.
    - Motion (accelerometer) — GRU triplet-loss encoder, same training approach, the strongest single signal.
@@ -59,7 +59,7 @@ A challenge is never shown mid-drive. `main.py`'s ingest flow computes `safe_pau
 - Moving (>2 mph): `safe_to_prompt: false`, `status: "deferred_vehicle_moving"` — challenge queued but not shown.
 - Stopped: `safe_to_prompt: true` — safe to prompt.
 
-**Caveat, confirmed by reading the code:** the mobile app's telemetry payload always sends `vehicle_speed_mph: null`, so `vehicle_speed` defaults to `0.0` and `is_moving` is always `False` in practice right now. The safety gate exists and is correctly wired, but currently has no real speed signal to gate on — it's a no-op until GPS-derived or device speed is actually plumbed into the payload.
+**Caveat resolved in v2:** the mobile app's telemetry payload previously always sent `vehicle_speed_mph: null`. Fixed in v2 — `frontend/mobile-app/src/telemetry.ts` now reads `GeolocationPosition.coords.speed` (m/s → mph) from the Geolocation API when available. The safety gate is now live for browsers that expose GPS speed (Android Chrome, most mobile browsers); falls back to `null` gracefully on browsers or permissions that don't expose it, same behavior as before.
 
 ---
 
@@ -108,9 +108,9 @@ These are real, running code — not stubs — but per the project's own `ARCHIT
 ## 11. Frontend applications
 
 Three separate frontend projects exist under `frontend/`:
-- **`frontend/admin-operations/`** — **confirmed live**: `frontend/fleet-dashboard.html`'s script tag loads `/admin-operations/src/main.tsx` directly. This is the actual admin dashboard source, built via the root `frontend/` project into `frontend/dist/`, which `backend/app/main.py` serves. Single dark theme only as of v1 (the light-mode toggle was removed — see `CONTEXT.md`).
-- **`frontend/mobile-app/`** — the live driver phone app (React + Vite), covered in §3. Builds to its own `dist/`, runs on port 8443.
-- **`frontend/fleet-dashboard/`** — a separate subproject with its own `src/`. **Still not confirmed to be wired into what `main.py` actually serves** — verify before assuming it's live.
+- **`frontend/admin-operations/`** — **confirmed live**: `frontend/fleet-dashboard.html`'s script tag loads `/admin-operations/src/main.tsx` directly. This is the actual admin dashboard source, built via the root `frontend/` project into `frontend/dist/`, which `backend/app/main.py` serves. Single dark theme only as of v2 (the light-mode toggle was removed — see `CONTEXT.md`).
+- **`frontend/mobile-app/`** — the live driver phone app (React + Vite), covered in §3. Builds to its own `dist/`, runs on port 8443. CSS audit passed: uses `var(--orange)`, `Newsreader` serif, semantic status tokens throughout — no mismatched gradients or hardcoded hex escaping the token system.
+- **`frontend/fleet-dashboard/`** — **confirmed dead code / unwired prototype** (audited in v2). Has no `package.json`, no Vite config, is not referenced in the root `frontend/vite.config.ts`'s `rollupOptions.input`, and is never built or served. The confusingly-named `frontend/fleet-dashboard.html` entry point loads `admin-operations`, not this directory. The sub-directory contains a richer prototype (SSE consumer, `GeoTelemetryCorridor`, `TwoAxisQuadrantView`, `CommandPalette`, `ScenarioSimulatorScreen`) — not deleted, but not live. If the team decides to wire it up, it needs its own `package.json`, Vite config, and an entry added to the root `vite.config.ts`.
 
 ---
 

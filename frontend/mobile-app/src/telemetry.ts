@@ -72,6 +72,7 @@ const state = {
   precisionEnabled: false,
   gps: [] as GpsPoint[],
   zoneTimestamp: null as string | null, lastMovingAt: null as number | null, stoppedEventReported: false,
+  lastSpeedMph: null as number | null,
   batteryLevel: null as number | null, charging: false, sampleIntervalMs: GRID_MS, lastAccelAt: 0, lastGyroAt: 0,
   retryTimer: null as ReturnType<typeof setTimeout> | null,
   sensorWatchdog: null as ReturnType<typeof setInterval> | null,
@@ -212,6 +213,12 @@ function startLocation() {
     state.zoneTimestamp = new Date(position.timestamp).toISOString();
     if (Number.isFinite(position.coords.speed) && position.coords.speed !== null) {
       const speed = position.coords.speed; const now = position.timestamp || Date.now();
+      // Scalar speed (not a location trace) — sent regardless of
+      // precisionEnabled, same as the coarse zone. This is what the
+      // backend's pause-aware safety gate (never prompting a challenge
+      // while the vehicle is moving) actually reads; it was previously
+      // always null, so that gate was a permanent no-op.
+      state.lastSpeedMph = speed * 2.236936;
       if (speed > 0.5) { state.lastMovingAt = now; state.stoppedEventReported = false; }
       else if (!state.stoppedEventReported && shouldRecordStoppedEvent(state.lastMovingAt, speed, now)) {
         state.pendingEvents.push({ event_type: "driver_stop_detected", timestamp: new Date(now).toISOString() }); state.stoppedEventReported = true;
@@ -436,7 +443,7 @@ async function sendSessionOnce(): Promise<IngestResponse | null> {
   const payload = { driver_id: DRIVER_ID, device_id: makeDeviceId(),
     // Public IP/subnet must be derived server-side behind trusted proxy configuration; browser code cannot know it reliably.
     ip_subnet: null, zone: state.zone, zone_timestamp: state.zoneTimestamp, accel, gyro, accel_timestamps, gyro_timestamps, touch_events: touchEvents, client_events: clientEvents,
-    gps: state.precisionEnabled ? gpsPoints : [], vehicle_speed_mph: null,
+    gps: state.precisionEnabled ? gpsPoints : [], vehicle_speed_mph: state.lastSpeedMph,
     accept_latency_ms: acceptLatencyMs, timestamp: new Date().toISOString() };
   try {
     await saveBatch(payload);

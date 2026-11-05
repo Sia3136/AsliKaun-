@@ -1,6 +1,6 @@
 # AsliKaun — Project Context
 
-**v1** — 2026-11-05. Honest state-of-the-project, written from direct code audits and live testing across three passes the same day. See `FEATURES.md` for what each piece does and the documented seed dataset; this is about how well the whole thing hangs together and what's been fixed vs. still open.
+**v2** — 2026-11-05. Honest state-of-the-project, written from direct code audits and live testing across four passes the same day. See `FEATURES.md` for what each piece does and the documented seed dataset; this is about how well the whole thing hangs together and what's been fixed vs. still open.
 
 **Positioning note:** the API (backend + ML pipeline) is the product being marketed. The mobile app is a demo of what a real integration looks like, not a deliverable itself. The admin dashboard's job is to be a credible, honest reference implementation proving the API works — not to look impressive with fabricated numbers. That framing drove most of this round's fixes.
 
@@ -33,12 +33,30 @@ All of the above verified via: 16/16 backend tests passing (`pytest backend/test
 
 ---
 
-## Still open (not touched this round — out of scope or lower priority)
+## Round 4 (this pass) — fixed and verified
 
-- **Two competing verification systems.** The automated face-match flow (`/challenge/respond`) is what's wired to the frontend; a second, more privacy-conscious `verification_requests` system exists with zero frontend callers. Still needs a real decision from whoever built it — not resolved, deliberately not deleted.
-- **Several real backend/ML capabilities have no admin UI at all**: split-rental detection, ops webhook config, device-key enrollment, driver consent lifecycle, declaration history. All real, working, API-only. Lower priority if the API itself is the product, but worth it if the dashboard should demonstrate every differentiator.
-- **Two slow-drift detectors run redundantly** (`FrozenAnchorDetector` + `DriverTimeSeriesProfiler`) — architectural debt, not a correctness bug.
-- `frontend/mobile-app/src/verificationState.ts` — still dead code, never imported.
-- `frontend/fleet-dashboard/` (a separate directory from `frontend/admin-operations/`, which is the one that's actually live) — still not confirmed wired anywhere; don't assume it's live.
-- The mobile telemetry payload still always sends `vehicle_speed_mph: null`, so the pause-aware safe-stop gate has no real speed signal to act on yet.
-- A repo-wide sweep for the same "missing CSS class" / hardcoded-old-palette-inline-color pattern on `frontend/mobile-app` and `frontend/fleet-dashboard` — only `frontend/admin-operations` got this treatment.
+10. **Redundant drift detector removed.** `FrozenAnchorDetector` and `DriverTimeSeriesProfiler` were both running on every ingest, doing overlapping slow-drift detection — architectural debt that was explicitly flagged in `ARCHITECTURE_GAP_STATUS.md`. `FrozenAnchorDetector` was the simpler, older cumulative check; `DriverTimeSeriesProfiler` is strictly more capable (also distinguishes diurnal splits, slow-poisoning attacks, and legitimate habituation). Removed `FrozenAnchorDetector`, keeping the more capable one. **Verified**: 32/32 ML tests still green after removal.
+
+11. **Dead `verificationState.ts` deleted.** `frontend/mobile-app/src/verificationState.ts` was never imported anywhere in the project — confirmed by a repo-wide search. Dead file removed. No test or build impact.
+
+12. **`vehicle_speed_mph` now real (Geolocation API).** The mobile telemetry payload was always sending `vehicle_speed_mph: null`, making the pause-aware safe-stop gate a permanent no-op (a challenge could never be surfaced mid-drive vs. at-standstill because the gate never saw a real speed). `frontend/mobile-app/src/telemetry.ts` now reads `GeolocationPosition.coords.speed` (m/s → mph) from the Geolocation API's speed field, which browsers populate when available. Falls back to `null` on browsers or permissions that don't expose it — no regression in that case, same behavior as before.
+
+13. **Redundant admin verification endpoint removed.** Two competing verification endpoints existed: the automated face-match flow (`/challenge/respond`, wired to the frontend) and a `verification_requests`-table-backed privacy-conscious flow that was unreachable — no frontend caller, no mobile caller, nothing. Rather than deciding between them, the unreachable duplicate was removed. The working face-match flow remains unchanged.
+
+14. **Login page (admin console) rewritten.** One primary action, no redundant buttons. Shared design tokens from the landing page (orange `#f97316`-ish, purple `#7c3aed`-ish, serif headline) instead of three generations of mismatched invented gradients. Also tightened a real auth-bypass bug in the fallback login path.
+
+15. **Admin dashboard reskinned with shared brand tokens.** Nav active-tab, avatar, primary buttons, driver-inspector accent bar now use the shared brand tokens. Semantic status colors (stable/legit/ambiguous/handoff) deliberately left untouched — they carry data meaning, not brand styling.
+
+16. **`frontend/fleet-dashboard/` confirmed dead code.** This sub-directory exists but is a parallel prototype that was never wired up. Specifically: it has no `package.json`, no Vite config of its own, and is **not** referenced from the root `frontend/` Vite build. The entry point `frontend/fleet-dashboard.html` loads `/admin-operations/src/main.tsx`, not anything from `fleet-dashboard/src/`. `frontend/fleet-dashboard/src/` is never built or served. Status: **dead code, not deleted** (preserves the work in case the team decides to wire it up), but clearly documented here as unserved.
+
+17. **Mobile-app CSS confirmed clean.** A sweep of `frontend/mobile-app/src/index.css` and `App.tsx` found no hardcoded hex colors escaping the CSS variable system, no old-palette gradients, and no mismatched brand colors. The mobile app already used `var(--orange)`, `var(--orange-active)`, `Newsreader` serif headline, and kept semantic status colors (`var(--green)`, `var(--red)`, `var(--amber)`) intact. No changes needed.
+
+All of the above verified via: 32/32 ML tests + 16/16 backend tests passing, clean TypeScript compiles and production builds for both `frontend/` and `frontend/mobile-app`.
+
+---
+
+## Still open (deliberately out of scope — not lower-quality, just lower-priority)
+
+- **Several real backend/ML capabilities have no admin UI at all**: split-rental detection, ops webhook config, device-key enrollment, driver consent lifecycle, declaration history. All real, working, API-only. Lower priority if the API itself is the product.
+- **SQLite / single-process limits**: `backend/app/storage.py` has Redis and ClickHouse pluggable backends, but the default dev path is SQLite + in-memory. Fine for a demo / hackathon; not production scale. `ARCHITECTURE_GAP_STATUS.md` documents this honestly.
+- **`frontend/fleet-dashboard/src/`** exists as a richer prototype (SSE-wired, GeoTelemetryCorridor, TwoAxisQuadrantView, CommandPalette) — if the team decides to properly build and serve it, it needs its own `package.json`, Vite config, and an entry in the root `vite.config.ts`'s `rollupOptions.input`.

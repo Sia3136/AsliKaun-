@@ -77,10 +77,14 @@ except ImportError:
     ML_TIMESERIES_AVAILABLE = False
 
 try:
-    from ml.redteam.detectors import FrozenAnchorDetector, split_rental_check
+    # FrozenAnchorDetector used to be imported here too, for a second
+    # live drift-detection path consolidated away in favor of
+    # DriverTimeSeriesProfiler alone — see the comment at its old call
+    # site. split_rental_check is still the real, live-wired GMM split-
+    # shift audit (admin-triggered, not run on every ingest).
+    from ml.redteam.detectors import split_rental_check
     ML_DETECTORS_AVAILABLE = True
 except ImportError:
-    FrozenAnchorDetector = None
     split_rental_check = None
     ML_DETECTORS_AVAILABLE = False
 
@@ -247,11 +251,6 @@ class ResolveReview(BaseModel):
         pattern="^(cleared|confirmed_handoff|needs_follow_up)$"
     )
     reviewer_note: str | None = Field(default=None, max_length=1000)
-
-
-class VerificationSubmission(BaseModel):
-    challenge_id: str = Field(min_length=1, max_length=128)
-    captured_at: datetime
 
 
 class VerificationDecision(BaseModel):
@@ -887,36 +886,6 @@ def write_event(con: sqlite3.Connection, driver_id: str, event_type: str, detail
     )
 
 
-def load_frozen_anchor(con: sqlite3.Connection, driver_id: str) -> "FrozenAnchorDetector | None":
-    """Rehydrates this driver's FrozenAnchorDetector (ml/redteam/detectors.py)
-    from its persisted state — the dual-timescale slow-drift defense.
-    Previously this detector only ran in offline test scripts; it needs
-    per-driver state carried across requests to do anything live."""
-    if not ML_DETECTORS_AVAILABLE:
-        return None
-    row = con.execute(
-        "SELECT anchor_mean, cumulative, buffer_json FROM driver_anchor_state WHERE driver_id = ?",
-        (driver_id,),
-    ).fetchone()
-    detector = FrozenAnchorDetector()
-    if row is not None:
-        detector.anchor_mean = row["anchor_mean"]
-        detector.cumulative = row["cumulative"]
-        detector._buffer = decode_json(row["buffer_json"], [])
-    return detector
-
-
-def save_frozen_anchor(con: sqlite3.Connection, driver_id: str, detector: "FrozenAnchorDetector") -> None:
-    con.execute(
-        """INSERT INTO driver_anchor_state(driver_id, anchor_mean, cumulative, buffer_json, updated_at)
-           VALUES(?, ?, ?, ?, ?)
-           ON CONFLICT(driver_id) DO UPDATE SET
-             anchor_mean = excluded.anchor_mean, cumulative = excluded.cumulative,
-             buffer_json = excluded.buffer_json, updated_at = excluded.updated_at""",
-        (driver_id, detector.anchor_mean, detector.cumulative, json.dumps(detector._buffer[-50:]), now_iso()),
-    )
-
-
 # Challenge fatigue cap (edge case: repeated step-ups push honest
 # drivers off the platform — explicitly a P0 in the product's own edge
 # case matrix). This does NOT suppress the underlying ML verdict or the
@@ -942,14 +911,6 @@ def check_and_log_challenge_fatigue(con: sqlite3.Connection, driver_id: str) -> 
         (driver_id, now_iso()),
     )
     return fatigued
-
-
-def reset_frozen_anchor(con: sqlite3.Connection, driver_id: str) -> None:
-    """Call after a real re-verification (admin clears a review, or a
-    driver passes a face challenge) — the anchor re-establishes itself
-    from the next `anchor_window` sessions rather than staying pinned
-    to pre-verification behavior."""
-    con.execute("DELETE FROM driver_anchor_state WHERE driver_id = ?", (driver_id,))
 
 
 def _session_payload_to_legacy_shape(payload: dict) -> dict:
@@ -1792,27 +1753,20 @@ def ingest_session(
             reason_vector = None
             model_status = "ml_dependencies_unavailable"
 
-        # Dual-timescale slow-drift defense (ml/redteam/detectors.py's
-        # FrozenAnchorDetector): a single session's behavior_score can
-        # look individually unremarkable while drifting steadily away
-        # from this driver's established baseline over many sessions —
-        # exactly what a boiling-frog slow handoff looks like, and what
-        # a fast-adapting-only baseline misses by design. Runs
-        # regardless of which scoring path produced behavior_score.
-        if behavior_score is not None and ML_DETECTORS_AVAILABLE:
-            anchor_detector = load_frozen_anchor(con, body.driver_id)
-            if anchor_detector is not None:
-                drift_flagged = anchor_detector.update(float(behavior_score))
-                save_frozen_anchor(con, body.driver_id, anchor_detector)
-                if drift_flagged and decision not in ("challenge_at_safe_pause", "step_up_check_at_safe_pause"):
-                    decision = "step_up_check_at_safe_pause"
-                    quadrant = "ambiguous"
-                    reasons = reasons + [
-                        f"Dual-timescale drift detector: cumulative behavioral drift "
-                        f"({round(anchor_detector.cumulative, 3)}) crossed the threshold over "
-                        f"{len(anchor_detector._buffer)} sessions since the last verified baseline — "
-                        f"no single session looked anomalous, but the slow trend does."
-                    ]
+        # Dual-timescale slow-drift defense used to run TWO independent
+        # detectors here: this simple FrozenAnchorDetector (unconditional
+        # cumulative deficit vs. a frozen baseline mean) AND the more
+        # sophisticated DriverTimeSeriesProfiler below, which already
+        # covers the same "boiling frog" slow-drift case — see its own
+        # docstring — while ALSO distinguishing legitimate gradual drift
+        # (habituation, fatigue) from an attack, which FrozenAnchorDetector
+        # cannot do at all (it escalates on cumulative deficit regardless
+        # of cause). Running both was redundant and made "why did this
+        # driver get flagged" harder to answer, not easier. Consolidated
+        # 2026-11-05 onto DriverTimeSeriesProfiler alone; the old
+        # load_frozen_anchor/save_frozen_anchor/reset_frozen_anchor
+        # helpers and the driver_anchor_state table they used are no
+        # longer called anywhere (table left in place, harmless if empty).
 
         # A declared or apparently legitimate context change with stable behavior gets
         # a context re-baseline. Keep the frozen anchor; update only the fast baseline.
@@ -2433,8 +2387,6 @@ def respond_to_challenge(
                    WHERE driver_id=? AND status='open'""",
                 (now_iso(), f"Auto-cleared: face similarity {round(similarity, 3)} (liveness={liveness.get('liveness_score', 1.0)})", driver_id),
             )
-            if ML_DETECTORS_AVAILABLE:
-                reset_frozen_anchor(con, driver_id)
             write_event(con, driver_id, "challenge_passed", {
                 "similarity": round(similarity, 4),
                 "liveness_score": liveness.get("liveness_score", 1.0)
@@ -2926,38 +2878,18 @@ def driver_events(
         ]}
 
 
-# NOT CURRENTLY CALLED BY ANY FRONTEND (confirmed by a repo-wide search,
-# 2026-11-05). This is a second, parallel verification flow alongside
-# /v1/drivers/{id}/challenge/respond (the one the mobile app actually
-# calls — automated MTCNN/FaceNet match + texture-based liveness check).
-# This one is the more privacy-conscious design: it never auto-matches or
-# even stores the face image, just logs that a capture happened and waits
-# for an admin/external liveness provider's decision via
-# decide_verification() below. Looks like it was meant to replace the
-# automated flow, but the frontend was never pointed at it. Before
-# building anything new on EITHER flow, confirm with the team which one
-# is meant to be canonical — see CONTEXT.md's "two competing verification
-# systems" note.
-@app.post("/v1/drivers/{driver_id}/verification")
-def submit_verification(
-    driver_id: str,
-    body: VerificationSubmission,
-    x_driver_token: str | None = Header(default=None, alias="X-Driver-Token"),
-) -> dict:
-    """Record a camera capture for a separately reviewed challenge; never accept/store face images here."""
-    require_driver_token(driver_id, x_driver_token)
-    with connect() as con:
-        con.execute(
-            "INSERT INTO verification_requests(challenge_id,driver_id,status,captured_at,updated_at) VALUES(?,?,'pending',?,?) "
-            "ON CONFLICT(challenge_id) DO UPDATE SET captured_at=excluded.captured_at,updated_at=excluded.updated_at "
-            "WHERE verification_requests.driver_id=excluded.driver_id",
-            (body.challenge_id, driver_id, body.captured_at.isoformat(), now_iso()),
-        )
-        row = con.execute("SELECT driver_id,status,captured_at,updated_at FROM verification_requests WHERE challenge_id=?", (body.challenge_id,)).fetchone()
-        if row is None or row["driver_id"] != driver_id:
-            raise HTTPException(status_code=409, detail="Challenge ID belongs to another driver")
-        write_event(con, driver_id, "verification_submitted", {"challenge_id": body.challenge_id, "status": row["status"]})
-        return {"challenge_id": body.challenge_id, "status": row["status"], "captured_at": row["captured_at"], "updated_at": row["updated_at"]}
+# CORRECTED 2026-11-05 (an earlier comment here called this "two
+# competing verification systems" — that was wrong on closer read).
+# There's one driver-facing verification flow: /challenge/respond
+# (automated MTCNN/FaceNet match + liveness check). When it can't auto-
+# clear a session, its own fallback (_queue_verification_review, above)
+# already logs a row into verification_requests for human review — a
+# driver never POSTs here directly. decide_verification() below is the
+# real, legitimate admin-side tool for resolving those logged cases
+# (not yet surfaced in the dashboard UI — see FEATURES.md). The one
+# endpoint that WAS genuinely redundant — submit_verification, a
+# driver-submitted-capture path duplicating what /challenge/respond
+# already does — has been removed.
 
 
 @app.get("/v1/drivers/{driver_id}/verification/{challenge_id}")
@@ -3228,12 +3160,6 @@ def resolve_review(
                 "resolved_at": resolved_at,
             },
         )
-        if body.resolution == "cleared" and ML_DETECTORS_AVAILABLE:
-            # A human confirmed this driver, so the frozen anchor should
-            # re-establish from here rather than staying pinned to
-            # whatever behavior led to this review in the first place.
-            reset_frozen_anchor(con, review["driver_id"])
-
     broadcast_event_sync("review_resolved", {
         "session_id": session_id,
         "driver_id": review["driver_id"],
