@@ -11,10 +11,14 @@ Validates:
 """
 import base64
 import io
+import os
 import time
 import numpy as np
 import pytest
 from PIL import Image
+
+os.environ["ASLIKAUN_INGEST_LIMIT_PER_MINUTE"] = "1000"
+
 from fastapi.testclient import TestClient
 
 from backend.app.main import app, connect, hash_driver_token

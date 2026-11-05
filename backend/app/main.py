@@ -2220,18 +2220,31 @@ def _queue_verification_review(
             (challenge_id, driver_id, status, captured_at or timestamp, timestamp),
         )
         if latest_session is not None:
-            con.execute(
-                """INSERT OR IGNORE INTO review_queue
-                   (session_id, driver_id, decision, status, created_at, reviewer_note)
-                   VALUES (?, ?, ?, 'open', ?, ?)""",
-                (
-                    latest_session["id"],
-                    driver_id,
-                    latest_session["decision"] or "step_up_check_at_safe_pause",
-                    timestamp,
-                    f"Driver verification submitted: {reason}",
-                ),
-            )
+            # Check if this session is already in the review queue
+            existing_review = con.execute(
+                "SELECT id FROM review_queue WHERE session_id = ?",
+                (latest_session["id"],),
+            ).fetchone()
+            if existing_review is not None:
+                con.execute(
+                    """UPDATE review_queue
+                       SET reviewer_note = ?
+                       WHERE session_id = ?""",
+                    (f"Driver verification submitted: {reason}", latest_session["id"]),
+                )
+            else:
+                con.execute(
+                    """INSERT OR IGNORE INTO review_queue
+                       (session_id, driver_id, decision, status, created_at, reviewer_note)
+                       VALUES (?, ?, ?, 'open', ?, ?)""",
+                    (
+                        latest_session["id"],
+                        driver_id,
+                        latest_session["decision"] or "step_up_check_at_safe_pause",
+                        timestamp,
+                        f"Driver verification submitted: {reason}",
+                    ),
+                )
         write_event(
             con,
             driver_id,

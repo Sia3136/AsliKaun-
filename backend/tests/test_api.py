@@ -23,6 +23,7 @@ def client(tmp_path_factory: pytest.TempPathFactory):
     import os
 
     os.environ["ASLIKAUN_DB"] = str(db_path)
+    os.environ["ASLIKAUN_INGEST_LIMIT_PER_MINUTE"] = "1000"
     os.environ["ASLIKAUN_ADMIN_USERNAME"] = ADMIN_USERNAME
     os.environ["ASLIKAUN_ADMIN_PASSWORD"] = ADMIN_PASSWORD
     os.environ["ASLIKAUN_TOKEN_SECRET"] = "test-only-secret-that-is-long-enough-for-regression-tests"
