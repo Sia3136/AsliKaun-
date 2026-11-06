@@ -1133,18 +1133,20 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAutoSimActive, setIsAutoSimActive] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("aslikaun_admin_theme");
+      if (saved === "light" || saved === "dark") return saved;
+    }
+    return "dark";
+  });
 
   useEffect(() => {
-    // Light mode was a half-finished leftover from before the team's
-    // documented switch to one unified dark theme: three duplicate
-    // `[data-theme="light"] header` CSS blocks and two duplicate
-    // `.export` blocks had accumulated from past editing passes, several
-    // newer classes (.live-btn etc.) had no light variant at all, and
-    // the result was low-contrast, hard-to-read controls when light mode
-    // was active — confirmed visually. Dark is now the only theme; the
-    // toggle button and its state were removed rather than patched.
-    document.documentElement.setAttribute("data-theme", "dark");
-  }, []);
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("aslikaun_admin_theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((prev) => (prev === "light" ? "dark" : "light"));
 
   // Authenticated Operator State
   const [currentUser, setCurrentUser] = useState<AuthUser>(() => {
@@ -1529,6 +1531,32 @@ export default function App() {
             aria-label="Refresh live fleet scores from backend"
           >
             <Icon name="refresh" className={isRefreshing ? "icon spin" : "icon"}/>
+          </button>
+
+          <button
+            className="nav-theme-toggle-admin"
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-pressed={theme === "light"}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? (
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" />
+                <line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            )}
           </button>
 
           <div className="user-menu-wrap">

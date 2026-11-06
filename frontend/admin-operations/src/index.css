@@ -53,6 +53,27 @@ button { font: inherit; }
   background: #eef3f9;
 }
 
+[data-theme="light"] .live-btn {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+[data-theme="light"] .live-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+[data-theme="light"] .nav-theme-toggle-admin {
+  border-color: rgba(20, 35, 65, 0.15);
+  color: #475569;
+}
+
+[data-theme="light"] .nav-theme-toggle-admin:hover {
+  color: #0b1528;
+  background: rgba(20, 35, 65, 0.06);
+}
+
 header {
   height: 72px;
   background: rgba(13, 16, 25, 0.88);
@@ -264,6 +285,25 @@ header {
 .user-menu-wrap {
   position: relative;
   margin-left: 12px;
+}
+
+.nav-theme-toggle-admin {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: #9ca3af;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.nav-theme-toggle-admin:hover {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .user-btn {
@@ -1784,12 +1824,6 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
 [data-theme="light"] .export:hover {
   background: #fff0e6;
   border-color: #f0c5a9;
-}
-
-[data-theme="light"] .primary {
-  background: linear-gradient(135deg, #f47738, #e96b2c);
-  border-color: #e96b2c;
-  box-shadow: 0 4px 14px rgba(244, 119, 56, 0.25);
 }
 
 [data-theme="light"] .chips,

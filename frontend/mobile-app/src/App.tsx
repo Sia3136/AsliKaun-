@@ -392,11 +392,7 @@ function Header({
   return (
     <header className="topbar">
       <button className="brand" onClick={onHome} aria-label="AsliKaun home">
-        <span className="brand-mark">
-          <span />
-          <span />
-          <span />
-        </span>
+        <img src="/aslikaun-logo.png" alt="" className="brand-logo-img" />
         AsliKaun
       </button>
       <div className="header-actions">
@@ -1761,11 +1757,7 @@ function MockLogin({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="login-page">
       <div className="login-brand-wrap">
-        <span className="brand-mark">
-          <span />
-          <span />
-          <span />
-        </span>
+        <img src="/aslikaun-logo.png" alt="" className="brand-logo-img login-brand-logo-img" />
         <span className="login-brand-title">AsliKaun</span>
       </div>
 
