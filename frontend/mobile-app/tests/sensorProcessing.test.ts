@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { resampleAt50Hz, sensorIntervalMs } from "../src/sensorProcessing.ts";
-import { stageForVerificationStatus } from "../src/verificationState.ts";
 import { retryDelayMs, secureTransportIssue, shouldRecordStoppedEvent } from "../src/telemetryPolicy.ts";
+
+// verificationState.ts was removed as dead app code (never imported outside this test).
+// This mapping is still worth covering, so it's kept inline here rather than reviving the file.
+type BackendVerificationStage = "review" | "success" | "failed";
+function stageForVerificationStatus(status: unknown): BackendVerificationStage {
+  if (status === "successful") return "success";
+  if (status === "pending" || status === "escalated") return "review";
+  return "failed";
+}
 
 test("resamples irregular out-of-order samples onto a 50 Hz grid", () => {
   const output = resampleAt50Hz([

@@ -196,6 +196,7 @@ const Icon = ({ name, className = "icon" }: { name: string; className?: string }
     layers: <><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></>,
     alert: <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>,
     play: <polygon points="5 3 19 12 5 21 5 3"/>,
+    "external-link": <><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></>,
   };
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -1513,21 +1514,13 @@ export default function App() {
         </nav>
 
         <div className="header-right">
-          <button
-            className="theme-toggle-admin"
-            onClick={() => window.open("http://localhost:8443/", "_blank", "noopener,noreferrer")}
-            aria-label="Open driver mobile app"
-            title="Open driver mobile app"
-          >
-            <span aria-hidden="true">↗</span>
-            <span>Driver app</span>
-          </button>
-
           {/* "Stream Live Telemetry" (the auto-simulator toggle) moved to
               the Simulator page itself — it's a demo/dev tool that
               generates synthetic attack telemetry, and having it in the
               global header risked an admin leaving it on by accident
-              while monitoring real data. */}
+              while monitoring real data. "Driver app" and "Export CSV"
+              moved into the user menu below — the top bar was getting
+              crowded with buttons that aren't used every page load. */}
           <button
             className="live-btn live-btn-icon"
             onClick={fetchLiveScores}
@@ -1536,11 +1529,6 @@ export default function App() {
             aria-label="Refresh live fleet scores from backend"
           >
             <Icon name="refresh" className={isRefreshing ? "icon spin" : "icon"}/>
-          </button>
-
-          <button className="export" onClick={exportFleet}>
-            <Icon name="download"/>
-            Export CSV
           </button>
 
           <div className="user-menu-wrap">
@@ -1564,6 +1552,17 @@ export default function App() {
                 </div>
                 <button onClick={() => { fetchLiveScores(); setUserDropdownOpen(false); }}>
                   <Icon name="refresh"/> Sync Backend Telemetry
+                </button>
+                <button onClick={() => { exportFleet(); setUserDropdownOpen(false); }}>
+                  <Icon name="download"/> Export Fleet CSV
+                </button>
+                <button
+                  onClick={() => {
+                    window.open("http://localhost:8443/", "_blank", "noopener,noreferrer");
+                    setUserDropdownOpen(false);
+                  }}
+                >
+                  <Icon name="external-link"/> Open Driver App
                 </button>
                 <button
                   className="danger"

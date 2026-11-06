@@ -53,45 +53,6 @@ button { font: inherit; }
   background: #eef3f9;
 }
 
-.theme-toggle-admin {
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #cbd5e1;
-  padding: 8px 11px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
-}
-
-.theme-toggle-admin:hover,
-.theme-toggle-admin:focus-visible {
-  border-color: #10b981;
-  color: #ffffff;
-  background: rgba(16, 185, 129, 0.12);
-}
-
-.theme-toggle-admin:focus-visible {
-  outline: 2px solid #10b981;
-  outline-offset: 2px;
-}
-
-[data-theme="light"] .theme-toggle-admin {
-  background: #f8fafc;
-  color: #334155;
-  border-color: #cbd5e1;
-}
-
-[data-theme="light"] .theme-toggle-admin:hover,
-[data-theme="light"] .theme-toggle-admin:focus-visible {
-  color: #0f172a;
-  background: #ecfdf5;
-}
-
 header {
   height: 72px;
   background: rgba(13, 16, 25, 0.88);
@@ -306,20 +267,22 @@ header {
 }
 
 .user-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, var(--brand-accent) 0%, var(--brand-accent-2) 100%);
-  color: #0a0810;
-  font: 700 13px Inter, sans-serif;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 122, 61, 0.1);
+  color: var(--brand-accent);
+  font: 700 12px Inter, sans-serif;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 122, 61, 0.35);
   cursor: pointer;
 }
 
 .user-btn:hover {
-  filter: brightness(1.08);
+  background: rgba(255, 122, 61, 0.16);
+  border-color: rgba(255, 122, 61, 0.5);
 }
 
 .user-dropdown {
@@ -460,8 +423,7 @@ nav button.active {
 nav button.active:after {
   content: "";
   height: 2px;
-  background: linear-gradient(90deg, var(--brand-accent), var(--brand-accent-2));
-  box-shadow: 0 0 10px rgba(255, 122, 61, 0.6);
+  background: var(--brand-accent);
   position: absolute;
   bottom: -16px;
   left: 12px;
@@ -909,7 +871,7 @@ main {
   right: 0;
   top: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--brand-accent), var(--brand-accent-2));
+  background: var(--brand-accent);
 }
 
 .inspector-top {
@@ -1084,10 +1046,9 @@ main {
 }
 
 .primary {
-  background: linear-gradient(135deg, var(--brand-accent) 0%, var(--brand-accent-2) 100%);
+  background: var(--brand-accent);
   border: 1px solid var(--brand-accent);
   color: #0a0810;
-  box-shadow: 0 4px 14px rgba(255, 122, 61, 0.3);
 }
 
 .primary:hover {
@@ -1385,7 +1346,7 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
 .bars em {
   height: 100%;
   display: block;
-  background: linear-gradient(90deg, var(--brand-accent), var(--brand-accent-2));
+  background: var(--brand-accent);
   border-radius: 5px;
 }
 
