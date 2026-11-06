@@ -47,7 +47,12 @@ const LOCAL_DEV = typeof window !== "undefined" && (
   || window.location.hostname.endsWith(".localhost")
   || isPrivateLanHost(window.location.hostname)
 );
-const DRIVER_TOKEN = import.meta.env.VITE_ASLIKAUN_DRIVER_TOKEN || import.meta.env.VITE_TRUSTMESH_DRIVER_TOKEN || (LOCAL_DEV ? "demo-driver-token-2026" : "");
+// The bundled Kavya demo account is intentionally backed by rider-001. Keep
+// its non-secret demo token available in hosted previews too; real accounts
+// must provide VITE_ASLIKAUN_DRIVER_TOKEN at build time.
+const DRIVER_TOKEN = import.meta.env.VITE_ASLIKAUN_DRIVER_TOKEN
+  || import.meta.env.VITE_TRUSTMESH_DRIVER_TOKEN
+  || (DRIVER_ID === "rider-001" ? "demo-driver-token-2026" : (LOCAL_DEV ? "demo-driver-token-2026" : ""));
 if (typeof window !== "undefined" && isPrivateLanHost(window.location.hostname) && !import.meta.env.VITE_ASLIKAUN_DRIVER_TOKEN) {
   console.info("[AsliKaun] Running on a LAN address; using the non-secret demo driver token for local device testing. Set VITE_ASLIKAUN_DRIVER_TOKEN for anything beyond local testing.");
 }
@@ -319,6 +324,21 @@ export function goOffline() {
 }
 export type ChallengeStatus = { driver_id: string; challenge_pending: boolean; decision?: string; reasons?: string[] };
 export type ChallengeResponseResult = { outcome: string; similarity?: number; reason?: string };
+
+/** Notify Admin Operations as soon as an account check is requested. */
+export async function requestVerification(): Promise<boolean> {
+  const issue = transportError() || credentialError();
+  if (issue) return false;
+  try {
+    const response = await fetch(`${API_BASE}/v1/drivers/${DRIVER_ID}/verification/request`, {
+      method: "POST",
+      headers: { "X-Driver-Token": DRIVER_TOKEN },
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
 
 /** Poll whether the backend has escalated this driver to a mid-trip
  * safe-pause identity challenge. Call on a timer while online. */

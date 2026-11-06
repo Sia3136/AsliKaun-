@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getChallengeStatus, goOffline, goOnlineAndIngest, recordOrderAccept, recordOrderOffer,
-  recordPrecisionConsent, respondToChallenge, getQueueHealth, type QueueHealth,
+  recordPrecisionConsent, requestVerification, respondToChallenge, getQueueHealth, type QueueHealth,
 } from "./telemetry";
 
 type Tab = "home" | "orders" | "earnings" | "profile";
@@ -1889,6 +1889,15 @@ export default function App() {
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [online, page]);
+
+  // The demo banner represents a real account-check request. Notify the
+  // backend once per selected request state so Admin Operations receives the
+  // case before the driver captures the selfie.
+  useEffect(() => {
+    if (scenario.verification === "requested") {
+      void requestVerification();
+    }
+  }, [scenario.verification]);
 
   const handleAvailabilityChange = async (nextOnline: boolean) => {
     if (!nextOnline) {

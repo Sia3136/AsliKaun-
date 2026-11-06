@@ -243,7 +243,7 @@ class DeclareChange(BaseModel):
 
 
 class FaceImage(BaseModel):
-    image_base64: str = Field(min_length=1, description="Raw base64 (no data: URI prefix) of a JPEG/PNG selfie")
+    image_base64: str = Field(min_length=1, max_length=12_000_000, description="Raw base64 (no data: URI prefix) of a JPEG/PNG selfie")
 
 
 class ResolveReview(BaseModel):
@@ -335,7 +335,10 @@ def init_db() -> None:
             driver_id TEXT NOT NULL,
             status TEXT NOT NULL,
             captured_at TEXT,
-            updated_at TEXT NOT NULL
+            updated_at TEXT NOT NULL,
+            session_id INTEGER,
+            selfie_base64 TEXT,
+            report_json TEXT
         );
         CREATE TABLE IF NOT EXISTS review_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -407,6 +410,16 @@ def init_db() -> None:
             con.execute("ALTER TABLE review_queue ADD COLUMN reviewer_id TEXT")
         if "reviewer_note" not in review_columns:
             con.execute("ALTER TABLE review_queue ADD COLUMN reviewer_note TEXT")
+        verification_columns = {
+            row["name"] for row in con.execute("PRAGMA table_info(verification_requests)").fetchall()
+        }
+        for name, definition in {
+            "session_id": "INTEGER",
+            "selfie_base64": "TEXT",
+            "report_json": "TEXT",
+        }.items():
+            if name not in verification_columns:
+                con.execute(f"ALTER TABLE verification_requests ADD COLUMN {name} {definition}")
         admin_columns = {
             row["name"] for row in con.execute("PRAGMA table_info(admin_users)").fetchall()
         }
@@ -2136,8 +2149,10 @@ def _queue_verification_review(
     status: str,
     reason: str,
     captured_at: str | None = None,
-) -> None:
-    """Persist a challenge result without retaining the submitted image."""
+    selfie_base64: str | None = None,
+    report: dict[str, Any] | None = None,
+) -> str:
+    """Persist challenge evidence and make it visible to admin review."""
     timestamp = now_iso()
     challenge_id = secrets.token_urlsafe(18)
     with connect() as con:
@@ -2145,11 +2160,13 @@ def _queue_verification_review(
             "SELECT id, decision FROM sessions WHERE driver_id = ? ORDER BY id DESC LIMIT 1",
             (driver_id,),
         ).fetchone()
+        session_id = latest_session["id"] if latest_session is not None else None
         con.execute(
             """INSERT INTO verification_requests
-               (challenge_id, driver_id, status, captured_at, updated_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (challenge_id, driver_id, status, captured_at or timestamp, timestamp),
+               (challenge_id, driver_id, status, captured_at, updated_at, session_id, selfie_base64, report_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (challenge_id, driver_id, status, captured_at or timestamp, timestamp,
+             session_id, selfie_base64, json.dumps(report or {})),
         )
         if latest_session is not None:
             # Check if this session is already in the review queue
@@ -2160,7 +2177,8 @@ def _queue_verification_review(
             if existing_review is not None:
                 con.execute(
                     """UPDATE review_queue
-                       SET reviewer_note = ?
+                       SET status = 'open', resolved_at = NULL, resolution = NULL,
+                           reviewer_id = NULL, reviewer_note = ?
                        WHERE session_id = ?""",
                     (f"Driver verification submitted: {reason}", latest_session["id"]),
                 )
@@ -2187,6 +2205,7 @@ def _queue_verification_review(
         "verification_submitted",
         {"driver_id": driver_id, "challenge_id": challenge_id, "status": status},
     )
+    return challenge_id
 
 
 def _decode_face_image(image_base64: str):
@@ -2268,6 +2287,31 @@ def get_challenge_status(driver_id: str) -> dict:
     }
 
 
+@app.post("/v1/drivers/{driver_id}/verification/request")
+def request_verification(
+    driver_id: str,
+    x_driver_token: str | None = Header(default=None, alias="X-Driver-Token"),
+) -> dict:
+    """Create the admin review item when a driver is asked to complete a check.
+
+    The mobile demo used to show this state locally without notifying the
+    backend. Persisting the pending request first lets Admin Operations see
+    the case immediately, before the selfie is captured.
+    """
+    require_driver_token(driver_id, x_driver_token)
+    challenge_id = _queue_verification_review(
+        driver_id,
+        "pending_selfie",
+        "driver_verification_requested",
+        report={
+            "outcome": "pending_selfie",
+            "reason": "driver_verification_requested",
+            "message": "Waiting for the driver to capture a selfie at a safe stop.",
+        },
+    )
+    return {"driver_id": driver_id, "challenge_id": challenge_id, "status": "pending_selfie"}
+
+
 @app.post("/v1/drivers/{driver_id}/challenge/respond")
 def respond_to_challenge(
     driver_id: str,
@@ -2284,19 +2328,26 @@ def respond_to_challenge(
     only auto-CLEAR on a clear pass, same asymmetry as the rest of the
     product (biased toward a human in the loop for anything negative)."""
     require_driver_token(driver_id, x_driver_token)
+    captured_at = now_iso()
+
+    def queue_evidence(status: str, reason: str, report: dict[str, Any]) -> str:
+        return _queue_verification_review(
+            driver_id, status, reason, captured_at=captured_at,
+            selfie_base64=body.image_base64, report=report,
+        )
 
     if not ML_FACE_AVAILABLE:
         # Keep the request visible to Safety Ops even when optional local face
-        # models are not installed. The image is intentionally discarded.
-        _queue_verification_review(
-            driver_id,
-            "human_review",
-            "face_verification_unavailable",
-        )
+        # models are not installed; the evidence is still retained for review.
+        challenge_id = queue_evidence("human_review", "face_verification_unavailable", {
+            "outcome": "human_review", "reason": "face_verification_unavailable",
+            "verification_available": False,
+        })
         return {
             "driver_id": driver_id,
             "outcome": "human_review",
             "reason": "face_verification_unavailable",
+            "challenge_id": challenge_id,
         }
 
     with connect() as con:
@@ -2305,8 +2356,10 @@ def respond_to_challenge(
         ).fetchone()
 
     if enrollment is None:
-        _queue_verification_review(driver_id, "human_review", "no_face_enrollment_on_file")
-        return {"driver_id": driver_id, "outcome": "human_review", "reason": "no_face_enrollment_on_file"}
+        challenge_id = queue_evidence("human_review", "no_face_enrollment_on_file", {
+            "outcome": "human_review", "reason": "no_face_enrollment_on_file",
+        })
+        return {"driver_id": driver_id, "outcome": "human_review", "reason": "no_face_enrollment_on_file", "challenge_id": challenge_id}
 
     image = _decode_face_image(body.image_base64)
 
@@ -2314,11 +2367,10 @@ def respond_to_challenge(
     liveness = check_face_liveness_image(image) if check_face_liveness_image is not None else {"is_live": True}
     if not liveness.get("is_live", True):
         attack_type = liveness.get("attack_type", "presentation_attack_spoof")
-        _queue_verification_review(
-            driver_id,
-            "human_review",
-            f"presentation_attack:{attack_type}",
-        )
+        challenge_id = queue_evidence("human_review", f"presentation_attack:{attack_type}", {
+            "outcome": "spoof_rejected", "reason": f"presentation_attack:{attack_type}",
+            "is_live": False, "liveness": liveness,
+        })
         with connect() as con:
             write_event(con, driver_id, "challenge_spoof_rejected", {
                 "liveness_score": liveness.get("liveness_score"),
@@ -2332,13 +2384,16 @@ def respond_to_challenge(
             "is_live": False,
             "liveness": liveness,
             "reason": f"Anti-spoofing rejected presentation attack: {attack_type} (liveness={liveness.get('liveness_score')})",
+            "challenge_id": challenge_id,
         }
 
     # 2. Extract FaceNet embedding and evaluate cosine similarity
     challenge_embedding = embed_face_image(image)
     if challenge_embedding is None:
-        _queue_verification_review(driver_id, "human_review", "no_face_detected")
-        return {"driver_id": driver_id, "outcome": "human_review", "reason": "no_face_detected"}
+        challenge_id = queue_evidence("human_review", "no_face_detected", {
+            "outcome": "human_review", "reason": "no_face_detected", "liveness": liveness,
+        })
+        return {"driver_id": driver_id, "outcome": "human_review", "reason": "no_face_detected", "challenge_id": challenge_id}
 
     enrolled_embedding = np.frombuffer(base64.b64decode(enrollment["embedding_b64"]), dtype="float32")
     similarity = face_similarity(enrolled_embedding, challenge_embedding)
@@ -2394,8 +2449,14 @@ def respond_to_challenge(
         else:
             write_event(con, driver_id, "challenge_failed_or_inconclusive", {"similarity": round(similarity, 4)})
 
-    if review_reason:
-        _queue_verification_review(driver_id, "human_review", review_reason)
+    challenge_id = queue_evidence("human_review" if review_reason else "successful", review_reason or "face_match_passed", {
+        "outcome": "human_review" if review_reason else "cleared",
+        "reason": review_reason or "face_match_passed",
+        "similarity": round(similarity, 4),
+        "is_live": liveness.get("is_live", True),
+        "liveness_score": liveness.get("liveness_score", 1.0),
+        "threshold": FACE_MATCH_THRESHOLD,
+    })
 
     return {
         "driver_id": driver_id,
@@ -2403,6 +2464,7 @@ def respond_to_challenge(
         "similarity": round(similarity, 4),
         "is_live": liveness.get("is_live", True),
         "liveness_score": liveness.get("liveness_score", 1.0),
+        "challenge_id": challenge_id,
     }
 
 
@@ -2975,6 +3037,16 @@ def get_review_queue(
 
     with connect() as con:
         rows = con.execute(query, tuple(params)).fetchall()
+        verification_by_session = {}
+        for verification in con.execute(
+            """SELECT challenge_id, driver_id, session_id, status, captured_at,
+                      selfie_base64, report_json
+               FROM verification_requests
+               WHERE session_id IS NOT NULL
+               ORDER BY updated_at DESC"""
+        ).fetchall():
+            key = (verification["driver_id"], verification["session_id"])
+            verification_by_session.setdefault(key, verification)
 
     reviews = []
     for row in rows:
@@ -2990,6 +3062,15 @@ def get_review_queue(
             "safe_pause_scheduled": item["decision"] in ("challenge_at_safe_pause", "step_up_check_at_safe_pause") and speed is not None and speed > 2.0,
             "scheduled_state": "queued_for_stop" if speed is not None and speed > 2.0 else "safe_stop_confirmed" if speed is not None else "unknown",
         }
+        verification = verification_by_session.get((item["driver_id"], item["session_id"]))
+        if verification is not None:
+            item["verification"] = {
+                "challenge_id": verification["challenge_id"],
+                "status": verification["status"],
+                "captured_at": verification["captured_at"],
+                "selfie_data_url": f"data:image/jpeg;base64,{verification['selfie_base64']}" if verification["selfie_base64"] else None,
+                "report": decode_json(verification["report_json"], {}),
+            }
         reviews.append(item)
 
     return {"count": len(reviews), "reviews": reviews, "items": reviews}
@@ -3112,6 +3193,22 @@ def get_review_details(
     item = dict(row)
     item["reasons"] = decode_json(item.pop("reasons_json"), [])
     item["session_payload"] = decode_json(item.pop("payload_json"), {})
+    with connect() as con:
+        verification = con.execute(
+            """SELECT challenge_id, status, captured_at, selfie_base64, report_json
+               FROM verification_requests
+               WHERE driver_id = ? AND session_id = ?
+               ORDER BY updated_at DESC LIMIT 1""",
+            (item["driver_id"], item["session_id"]),
+        ).fetchone()
+    if verification is not None:
+        item["verification"] = {
+            "challenge_id": verification["challenge_id"],
+            "status": verification["status"],
+            "captured_at": verification["captured_at"],
+            "selfie_data_url": f"data:image/jpeg;base64,{verification['selfie_base64']}" if verification["selfie_base64"] else None,
+            "report": decode_json(verification["report_json"], {}),
+        }
     return item
 
 

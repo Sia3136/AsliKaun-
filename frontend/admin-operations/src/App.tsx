@@ -30,6 +30,13 @@ export type ReviewCase = {
   device: string;
   contextScore: number;
   behaviorScore: number;
+  verification?: {
+    challenge_id: string;
+    status: string;
+    captured_at: string | null;
+    selfie_data_url: string | null;
+    report: Record<string, unknown>;
+  };
 };
 
 // Seed data. Narration (name/device/signals/reason) is decorative, but
@@ -1245,12 +1252,13 @@ export default function App() {
             driverId: item.driver_id,
             quadrant: (item.quadrant || "Handoff signature").replace(/_/g, " "),
             status: item.status === "resolved" ? "RESOLVED" : "OPEN",
-            reason: item.reasons && item.reasons.length > 0 ? item.reasons[0] : (item.reviewer_note || "Flagged for step-up review."),
+            reason: item.verification?.report?.message || item.verification?.report?.reason || (item.reasons && item.reasons.length > 0 ? item.reasons[0] : (item.reviewer_note || "Flagged for step-up review.")),
             speed: "0.0 mph (Safe-stop)",
             timestamp: item.created_at ? new Date(item.created_at).toLocaleTimeString() : "Recent",
             device: "Fleet Registered Device",
             contextScore: item.context_score ?? 0.75,
             behaviorScore: item.behavior_score ?? 0.25,
+            verification: item.verification,
           }));
           setCases(apiCases);
         }
@@ -1705,6 +1713,27 @@ export default function App() {
                 <span>Safe-Stop Gate</span>
                 <b>Active safe-pause protocol armed. Drivers are never interrupted while moving.</b>
               </div>
+
+              {activeCaseModal.verification && (
+                <div className="reason" style={{ margin: "14px 0", display: "flex", gap: "14px" }}>
+                  {activeCaseModal.verification.selfie_data_url ? (
+                    <img
+                      src={activeCaseModal.verification.selfie_data_url}
+                      alt={`Selfie submitted by ${activeCaseModal.driverId}`}
+                      style={{ width: "132px", height: "132px", objectFit: "cover", borderRadius: "10px", border: "1px solid #334155" }}
+                    />
+                  ) : null}
+                  <div style={{ minWidth: 0 }}>
+                    <b>Driver verification evidence</b>
+                    <p style={{ marginBottom: "6px" }}>
+                      Submitted {activeCaseModal.verification.captured_at ? new Date(activeCaseModal.verification.captured_at).toLocaleString() : "recently"} · {activeCaseModal.verification.status}
+                    </p>
+                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: "11px", color: "#cbd5e1" }}>
+                      {JSON.stringify(activeCaseModal.verification.report, null, 2)}
+                    </pre>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="modal-footer">
