@@ -45,6 +45,11 @@ export function AuthPage() {
         storeSession(data.access_token || data.token || `admin-${Date.now()}`, data.username || 'Fleet Admin', usernameVal);
         return;
       }
+      // Treat a local development gateway failure like an unreachable backend
+      // so the fixed demo account can still open the dashboard shell.
+      if (res.status >= 500) {
+        throw new TypeError(`Backend unavailable (${res.status})`);
+      }
       const data = await res.json().catch(() => ({ detail: 'Authentication failed' }));
       throw new Error(data.detail || `Sign in error (${res.status})`);
     } catch (err: unknown) {
